@@ -56,19 +56,13 @@ function confirmRunCode() {
 }
 
 function submitEntry() {
-  const url = "https://script.google.com/macros/s/AKfycbwNB4erYMgNTpWREhzqoCuKa882C_enWd-jH_0ung0iug6moxYAkuxQZDJrkXmnzINU/exec";
-
-  const now = new Date();
-  const date = now.toLocaleDateString('en-GB');
-  const time = now.toLocaleTimeString('en-GB');
+  const url = "https://script.google.com/macros/s/AKfycbxhrh0fyX9Ug7_ApJh00r1YBtvXrvZTxnBR5C16KANzmxjYESKcqv0Djvxonu1sVZXW/exec";
 
   fetch(url, {
     method: 'POST',
     body: JSON.stringify({
       code: palletCode,
-      run: runCode,
-      date: date,
-      time: time
+      runCode: runCode
     }),
     headers: { 'Content-Type': 'application/json' }
   }).then(res => {
@@ -80,6 +74,8 @@ function submitEntry() {
     } else {
       app.innerHTML = `<p>❌ Error submitting entry. Please try again.</p>`;
     }
+  }).catch(() => {
+    app.innerHTML = `<p>❌ Network error. Please try again.</p>`;
   });
 }
 
