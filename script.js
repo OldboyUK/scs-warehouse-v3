@@ -56,16 +56,19 @@ function confirmRunCode() {
 }
 
 function submitEntry() {
-  const url = "https://script.google.com/macros/s/AKfycbx_fnLLcoLFvLtzBHHex6h0HxFrXpL6vaMVjUKBm5isMdbHScjzmUSnKx-Cx19u8vA2/exec";
+  const url = "https://script.google.com/macros/s/AKfycbwwwGpTCGvM27s_U1BH8upWwzsOk63GnTTm3oaELA_iC79y98e5iEVtqylsRRX_KvW-/exec";
 
   fetch(url, {
     method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
     body: JSON.stringify({
       code: palletCode,
-      runCode: runCode
-    }),
-    headers: { 'Content-Type': 'application/json' }
-  }).then(res => {
+      run: runCode
+    })
+  })
+  .then(res => {
     if (res.ok) {
       app.innerHTML = `
         <p>✅ Entry submitted successfully!</p>
@@ -74,10 +77,12 @@ function submitEntry() {
     } else {
       app.innerHTML = `<p>❌ Error submitting entry. Please try again.</p>`;
     }
-  }).catch(() => {
+  })
+  .catch(() => {
     app.innerHTML = `<p>❌ Network error. Please try again.</p>`;
   });
 }
+
 
 loadRunCodes();
 showStep1();
