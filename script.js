@@ -56,7 +56,7 @@ function confirmRunCode() {
 }
 
 function submitEntry() {
-  const url = "https://script.google.com/macros/s/AKfycbxhrh0fyX9Ug7_ApJh00r1YBtvXrvZTxnBR5C16KANzmxjYESKcqv0Djvxonu1sVZXW/exec";
+  const url = "https://script.google.com/macros/s/AKfycbx_fnLLcoLFvLtzBHHex6h0HxFrXpL6vaMVjUKBm5isMdbHScjzmUSnKx-Cx19u8vA2/exec";
 
   fetch(url, {
     method: 'POST',
