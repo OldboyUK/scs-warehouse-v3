@@ -56,13 +56,11 @@ function confirmRunCode() {
 }
 
 function submitEntry() {
-  const url = "https://script.google.com/macros/s/AKfycbyZzlCVUyePNZ8r8CFu1vrkZA2qp_Tzt5ubYb7vzweIJj5KQkv_-32dpV60zo3Uv2BQ/exec";
+  const url = "https://script.google.com/macros/s/AKfycbwC0jiXTq6yGkdZftF4H7iul8G458cz2wEq2yjV0JhSPNgrLBC2HYqS66WDenkslnco/exec";
 
   fetch(url, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       code: palletCode,
       run: runCode
@@ -82,6 +80,7 @@ function submitEntry() {
     app.innerHTML = `<p>❌ Network error. Please try again.</p>`;
   });
 }
+
 
 
 loadRunCodes();
