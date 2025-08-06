@@ -136,23 +136,25 @@ function confirmUnits() {
 }
 
 function submitEntry(units) {
-  console.log('Submitting: code=%s, run=%s, units=%s', palletCode, runCode, units);
+  const url = "/.netlify/functions/submit";
 
   const body = new URLSearchParams();
   body.append("code", palletCode);
   body.append("run", runCode);
   body.append("units", units);
 
-  fetch(SCRIPT_URL, {
+  console.log('Sending to Netlify:', { code: palletCode, run: runCode, units: units });
+
+  fetch(url, {
     method: 'POST',
     body: body,
     headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
+      'Content-Type': 'application/x-www-form-urlencoded'
     }
   })
   .then(res => res.json())
   .then(data => {
-    console.log('Submission response:', data);
+    console.log('Netlify response:', data);
     if (data.result === 'success') {
       app.innerHTML = `
         <p>✅ Entry submitted successfully!</p>
@@ -163,7 +165,7 @@ function submitEntry(units) {
     }
   })
   .catch(err => {
-    console.error('Submission error:', err);
+    console.error('Fetch error:', err);
     app.innerHTML = `<p>❌ Network error. Please try again.</p>`;
   });
 }
