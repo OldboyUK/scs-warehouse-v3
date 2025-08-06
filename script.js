@@ -4,20 +4,24 @@ let runCode = '';
 let runCodes = [];
 
 const ORDER_LOG_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=792145998&single=true&output=csv';
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzS93dNg8LX9FkCFZIquPmQ9FTdx1IHoSb0C101dILnXV712T7r3R9pJokmcqG6e-Xf/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyHhwoBxrH7NY585I4Jt1JWI19iBHBU6jrsNYQCPBYsan_eHfdizEAKuHIheE1JP-Lb/exec';
 
 function loadRunCodes() {
   fetch(ORDER_LOG_CSV)
     .then(response => response.text())
     .then(csv => {
       const rows = csv.trim().split('\n');
-      
-      // Drop header row (A1) by slicing from row 1
-      const dataRows = rows.slice(1, 3000); // A2 to A3000
+      const runSet = new Set();
 
-      runCodes = dataRows
-        .map(row => row.split(',')[0].trim()) // Take column A only
-        .filter(code => code !== '' && code.length > 0 && code !== 'Run Code'); // Filter blanks & header repeat
+      // A2:A3000 only (skip header row A1)
+      rows.slice(1, 2999).forEach(row => {
+        const firstColumn = row.split(',')[0].trim();
+        if (firstColumn && !firstColumn.includes(',') && firstColumn !== "Run Code") {
+          runSet.add(firstColumn); // avoid duplicates
+        }
+      });
+
+      runCodes = Array.from(runSet);
     });
 }
 
@@ -65,7 +69,7 @@ function startBarcodeScan() {
       app.innerHTML = `<p>📷 Scanning... Point camera at barcode.</p>`;
       app.appendChild(video);
       video.style.width = '300px';
-      video.style.height = 'auto';
+      video.style.height = '200px';
 
       const detector = new BarcodeDetector({ formats: ['code_128', 'ean_13'] });
 
