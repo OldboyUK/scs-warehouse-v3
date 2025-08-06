@@ -4,7 +4,7 @@ let runCode = '';
 let runCodes = [];
 
 const ORDER_LOG_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=792145998&single=true&output=csv';
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz6TeutnxhXH1NBbZqeKe7Ih-Ki-N-atEcKOhSwBbksPWQEMfBcbShoVsV0JigTvjLl/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxrQtSY-JY2JjXKdZqXk9u_LCROFEE_yL-SOtXBUeZQT1yYyWaluObOB9Ir8wGahE8Q/exec';
 
 function loadRunCodes() {
   fetch(ORDER_LOG_CSV)
@@ -44,25 +44,26 @@ function showConfirmCode() {
 }
 
 function startBarcodeScan() {
-  if (!('BarcodeDetector' in window)) {
+  if (typeof BarcodeDetector === 'undefined') {
     alert('Barcode scanning is not supported in this browser.');
     return;
   }
 
   navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-    .then(stream => {
+    .then(async stream => {
       const video = document.createElement('video');
       video.srcObject = stream;
-      video.setAttribute('playsinline', 'true');
-      video.play();
+      video.setAttribute('playsinline', 'true'); // required for iOS
+      await video.play();
 
-      app.innerHTML = `<p>Scanning... Point camera at barcode.</p>`;
+      app.innerHTML = `<p>📷 Scanning... Point camera at barcode.</p>`;
       app.appendChild(video);
 
       const detector = new BarcodeDetector({ formats: ['code_128', 'ean_13'] });
 
-      const scan = () => {
-        detector.detect(video).then(barcodes => {
+      const scan = async () => {
+        try {
+          const barcodes = await detector.detect(video);
           if (barcodes.length > 0) {
             stream.getTracks().forEach(track => track.stop());
             palletCode = barcodes[0].rawValue;
@@ -75,18 +76,19 @@ function startBarcodeScan() {
           } else {
             requestAnimationFrame(scan);
           }
-        }).catch(err => {
-          console.error("Detection error:", err);
-          alert("Barcode detection failed.");
+        } catch (err) {
+          console.error("Barcode detection error:", err);
           stream.getTracks().forEach(track => track.stop());
+          alert("Barcode detection failed.");
           showStep1();
-        });
+        }
       };
 
       scan();
-    }).catch(err => {
+    })
+    .catch(err => {
       alert("Camera access denied or unavailable.");
-      console.error(err);
+      console.error("getUserMedia error:", err);
     });
 }
 
