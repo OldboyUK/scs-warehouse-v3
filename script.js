@@ -3,27 +3,16 @@ let palletCode = '';
 let runCode = '';
 let runCodes = [];
 
-const ORDER_LOG_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=792145998&single=true&output=csv';
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzCuwqmyYOZd9e57X_a4OsPdJLu4yfOJ-TYNpqnJweUmG8Q1lPK0nR27WbsOIHN9SUW/exec';
+const RUN_CODES_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=1875380966&single=true&output=csv';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwZlpAwZ2rMU4dyeDt0saJbDq32_zGKHgAfG9Al5RyESDMmQMZawqiUXq7jCo9nY4UV/exec';
 
 function loadRunCodes() {
-  fetch(ORDER_LOG_CSV)
+  fetch(RUN_CODES_CSV)
     .then(response => response.text())
     .then(csv => {
-      const rows = csv.trim().split('\n').slice(1, 2999); // Skip row 1, get rows 2–3000
-      const runSet = new Set();
-
-      rows.forEach(row => {
-        const columns = row.split(',');
-        const value = columns[0]?.trim();
-        if (value) runSet.add(value); // Only column A, skip blanks
-      });
-
-      runCodes = Array.from(runSet);
+      runCodes = csv.trim().split('\n').map(code => code.trim()).filter(code => code);
     });
 }
-
-
 
 function showStep1() {
   app.innerHTML = `
@@ -116,20 +105,42 @@ function showStep2() {
 
 function confirmRunCode() {
   runCode = document.getElementById('runCodeSelect').value;
+
   app.innerHTML = `
     <p>Code: <strong>${palletCode}</strong></p>
     <p>Run Code: <strong>${runCode}</strong></p>
-    <button onclick="submitEntry()">Confirm & Submit</button>
+    <label>Enter number of units:</label>
+    <input id="unitInput" type="number" min="1" />
+    <button onclick="confirmUnits()">Next</button>
     <button onclick="showStep2()">Back</button>
   `;
 }
 
-function submitEntry() {
+function confirmUnits() {
+  const input = document.getElementById('unitInput').value;
+  const units = parseInt(input);
+
+  if (isNaN(units) || units <= 0) {
+    alert("Please enter a valid number of units.");
+    return;
+  }
+
+  app.innerHTML = `
+    <p>Code: <strong>${palletCode}</strong></p>
+    <p>Run Code: <strong>${runCode}</strong></p>
+    <p>Units: <strong>${units}</strong></p>
+    <button onclick="submitEntry(${units})">Confirm & Submit</button>
+    <button onclick="confirmRunCode()">Back</button>
+  `;
+}
+
+function submitEntry(units) {
   const url = "/.netlify/functions/submit";
 
   const body = new URLSearchParams();
   body.append("code", palletCode);
   body.append("run", runCode);
+  body.append("units", units);
 
   fetch(url, {
     method: 'POST',
