@@ -45,28 +45,15 @@ function showStep2() {
   `;
 }
 
-function confirmRunCode() {
-  runCode = document.getElementById('runCodeSelect').value;
-  app.innerHTML = `
-    <p>Code: <strong>${palletCode}</strong></p>
-    <p>Run Code: <strong>${runCode}</strong></p>
-    <button onclick="submitEntry()">Confirm & Submit</button>
-    <button onclick="showStep2()">Back</button>
-  `;
-}
-
 function submitEntry() {
-  const url = "https://script.google.com/macros/s/AKfycbwC0jiXTq6yGkdZftF4H7iul8G458cz2wEq2yjV0JhSPNgrLBC2HYqS66WDenkslnco/exec";
+  const url = "https://script.google.com/macros/s/AKfycbxX35F9A_qfytiB1KUj0p9DzzXAoO9ziuo-XvXY4FzSfTnNqxqW8O-bYH5vEoXJ0KA/exec";
+  const fd = new FormData();
+  fd.append('code', palletCode);
+  fd.append('run', runCode);
 
   fetch(url, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'text/plain'
-    },
-    body: JSON.stringify({
-      code: palletCode,
-      run: runCode
-    })
+    body: fd
   })
   .then(res => {
     if (res.ok) {
@@ -78,7 +65,7 @@ function submitEntry() {
       app.innerHTML = `<p>❌ Error submitting entry. Please try again.</p>`;
     }
   })
-  .catch(() => {
+  .catch(err => {
     app.innerHTML = `<p>❌ Network error. Please try again.</p>`;
   });
 }
