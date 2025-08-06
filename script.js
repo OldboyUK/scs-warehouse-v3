@@ -4,7 +4,7 @@ let runCode = '';
 let runCodes = [];
 
 const ORDER_LOG_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=792145998&single=true&output=csv';
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzbDeFjUITbUbcgM9Gffy4cacY6hXtK8zMprM_w-p8avXcL0m879kUGsDoTedEqg_hn/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzXFPdo6T41ZOPAPjRm4AC3F7m0zlQGOzGoJEimNcQWOuNEFbCY1mQiKmv0bhaw-rpi/exec';
 
 function loadRunCodes() {
   fetch(ORDER_LOG_CSV)
@@ -58,20 +58,28 @@ function confirmRunCode() {
 
 function submitEntry() {
   const url = "/.netlify/functions/submit";
+
   const body = new URLSearchParams();
   body.append("code", palletCode);
   body.append("run", runCode);
 
   fetch(url, {
     method: 'POST',
-    body: body
+    body: body,
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    }
   })
-  .then(res => res.text())
-  .then(text => {
-    app.innerHTML = `
-      <p>✅ Entry submitted successfully!</p>
-      <button onclick="showStep1()">Add Another</button>
-    `;
+  .then(res => res.json())
+  .then(data => {
+    if(data.result === 'success') {
+      app.innerHTML = `
+        <p>✅ Entry submitted successfully!</p>
+        <button onclick="showStep1()">Add Another</button>
+      `;
+    } else {
+      app.innerHTML = `<p>❌ Error: ${data.message}</p>`;
+    }
   })
   .catch(err => {
     app.innerHTML = `<p>❌ Network error. Please try again.</p>`;
