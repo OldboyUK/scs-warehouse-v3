@@ -4,7 +4,7 @@ let runCode = '';
 let runCodes = [];
 
 const RUN_CODES_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=1875380966&single=true&output=csv';
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwZlpAwZ2rMU4dyeDt0saJbDq32_zGKHgAfG9Al5RyESDMmQMZawqiUXq7jCo9nY4UV/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwbACWfEisIN6uxxpkC1UQh27Tz2R0jUvCJHKgITHrQIEayxmO7-_hC50t6UOByeWKU/exec';
 
 function loadRunCodes() {
   fetch(RUN_CODES_CSV)
@@ -52,13 +52,13 @@ function startBarcodeScan() {
     .then(async stream => {
       const video = document.createElement('video');
       video.srcObject = stream;
-      video.setAttribute('playsinline', 'true'); // required for iOS
+      video.setAttribute('playsinline', 'true');
       await video.play();
 
       app.innerHTML = `<p>📷 Scanning... Point camera at barcode.</p>`;
       app.appendChild(video);
       video.style.width = '200px';
-      video.style.height = '300px';
+      video.style.height = '150px';
 
       const detector = new BarcodeDetector({ formats: ['code_128', 'ean_13'] });
 
