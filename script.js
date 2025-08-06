@@ -60,7 +60,9 @@ function submitEntry() {
 
   fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'text/plain'
+    },
     body: JSON.stringify({
       code: palletCode,
       run: runCode
