@@ -10,7 +10,8 @@ function loadRunCodes() {
   fetch(ORDER_LOG_CSV)
     .then(response => response.text())
     .then(csv => {
-      runCodes = csv.split('\n').map(row => row.split(',')[0].trim()).filter(code => code);
+      const rows = csv.split('\n').slice(1, 2999); // Skip header, max 2999 entries (A2:A3000)
+      runCodes = rows.map(row => row.split(',')[0].trim()).filter(code => code);
     });
 }
 
@@ -19,6 +20,8 @@ function showStep1() {
     <label>Enter 15-digit code:</label>
     <input id="codeInput" maxlength="15" />
     <button onclick="confirmCode()">Next</button>
+    <hr>
+    <button onclick="startBarcodeScan()">📷 Scan Barcode</button>
   `;
 }
 
@@ -29,11 +32,62 @@ function confirmCode() {
     return;
   }
   palletCode = input;
+  showConfirmCode();
+}
+
+function showConfirmCode() {
   app.innerHTML = `
     <p>You entered: <strong>${palletCode}</strong></p>
     <button onclick="showStep2()">Confirm</button>
     <button onclick="showStep1()">Back</button>
   `;
+}
+
+function startBarcodeScan() {
+  if (!('BarcodeDetector' in window)) {
+    alert('Barcode scanning is not supported in this browser.');
+    return;
+  }
+
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+    .then(stream => {
+      const video = document.createElement('video');
+      video.srcObject = stream;
+      video.setAttribute('playsinline', 'true');
+      video.play();
+
+      app.innerHTML = `<p>Scanning... Point camera at barcode.</p>`;
+      app.appendChild(video);
+
+      const detector = new BarcodeDetector({ formats: ['code_128', 'ean_13'] });
+
+      const scan = () => {
+        detector.detect(video).then(barcodes => {
+          if (barcodes.length > 0) {
+            stream.getTracks().forEach(track => track.stop());
+            palletCode = barcodes[0].rawValue;
+            if (palletCode.length !== 15 || isNaN(palletCode)) {
+              alert("Scanned code is not a valid 15-digit number.");
+              showStep1();
+            } else {
+              showConfirmCode();
+            }
+          } else {
+            requestAnimationFrame(scan);
+          }
+        }).catch(err => {
+          console.error("Detection error:", err);
+          alert("Barcode detection failed.");
+          stream.getTracks().forEach(track => track.stop());
+          showStep1();
+        });
+      };
+
+      scan();
+    }).catch(err => {
+      alert("Camera access denied or unavailable.");
+      console.error(err);
+    });
 }
 
 function showStep2() {
@@ -72,7 +126,7 @@ function submitEntry() {
   })
   .then(res => res.json())
   .then(data => {
-    if(data.result === 'success') {
+    if (data.result === 'success') {
       app.innerHTML = `
         <p>✅ Entry submitted successfully!</p>
         <button onclick="showStep1()">Add Another</button>
@@ -86,13 +140,12 @@ function submitEntry() {
   });
 }
 
-
-// Make functions globally accessible
 window.confirmCode = confirmCode;
 window.confirmRunCode = confirmRunCode;
 window.submitEntry = submitEntry;
 window.showStep1 = showStep1;
 window.showStep2 = showStep2;
+window.startBarcodeScan = startBarcodeScan;
 
 loadRunCodes();
 showStep1();
