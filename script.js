@@ -56,7 +56,7 @@ function confirmRunCode() {
 }
 
 function submitEntry() {
-  const url = "https://script.google.com/macros/s/AKfycbxX35F9A_qfytiB1KUj0p9DzzXAoO9ziuo-XvXY4FzSfTnNqxqW8O-bYH5vEoXJ0KA/exec";
+  const url = "https://script.google.com/macros/s/AKfycbwX9BDvtz60MIjPJ8y-4izpWHzX8kesDDG68PcIEAP4OKf9XqsFO5r2mv-AXs8PE2v5/exec";
   const fd = new FormData();
   fd.append('code', palletCode);
   fd.append('run', runCode);
