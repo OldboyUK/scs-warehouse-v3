@@ -12,7 +12,7 @@ exports.handler = async function(event, context) {
     };
   }
 
-  const scriptURL = `https://script.google.com/macros/s/AKfycbyHhwoBxrH7NY585I4Jt1JWI19iBHBU6jrsNYQCPBYsan_eHfdizEAKuHIheE1JP-Lb/exec?code=${encodeURIComponent(code)}&run=${encodeURIComponent(run)}`;
+  const scriptURL = `https://script.google.com/macros/s/AKfycbzX86p3AKUmUgqDgAJZEJxRbwLXdfgIqHN8vXlz23Uj-1q2Lkyo103E3oUhBho5E2wK/exec?code=${encodeURIComponent(code)}&run=${encodeURIComponent(run)}`;
 
   try {
     const response = await fetch(scriptURL, {

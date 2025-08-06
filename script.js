@@ -4,26 +4,26 @@ let runCode = '';
 let runCodes = [];
 
 const ORDER_LOG_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=792145998&single=true&output=csv';
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyHhwoBxrH7NY585I4Jt1JWI19iBHBU6jrsNYQCPBYsan_eHfdizEAKuHIheE1JP-Lb/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzX86p3AKUmUgqDgAJZEJxRbwLXdfgIqHN8vXlz23Uj-1q2Lkyo103E3oUhBho5E2wK/exec';
 
 function loadRunCodes() {
   fetch(ORDER_LOG_CSV)
     .then(response => response.text())
     .then(csv => {
-      const rows = csv.trim().split('\n');
+      const rows = csv.trim().split('\n').slice(1, 3000); // Skip header, limit to A2:A3000
       const runSet = new Set();
 
-      // A2:A3000 only (skip header row A1)
-      rows.slice(1, 2999).forEach(row => {
+      rows.forEach(row => {
         const firstColumn = row.split(',')[0].trim();
-        if (firstColumn && !firstColumn.includes(',') && firstColumn !== "Run Code") {
-          runSet.add(firstColumn); // avoid duplicates
+        if (firstColumn && firstColumn !== "Run Code") {
+          runSet.add(firstColumn); // Deduplicate
         }
       });
 
       runCodes = Array.from(runSet);
     });
 }
+
 
 function showStep1() {
   app.innerHTML = `
