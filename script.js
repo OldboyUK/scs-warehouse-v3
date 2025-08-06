@@ -45,6 +45,16 @@ function showStep2() {
   `;
 }
 
+function confirmRunCode() {
+  runCode = document.getElementById('runCodeSelect').value;
+  app.innerHTML = `
+    <p>Code: <strong>${palletCode}</strong></p>
+    <p>Run Code: <strong>${runCode}</strong></p>
+    <button onclick="submitEntry()">Confirm & Submit</button>
+    <button onclick="showStep2()">Back</button>
+  `;
+}
+
 function submitEntry() {
   const url = "https://script.google.com/macros/s/AKfycbxX35F9A_qfytiB1KUj0p9DzzXAoO9ziuo-XvXY4FzSfTnNqxqW8O-bYH5vEoXJ0KA/exec";
   const fd = new FormData();
@@ -70,7 +80,13 @@ function submitEntry() {
   });
 }
 
+// Export functions to global scope so inline HTML onclick attributes can access them
+window.confirmCode = confirmCode;
+window.confirmRunCode = confirmRunCode;
+window.submitEntry = submitEntry;
+window.showStep1 = showStep1;
+window.showStep2 = showStep2;
 
-
+// Initial load
 loadRunCodes();
 showStep1();
