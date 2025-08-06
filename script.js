@@ -4,6 +4,7 @@ let runCode = '';
 let runCodes = [];
 
 const ORDER_LOG_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=792145998&single=true&output=csv';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx2pFPXhZr6665XC155i4RD4i0iS8mbytJ1mI8IRR6lWhWRgUVnCwsaMcEn3u4Fw7qJ/exec';
 
 function loadRunCodes() {
   fetch(ORDER_LOG_CSV)
@@ -56,37 +57,31 @@ function confirmRunCode() {
 }
 
 function submitEntry() {
-  const url = "https://script.google.com/macros/s/AKfycbwX9BDvtz60MIjPJ8y-4izpWHzX8kesDDG68PcIEAP4OKf9XqsFO5r2mv-AXs8PE2v5/exec";
-  const fd = new FormData();
-  fd.append('code', palletCode);
-  fd.append('run', runCode);
+  const url = `${SCRIPT_URL}?code=${encodeURIComponent(palletCode)}&run=${encodeURIComponent(runCode)}`;
 
-  fetch(url, {
-    method: 'POST',
-    body: fd
-  })
-  .then(res => {
-    if (res.ok) {
-      app.innerHTML = `
-        <p>✅ Entry submitted successfully!</p>
-        <button onclick="showStep1()">Add Another</button>
-      `;
-    } else {
-      app.innerHTML = `<p>❌ Error submitting entry. Please try again.</p>`;
-    }
-  })
-  .catch(err => {
-    app.innerHTML = `<p>❌ Network error. Please try again.</p>`;
-  });
+  fetch(url)
+    .then(res => res.json())
+    .then(data => {
+      if (data.result === 'success') {
+        app.innerHTML = `
+          <p>✅ Entry submitted successfully!</p>
+          <button onclick="showStep1()">Add Another</button>
+        `;
+      } else {
+        app.innerHTML = `<p>❌ Error: ${data.message}</p>`;
+      }
+    })
+    .catch(() => {
+      app.innerHTML = `<p>❌ Network error. Please try again.</p>`;
+    });
 }
 
-// Export functions to global scope so inline HTML onclick attributes can access them
+// Make functions globally accessible
 window.confirmCode = confirmCode;
 window.confirmRunCode = confirmRunCode;
 window.submitEntry = submitEntry;
 window.showStep1 = showStep1;
 window.showStep2 = showStep2;
 
-// Initial load
 loadRunCodes();
 showStep1();
