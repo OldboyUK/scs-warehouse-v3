@@ -1,4 +1,4 @@
-const fetch = require('node-fetch'); // Ensure node-fetch@2 is installed
+const fetch = require('node-fetch');
 
 exports.handler = async function(event, context) {
   const params = new URLSearchParams(event.body);
@@ -12,7 +12,7 @@ exports.handler = async function(event, context) {
     };
   }
 
-  // Call your Apps Script endpoint (GET or POST, depending on your setup)
+  
   const scriptURL = `https://script.google.com/macros/s/AKfycbzwQSASOLSssqz7Ksk9AQ7tU9RbbPW2ifuU0SHDAb-g7NZEPT0PzELzHaVNolzikw5b/exec?code=${code}&run=${run}`;
 
   try {
