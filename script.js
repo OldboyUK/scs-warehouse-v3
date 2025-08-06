@@ -4,7 +4,7 @@ let runCode = '';
 let runCodes = [];
 
 const RUN_CODES_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=1875380966&single=true&output=csv';
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzacnjpEPebjKnRczosrxrp2UEWvRqA5yG-OzBqpQa2FTuL5E67lJ7ZIDAmRQbi6j7R/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyILeG2KOvbzEdqZc5DvFTTJZWGuJrZYE5XTBIr6LOVEavwv3gRG2sCmrMImrS8GFY/exec';
 
 function loadRunCodes() {
   fetch(RUN_CODES_CSV)

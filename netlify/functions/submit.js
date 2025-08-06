@@ -16,7 +16,7 @@ exports.handler = async function(event, context) {
     };
   }
 
-  const scriptURL = `https://script.google.com/macros/s/AKfycbzacnjpEPebjKnRczosrxrp2UEWvRqA5yG-OzBqpQa2FTuL5E67lJ7ZIDAmRQbi6j7R/exec?code=${encodeURIComponent(code)}&run=${encodeURIComponent(run)}&units=${encodeURIComponent(units)}`;
+  const scriptURL = `https://script.google.com/macros/s/AKfycbyILeG2KOvbzEdqZc5DvFTTJZWGuJrZYE5XTBIr6LOVEavwv3gRG2sCmrMImrS8GFY/exec?code=${encodeURIComponent(code)}&run=${encodeURIComponent(run)}&units=${encodeURIComponent(units)}`;
 
   try {
     const response = await fetch(scriptURL, {
