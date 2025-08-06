@@ -4,7 +4,7 @@ let runCode = '';
 let runCodes = [];
 
 const RUN_CODES_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=1875380966&single=true&output=csv';
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwbACWfEisIN6uxxpkC1UQh27Tz2R0jUvCJHKgITHrQIEayxmO7-_hC50t6UOByeWKU/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyqXMGUdxzj5KK5DcoZYymCKsrP7LBlkO0guV9flTrR-_aqvaaYiQQl2LXN_nLHocZk/exec';
 
 function loadRunCodes() {
   fetch(RUN_CODES_CSV)
@@ -57,8 +57,8 @@ function startBarcodeScan() {
 
       app.innerHTML = `<p>📷 Scanning... Point camera at barcode.</p>`;
       app.appendChild(video);
-      video.style.width = '200px';
-      video.style.height = '150px';
+      video.style.width = '300px';
+      video.style.height = '300px';
 
       const detector = new BarcodeDetector({ formats: ['code_128', 'ean_13'] });
 
