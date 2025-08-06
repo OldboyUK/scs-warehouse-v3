@@ -16,11 +16,16 @@ exports.handler = async function(event, context) {
     };
   }
 
-  const scriptURL = `https://script.google.com/macros/s/AKfycbyILeG2KOvbzEdqZc5DvFTTJZWGuJrZYE5XTBIr6LOVEavwv3gRG2sCmrMImrS8GFY/exec?code=${encodeURIComponent(code)}&run=${encodeURIComponent(run)}&units=${encodeURIComponent(units)}`;
+  const scriptURL = 'https://script.google.com/macros/s/AKfycbyILeG2KOvbzEdqZc5DvFTTJZWGuJrZYE5XTBIr6LOVEavwv3gRG2sCmrMImrS8GFY/exec';
 
   try {
     const response = await fetch(scriptURL, {
       method: 'POST',
+      body: new URLSearchParams({
+        code: code,
+        run: run,
+        units: units
+      }),
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
       },
