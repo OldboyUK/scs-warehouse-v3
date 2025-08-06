@@ -57,26 +57,27 @@ function confirmRunCode() {
 }
 
 function submitEntry() {
-  const payload = { code: palletCode, run: runCode };
-  fetch('/.netlify/functions/submit', {
+  const url = "/.netlify/functions/submit";
+  const body = new URLSearchParams();
+  body.append("code", palletCode);
+  body.append("run", runCode);
+
+  fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
+    body: body
   })
-  .then(res => res.json())
-  .then(data => {
-    if (data.result === 'success') {
-      app.innerHTML = `
-        <p>✅ Entry submitted successfully!</p>
-        <button onclick="showStep1()">Add Another</button>
-      `;
-    } else {
-      app.innerHTML = `<p>❌ Error: ${data.message}</p>`;
-    }
-  }).catch(() => {
+  .then(res => res.text())
+  .then(text => {
+    app.innerHTML = `
+      <p>✅ Entry submitted successfully!</p>
+      <button onclick="showStep1()">Add Another</button>
+    `;
+  })
+  .catch(err => {
     app.innerHTML = `<p>❌ Network error. Please try again.</p>`;
   });
 }
+
 
 // Make functions globally accessible
 window.confirmCode = confirmCode;
