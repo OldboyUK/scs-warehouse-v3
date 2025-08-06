@@ -1,0 +1,23 @@
+{
+  "name": "scs-warehouse-app-v3",
+  "version": "1.0.0",
+  "main": "script.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OldboyUK/scs-warehouse-v3.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/OldboyUK/scs-warehouse-v3/issues"
+  },
+  "homepage": "https://github.com/OldboyUK/scs-warehouse-v3#readme",
+  "dependencies": {
+    "node-fetch": "^2.7.0"
+  },
+  "description": ""
+}
