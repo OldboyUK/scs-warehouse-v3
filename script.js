@@ -4,13 +4,14 @@ let runCode = '';
 let runCodes = [];
 
 const RUN_CODES_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=1875380966&single=true&output=csv';
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyILeG2KOvbzEdqZc5DvFTTJZWGuJrZYE5XTBIr6LOVEavwv3gRG2sCmrMImrS8GFY/exec';
+const SCRIPT_URL = '/.netlify/functions/submit'; // Updated to Netlify function
 
 function loadRunCodes() {
   fetch(RUN_CODES_CSV)
     .then(response => response.text())
     .then(csv => {
       runCodes = csv.trim().split('\n').map(code => code.trim()).filter(code => code);
+      console.log('Loaded run codes:', runCodes);
     });
 }
 
@@ -135,14 +136,14 @@ function confirmUnits() {
 }
 
 function submitEntry(units) {
-  const url = "/.netlify/functions/submit";
+  console.log('Submitting: code=%s, run=%s, units=%s', palletCode, runCode, units);
 
   const body = new URLSearchParams();
   body.append("code", palletCode);
   body.append("run", runCode);
   body.append("units", units);
 
-  fetch(url, {
+  fetch(SCRIPT_URL, {
     method: 'POST',
     body: body,
     headers: {
@@ -151,6 +152,7 @@ function submitEntry(units) {
   })
   .then(res => res.json())
   .then(data => {
+    console.log('Submission response:', data);
     if (data.result === 'success') {
       app.innerHTML = `
         <p>✅ Entry submitted successfully!</p>
@@ -161,6 +163,7 @@ function submitEntry(units) {
     }
   })
   .catch(err => {
+    console.error('Submission error:', err);
     app.innerHTML = `<p>❌ Network error. Please try again.</p>`;
   });
 }
