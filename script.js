@@ -4,14 +4,16 @@ let runCode = '';
 let runCodes = [];
 
 const ORDER_LOG_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=792145998&single=true&output=csv';
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxrQtSY-JY2JjXKdZqXk9u_LCROFEE_yL-SOtXBUeZQT1yYyWaluObOB9Ir8wGahE8Q/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzS93dNg8LX9FkCFZIquPmQ9FTdx1IHoSb0C101dILnXV712T7r3R9pJokmcqG6e-Xf/exec';
 
 function loadRunCodes() {
   fetch(ORDER_LOG_CSV)
     .then(response => response.text())
     .then(csv => {
-      const rows = csv.split('\n').slice(1, 2999); // Skip header, max 2999 entries (A2:A3000)
-      runCodes = rows.map(row => row.split(',')[0].trim()).filter(code => code);
+      const rows = csv.split('\n').slice(1, 2999); // Skip header, up to A3000
+      runCodes = rows
+        .map(row => row.split(',')[0].trim())
+        .filter(code => code !== '' && code.length > 0);
     });
 }
 
@@ -58,6 +60,8 @@ function startBarcodeScan() {
 
       app.innerHTML = `<p>📷 Scanning... Point camera at barcode.</p>`;
       app.appendChild(video);
+      video.style.width = '300px';
+      video.style.height = 'auto';
 
       const detector = new BarcodeDetector({ formats: ['code_128', 'ean_13'] });
 
