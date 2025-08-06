@@ -13,7 +13,7 @@ exports.handler = async function(event, context) {
   }
 
   // Call your Apps Script endpoint (GET or POST, depending on your setup)
-  const scriptURL = `https://script.google.com/macros/s/AKfycbx2pFPXhZr6665XC155i4RD4i0iS8mbytJ1mI8IRR6lWhWRgUVnCwsaMcEn3u4Fw7qJ/exec?code=${code}&run=${run}`;
+  const scriptURL = `https://script.google.com/macros/s/AKfycbzwQSASOLSssqz7Ksk9AQ7tU9RbbPW2ifuU0SHDAb-g7NZEPT0PzELzHaVNolzikw5b/exec?code=${code}&run=${run}`;
 
   try {
     const response = await fetch(scriptURL);
