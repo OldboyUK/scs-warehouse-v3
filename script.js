@@ -10,10 +10,14 @@ function loadRunCodes() {
   fetch(ORDER_LOG_CSV)
     .then(response => response.text())
     .then(csv => {
-      const rows = csv.split('\n').slice(1, 2999); // Skip header, up to A3000
-      runCodes = rows
-        .map(row => row.split(',')[0].trim())
-        .filter(code => code !== '' && code.length > 0);
+      const rows = csv.trim().split('\n');
+      
+      // Drop header row (A1) by slicing from row 1
+      const dataRows = rows.slice(1, 3000); // A2 to A3000
+
+      runCodes = dataRows
+        .map(row => row.split(',')[0].trim()) // Take column A only
+        .filter(code => code !== '' && code.length > 0 && code !== 'Run Code'); // Filter blanks & header repeat
     });
 }
 
