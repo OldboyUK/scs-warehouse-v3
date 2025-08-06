@@ -4,25 +4,25 @@ let runCode = '';
 let runCodes = [];
 
 const ORDER_LOG_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=792145998&single=true&output=csv';
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzX86p3AKUmUgqDgAJZEJxRbwLXdfgIqHN8vXlz23Uj-1q2Lkyo103E3oUhBho5E2wK/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzCuwqmyYOZd9e57X_a4OsPdJLu4yfOJ-TYNpqnJweUmG8Q1lPK0nR27WbsOIHN9SUW/exec';
 
 function loadRunCodes() {
   fetch(ORDER_LOG_CSV)
     .then(response => response.text())
     .then(csv => {
-      const rows = csv.trim().split('\n').slice(1, 3000); // Skip header, limit to A2:A3000
+      const rows = csv.trim().split('\n').slice(1, 2999); // Skip row 1, get rows 2–3000
       const runSet = new Set();
 
       rows.forEach(row => {
-        const firstColumn = row.split(',')[0].trim();
-        if (firstColumn && firstColumn !== "Run Code") {
-          runSet.add(firstColumn); // Deduplicate
-        }
+        const columns = row.split(',');
+        const value = columns[0]?.trim();
+        if (value) runSet.add(value); // Only column A, skip blanks
       });
 
       runCodes = Array.from(runSet);
     });
 }
+
 
 
 function showStep1() {
@@ -68,8 +68,8 @@ function startBarcodeScan() {
 
       app.innerHTML = `<p>📷 Scanning... Point camera at barcode.</p>`;
       app.appendChild(video);
-      video.style.width = '300px';
-      video.style.height = '200px';
+      video.style.width = '200px';
+      video.style.height = '300px';
 
       const detector = new BarcodeDetector({ formats: ['code_128', 'ean_13'] });
 
