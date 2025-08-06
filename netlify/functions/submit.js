@@ -13,7 +13,7 @@ exports.handler = async function(event, context) {
   }
 
   
-  const scriptURL = `https://script.google.com/macros/s/AKfycbzwQSASOLSssqz7Ksk9AQ7tU9RbbPW2ifuU0SHDAb-g7NZEPT0PzELzHaVNolzikw5b/exec?code=${code}&run=${run}`;
+  const scriptURL = `https://script.google.com/macros/s/AKfycbzbDeFjUITbUbcgM9Gffy4cacY6hXtK8zMprM_w-p8avXcL0m879kUGsDoTedEqg_hn/exec?code=${code}&run=${run}`;
 
   try {
     const response = await fetch(scriptURL);
