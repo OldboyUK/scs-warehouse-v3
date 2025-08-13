@@ -79,30 +79,29 @@ function addShelf(num) {
 async function startScan(type) {
   scanningType = type;
   try {
-    // 1) Explicitly request permission to ensure browser shows the prompt
+    // 1) Explicit permission prompt
     const tempStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-    // Immediately stop the temp stream (we just needed the permission prompt)
     tempStream.getTracks().forEach(t => t.stop());
 
-    // 2) Init ZXing reader once
+    // 2) Init ZXing reader
     if (!codeReader) codeReader = new ZXing.BrowserMultiFormatReader();
 
-    // 3) List cameras
+    // 3) Pick camera
     const devices = await ZXing.BrowserCodeReader.listVideoInputDevices();
     if (!devices.length) {
       alert('No camera found.');
       return;
     }
-    // Prefer back camera if label hints at it
     const backCam = devices.find(d => /back|rear|environment/i.test(d.label));
     selectedDeviceId = (backCam || devices[0]).deviceId;
 
-    // 4) Show video element
-    const vid = document.getElementById(VIDEO_ID);
+    // 4) Show video
+    const vid = document.getElementById('preview');
     vid.style.display = 'block';
+    vid.setAttribute('playsinline', 'true'); // iOS fix
 
-    // 5) Start continuous decode
-    await codeReader.decodeFromVideoDevice(selectedDeviceId, VIDEO_ID, (result, err) => {
+    // 5) Start decode
+    await codeReader.decodeFromVideoDevice(selectedDeviceId, 'preview', (result) => {
       if (result) {
         const value = (result.getText() || '').trim();
         stopScan();
@@ -110,22 +109,17 @@ async function startScan(type) {
           palletCode = value;
           showStep2();
         } else if (scanningType === 'location') {
-          if (value.endsWith('-')) {
-            locationCode = value;
-            askForShelf();
-          } else {
-            locationCode = value;
-            submitAssignment();
-          }
+          if (value.endsWith('-')) { locationCode = value; askForShelf(); }
+          else { locationCode = value; submitAssignment(); }
         }
       }
-      // ignore decode errors; keep scanning
     });
   } catch (e) {
     console.error('Camera/scan error:', e);
-    alert('Camera permission blocked or unavailable. Please allow camera access for this site.');
+    alert('Camera permission blocked. Click the lock icon in the address bar and set Camera → Allow, then try again.');
   }
 }
+
 
 function stopScan() {
   try {

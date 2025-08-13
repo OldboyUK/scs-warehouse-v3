@@ -2,20 +2,17 @@ const fetch = require('node-fetch');
 
 const SHARED_TOKEN = 'J4PAN88';
 
+// Fallback so Pallet Entry works even if the env var isn't set yet.
+// (Use your actual Apps Script /exec URL here.)
+const FALLBACK_PALLET_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyILeG2KOvbzEdqZc5DvFTTJZWGuJrZYE5XTBIr6LOVEavwv3gRG2sCmrMImrS8GFY/exec';
+
 exports.handler = async function (event) {
   try {
     if (event.httpMethod !== 'POST') {
       return { statusCode: 405, body: JSON.stringify({ result: 'error', message: 'Method Not Allowed' }) };
     }
 
-    // MUST come from Netlify env var. Do NOT hardcode in code.
-    const scriptURL = process.env.PALLET_SCRIPT_URL;
-    if (!scriptURL) {
-      return {
-        statusCode: 500,
-        body: JSON.stringify({ result: 'error', message: 'Missing PALLET_SCRIPT_URL environment variable' })
-      };
-    }
+    const scriptURL = process.env.PALLET_SCRIPT_URL || FALLBACK_PALLET_SCRIPT_URL;
 
     const params = new URLSearchParams(event.body || '');
     const code  = params.get('code');
@@ -25,10 +22,7 @@ exports.handler = async function (event) {
     if (!code || !run || !units) {
       return {
         statusCode: 400,
-        body: JSON.stringify({
-          result: 'error',
-          message: `Missing parameters: code=${code}, run=${run}, units=${units}`
-        }),
+        body: JSON.stringify({ result: 'error', message: `Missing parameters: code=${code}, run=${run}, units=${units}` })
       };
     }
 
@@ -47,7 +41,6 @@ exports.handler = async function (event) {
     const text = await response.text();
     return { statusCode: response.status || 200, body: text };
   } catch (err) {
-    console.error('submit error:', err);
     return { statusCode: 500, body: JSON.stringify({ result: 'error', message: `Fetch error: ${err.message}` }) };
   }
 };
