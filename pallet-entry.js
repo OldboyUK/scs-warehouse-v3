@@ -14,9 +14,11 @@ function loadRunCodes() {
         .trim()
         .split('\n')
         .map(code => code.trim())
-        .filter(code => code);              // remove blanks
-      // tidy: unique + alpha sort (nice for datalist)
-      runCodes = Array.from(new Set(runCodes)).sort((a,b)=>a.localeCompare(b, undefined, {numeric:true}));
+        .filter(Boolean);
+
+      // unique + sort (nicer list)
+      runCodes = Array.from(new Set(runCodes))
+        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
       console.log('Loaded run codes:', runCodes);
     });
 }
@@ -25,9 +27,13 @@ function showStep1() {
   app.innerHTML = `
     <label>Enter 15-digit code:</label>
     <input id="codeInput" maxlength="15" />
-    <button onclick="confirmCode()">Next</button>
+    <div class="actions mt-3">
+      <button onclick="confirmCode()">Next</button>
+    </div>
     <hr>
-    <button onclick="startBarcodeScan()">📷 Scan Barcode</button>
+    <div class="actions">
+      <button onclick="startBarcodeScan()">📷 Scan Barcode</button>
+    </div>
   `;
 }
 
@@ -44,8 +50,10 @@ function confirmCode() {
 function showConfirmCode() {
   app.innerHTML = `
     <p>You entered: <strong>${palletCode}</strong></p>
-    <button onclick="showStep2()">Confirm</button>
-    <button onclick="showStep1()">Back</button>
+    <div class="actions mt-3">
+      <button onclick="showStep2()">Confirm</button>
+      <button class="btn-ghost" onclick="showStep1()">Back</button>
+    </div>
   `;
 }
 
@@ -100,18 +108,29 @@ function startBarcodeScan() {
     });
 }
 
-/* ====== NEW: datalist hybrid dropdown for run codes ====== */
+/* ========== Hybrid dropdown (type to filter + click arrow to open) ========== */
+function escapeHTML(s){
+  return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
 function findRunCode(value) {
   const v = (value || '').trim().toUpperCase();
   return runCodes.find(c => c.toUpperCase() === v) || null;
 }
 
 function showStep2() {
-  const options = runCodes.map(code => `<option value="${code}"></option>`).join('');
   app.innerHTML = `
     <label>Select run code:</label>
-    <input id="runCodeInput" list="runCodesList" placeholder="Type to search…" autocomplete="off" />
-    <datalist id="runCodesList">${options}</datalist>
+
+    <!-- combo container -->
+    <div id="runCombo" style="position:relative;">
+      <input id="runCodeInput" placeholder="Type to search…" autocomplete="off"
+             style="width:100%; padding-right:42px;">
+      <button id="runCodeToggle" type="button" aria-label="Open suggestions"
+              style="position:absolute; right:6px; top:6px; height:34px; width:34px; border-radius:10px; border:1px solid var(--card-border); background:rgba(255,255,255,0.08); color:var(--text); cursor:pointer;">▾</button>
+      <div id="runCodeList" hidden
+           style="position:absolute; z-index:1000; left:0; right:0; margin-top:6px; max-height:240px; overflow:auto; border:1px solid var(--card-border); border-radius:12px; background:rgba(10,15,26,0.95); backdrop-filter: blur(6px); box-shadow: var(--shadow);">
+      </div>
+    </div>
 
     <div class="actions mt-3">
       <button onclick="confirmRunCode()">Next</button>
@@ -119,11 +138,89 @@ function showStep2() {
     </div>
   `;
 
-  const input = document.getElementById('runCodeInput');
-  input.focus();
+  setupRunCodeCombo();
+}
+
+function setupRunCodeCombo(){
+  const input  = document.getElementById('runCodeInput');
+  const toggle = document.getElementById('runCodeToggle');
+  const list   = document.getElementById('runCodeList');
+
+  let open = false;
+  let items = [];
+  let highlight = -1;
+
+  function filter(q){
+    const query = (q || '').trim().toUpperCase();
+    items = runCodes.filter(c => c.toUpperCase().startsWith(query));
+    render();
+  }
+
+  function render(){
+    list.innerHTML = items.map((code, i) =>
+      `<div class="combo-option" data-value="${escapeHTML(code)}"
+            style="padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.06); cursor:pointer; ${i===items.length-1?'border-bottom:none;':''} ${i===highlight?'background:rgba(255,255,255,0.08);':''}">
+        ${escapeHTML(code)}
+       </div>`
+    ).join('') || `<div style="padding:10px 12px; color:var(--muted);">No matches</div>`;
+  }
+
+  function openList(){
+    if (!open){ list.hidden = false; open = true; }
+  }
+  function closeList(){
+    if (open){ list.hidden = true; open = false; highlight = -1; }
+  }
+
+  function selectValue(val){
+    input.value = val;
+    closeList();
+    input.focus();
+  }
+
+  // events
+  input.addEventListener('input', () => { filter(input.value); openList(); });
+  input.addEventListener('focus',  () => { filter(input.value); openList(); });
+
   input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { confirmRunCode(); }
+    if (!open && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) { filter(input.value); openList(); }
+    if (!open && e.key === 'Enter') { return; }
+
+    if (e.key === 'ArrowDown'){
+      highlight = Math.min((highlight + 1), items.length - 1);
+      e.preventDefault(); render();
+    } else if (e.key === 'ArrowUp'){
+      highlight = Math.max((highlight - 1), 0);
+      e.preventDefault(); render();
+    } else if (e.key === 'Enter'){
+      if (open && highlight >= 0 && items[highlight]){
+        selectValue(items[highlight]);
+        e.preventDefault();
+      }
+    } else if (e.key === 'Escape'){
+      closeList();
+    }
   });
+
+  toggle.addEventListener('click', () => {
+    if (open) { closeList(); }
+    else { filter(input.value); openList(); }
+  });
+
+  list.addEventListener('click', (e) => {
+    const el = e.target.closest('.combo-option');
+    if (el) selectValue(el.dataset.value);
+  });
+
+  document.addEventListener('click', (e) => {
+    const combo = document.getElementById('runCombo');
+    if (combo && !combo.contains(e.target)) closeList();
+  }, { capture: true });
+
+  // initial
+  filter('');
+  closeList();
+  input.focus();
 }
 
 function confirmRunCode() {
@@ -148,7 +245,7 @@ function confirmRunCode() {
     </div>
   `;
 }
-/* ====== /NEW ====== */
+/* ================= End hybrid dropdown =================== */
 
 function confirmUnits() {
   const input = document.getElementById('unitInput').value;
@@ -163,8 +260,10 @@ function confirmUnits() {
     <p>Code: <strong>${palletCode}</strong></p>
     <p>Run Code: <strong>${runCode}</strong></p>
     <p>Units: <strong>${units}</strong></p>
-    <button onclick="submitEntry(${units})">Confirm & Submit</button>
-    <button onclick="confirmRunCode()">Back</button>
+    <div class="actions mt-3">
+      <button onclick="submitEntry(${units})">Confirm & Submit</button>
+      <button class="btn-ghost" onclick="confirmRunCode()">Back</button>
+    </div>
   `;
 }
 
@@ -191,7 +290,9 @@ function submitEntry(units) {
     if (data.result === 'success') {
       app.innerHTML = `
         <p>✅ Entry submitted successfully!</p>
-        <button onclick="showStep1()">Add Another</button>
+        <div class="actions mt-3">
+          <button onclick="showStep1()">Add Another</button>
+        </div>
       `;
     } else {
       app.innerHTML = `<p>❌ Error: ${data.message}</p>`;
