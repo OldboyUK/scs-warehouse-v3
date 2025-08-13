@@ -230,3 +230,61 @@ video{
 .mt-2{ margin-top: 8px; }
 .mt-3{ margin-top: 16px; }
 .mt-4{ margin-top: 24px; }
+
+/* Make all menu buttons identical */
+.menu .home-link,
+.menu .home-link.is-secondary{
+  color: #0b1220;
+  background: linear-gradient(180deg, #ffffff, #e8efff);
+  border: 1px solid #cfe0ff;
+  box-shadow: 0 6px 18px rgba(91,156,255,0.25);
+}
+
+/* If you still have the old nth-child greys, kill them */
+.menu .home-link:nth-child(2),
+.menu .home-link:nth-child(3){
+  background: linear-gradient(180deg, #ffffff, #e8efff) !important;
+  color: #0b1220 !important;
+  border: 1px solid #cfe0ff !important;
+  box-shadow: 0 6px 18px rgba(91,156,255,0.25) !important;
+}
+
+/* Small, discreet Home button (top-right) */
+.home-btn{
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--text);
+  background: rgba(255,255,255,0.10);
+  border: 1px solid var(--card-border);
+  box-shadow: var(--shadow);
+  z-index: 1000;
+  transition: transform .08s ease, background .12s ease;
+}
+.home-btn:hover{ transform: translateY(-1px); background: rgba(255,255,255,0.14); }
+.home-btn:active{ transform: translateY(0);   background: rgba(255,255,255,0.10); }
+
+/* Make all three home-page menu buttons identical */
+.menu .home-link,
+.menu .home-link.is-secondary{
+  color: #0b1220;
+  background: linear-gradient(180deg, #ffffff, #e8efff);
+  border: 1px solid #cfe0ff;
+  box-shadow: 0 6px 18px rgba(91,156,255,0.25);
+}
+.menu .home-link:nth-child(2),
+.menu .home-link:nth-child(3){
+  background: linear-gradient(180deg, #ffffff, #e8efff) !important;
+  color: #0b1220 !important;
+  border: 1px solid #cfe0ff !important;
+  box-shadow: 0 6px 18px rgba(91,156,255,0.25) !important;
+}
