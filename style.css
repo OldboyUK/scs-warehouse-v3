@@ -214,3 +214,52 @@ video{
 }
 .home-btn:hover{ transform: translateY(-1px); background: rgba(255,255,255,0.14); }
 .home-btn:active{ transform: translateY(0);   background: rgba(255,255,255,0.10); }
+
+/* === 1) Home page buttons: same width + centred === */
+.menu{
+  grid-template-columns: 1fr;      /* single column on home like your mock */
+  justify-items: center;           /* centre the buttons */
+}
+.home-link{
+  width: clamp(280px, 84vw, 420px);  /* identical width regardless of text length */
+}
+
+/* === 2) Centre the text in the dropdown === */
+select{
+  text-align: center;
+  text-align-last: center;  /* supported on most modern browsers */
+}
+select option{ text-align: center; } /* fallback */
+
+/* === 3) "Next" & "Start Over": equal width + more spacing === */
+.actions{ gap: 16px; } /* a bit more room between the two buttons */
+.actions > button,
+.actions > .btn{
+  flex: 1 1 0;          /* make them equal width */
+  min-width: 140px;     /* avoids tiny buttons on very small screens */
+}
+
+/* === 4) Make the Home icon white (no HTML change needed) === */
+/* Hide the emoji text and draw a white SVG house instead */
+.home-btn{
+  font-size: 0;  /* hides the colourful emoji if it's still in the link */
+  color: #fff;   /* icon colour */
+  background: rgba(255,255,255,0.12);
+  border: 1px solid var(--card-border);
+}
+.home-btn::before{
+  content: "";
+  width: 20px;
+  height: 20px;
+  display: block;
+  background: currentColor;
+  -webkit-mask: url('data:image/svg+xml;utf8,\
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">\
+<path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/>\
+</svg>') center / contain no-repeat;
+          mask: url('data:image/svg+xml;utf8,\
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">\
+<path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/>\
+</svg>') center / contain no-repeat;
+}
+.home-btn:hover{ background: rgba(255,255,255,0.18); }
