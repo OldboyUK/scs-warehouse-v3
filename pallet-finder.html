@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>pallet finder - SCS Warehouse Management Beta</title>
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    /* Light table styling that matches your theme variables */
+    .table-wrap{
+      overflow:auto;
+      border:1px solid var(--card-border);
+      border-radius: var(--radius);
+      background: rgba(255,255,255,0.03);
+      box-shadow: var(--shadow);
+      margin-top: 16px;
+    }
+    table{
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    thead th{
+      position: sticky;
+      top: 0;
+      background: rgba(255,255,255,0.06);
+      color: var(--text);
+      text-align: left;
+    }
+    th, td{
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--card-border);
+      white-space: nowrap;
+    }
+    tbody tr:hover{ background: rgba(255,255,255,0.04); }
+  </style>
+</head>
+<body>
+  <!-- Discreet corner Home button -->
+  <a href="index.html" class="home-btn" aria-label="Home">🏠</a>
+
+  <div class="container">
+    <h1>pallet finder</h1>
+    <p class="status" id="status">Loading table…</p>
+    <div class="table-wrap" id="tableWrap"></div>
+  </div>
+
+  <script src="pallet-finder.js"></script>
+</body>
+</html>
