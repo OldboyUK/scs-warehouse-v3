@@ -1,27 +1,32 @@
 const fetch = require('node-fetch');
 
 const SHARED_TOKEN = 'J4PAN88';
-// Optional env override for the location Apps Script URL:
-const FALLBACK_LOCATION_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwZTH3j924p8Hw_MWAXRsdZCgfy8-pNaoEUrh-40j4XAL_79beFTPsRYdGLMy517CZ5/exec';
 
-exports.handler = async function(event) {
-  if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, body: JSON.stringify({ result: 'error', message: 'Method Not Allowed' }) };
-  }
-
-  const params = new URLSearchParams(event.body || '');
-  const pallet   = params.get('pallet');
-  const location = params.get('location');
-  const date     = params.get('date');
-  const time     = params.get('time');
-
-  if (!pallet || !location || !date || !time) {
-    return { statusCode: 400, body: JSON.stringify({ result: 'error', message: 'Missing parameters' }) };
-  }
-
-  const scriptURL = process.env.LOCATION_SCRIPT_URL || FALLBACK_LOCATION_SCRIPT_URL;
-
+exports.handler = async function (event) {
   try {
+    if (event.httpMethod !== 'POST') {
+      return { statusCode: 405, body: JSON.stringify({ result: 'error', message: 'Method Not Allowed' }) };
+    }
+
+    // MUST come from Netlify env var. Do NOT hardcode in code.
+    const scriptURL = process.env.LOCATION_SCRIPT_URL;
+    if (!scriptURL) {
+      return {
+        statusCode: 500,
+        body: JSON.stringify({ result: 'error', message: 'Missing LOCATION_SCRIPT_URL environment variable' })
+      };
+    }
+
+    const params = new URLSearchParams(event.body || '');
+    const pallet   = params.get('pallet');
+    const location = params.get('location');
+    const date     = params.get('date');
+    const time     = params.get('time');
+
+    if (!pallet || !location || !date || !time) {
+      return { statusCode: 400, body: JSON.stringify({ result: 'error', message: 'Missing parameters' }) };
+    }
+
     const body = new URLSearchParams();
     body.append('pallet', pallet);
     body.append('location', location);
@@ -36,8 +41,6 @@ exports.handler = async function(event) {
     });
 
     const text = await res.text();
-
-    // Prefer JSON if Apps Script returns JSON
     try {
       const json = JSON.parse(text);
       return { statusCode: res.status || 200, body: JSON.stringify(json) };
