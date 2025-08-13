@@ -8,7 +8,6 @@ exports.handler = async function (event) {
       return { statusCode: 405, body: JSON.stringify({ result: 'error', message: 'Method Not Allowed' }) };
     }
 
-    // MUST come from Netlify env var. Do NOT hardcode in code.
     const scriptURL = process.env.LOCATION_SCRIPT_URL;
     if (!scriptURL) {
       return {
@@ -41,6 +40,7 @@ exports.handler = async function (event) {
     });
 
     const text = await res.text();
+    // Try to return JSON if Apps Script returned JSON
     try {
       const json = JSON.parse(text);
       return { statusCode: res.status || 200, body: JSON.stringify(json) };
@@ -48,7 +48,6 @@ exports.handler = async function (event) {
       return { statusCode: res.status || 200, body: JSON.stringify({ result: 'ok', raw: text }) };
     }
   } catch (err) {
-    console.error('assignLocation error:', err);
     return { statusCode: 500, body: JSON.stringify({ result: 'error', message: String(err) }) };
   }
 };
