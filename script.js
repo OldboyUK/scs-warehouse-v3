@@ -99,8 +99,8 @@ function showStep2() {
   app.innerHTML = `
     <label>Select run code:</label>
     <select id="runCodeSelect">${options}</select>
-    <button onclick="confirmRunCode()">Next</button>
-    <button onclick="showStep1()">Start Over</button>
+    <button onclick="confirmRunCode()">Confirm</button>
+    <button onclick="showStep1()">Back</button>
   `;
 }
 
