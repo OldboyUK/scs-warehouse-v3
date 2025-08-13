@@ -174,13 +174,15 @@ function setupRunCodeCombo(){
 
   function selectValue(val){
     input.value = val;
-    closeList();
-    input.focus();
+    closeList();           // ✅ hide immediately after picking
+    // Do NOT re-focus the input here; that was reopening the list via the focus handler.
   }
 
   // events
   input.addEventListener('input', () => { filter(input.value); openList(); });
-  input.addEventListener('focus',  () => { filter(input.value); openList(); });
+
+  // Do not auto-open on focus (prevents reopening after a click selection)
+  input.addEventListener('focus',  () => { filter(input.value); /* no open here */ });
 
   input.addEventListener('keydown', (e) => {
     if (!open && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) { filter(input.value); openList(); }
@@ -220,8 +222,8 @@ function setupRunCodeCombo(){
   // initial
   filter('');
   closeList();
-  input.focus();
 }
+
 
 function confirmRunCode() {
   const entered = document.getElementById('runCodeInput').value;
