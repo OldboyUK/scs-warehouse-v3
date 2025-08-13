@@ -2,7 +2,7 @@ const fetch = require('node-fetch');
 
 const SHARED_TOKEN = 'J4PAN88';
 // Optional env override for the location Apps Script URL:
-const FALLBACK_LOCATION_SCRIPT_URL = 'https://script.google.com/macros/s/REPLACE_WITH_LOCATION_ASSIGNMENT_EXEC_URL/exec';
+const FALLBACK_LOCATION_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwZTH3j924p8Hw_MWAXRsdZCgfy8-pNaoEUrh-40j4XAL_79beFTPsRYdGLMy517CZ5/exec';
 
 exports.handler = async function(event) {
   if (event.httpMethod !== 'POST') {

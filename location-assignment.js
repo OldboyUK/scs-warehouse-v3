@@ -79,24 +79,29 @@ function addShelf(num) {
 async function startScan(type) {
   scanningType = type;
   try {
-    // lazy init reader
+    // 1) Explicitly request permission to ensure browser shows the prompt
+    const tempStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    // Immediately stop the temp stream (we just needed the permission prompt)
+    tempStream.getTracks().forEach(t => t.stop());
+
+    // 2) Init ZXing reader once
     if (!codeReader) codeReader = new ZXing.BrowserMultiFormatReader();
 
-    // list cameras
+    // 3) List cameras
     const devices = await ZXing.BrowserCodeReader.listVideoInputDevices();
     if (!devices.length) {
       alert('No camera found.');
       return;
     }
-    // prefer back camera if available
+    // Prefer back camera if label hints at it
     const backCam = devices.find(d => /back|rear|environment/i.test(d.label));
     selectedDeviceId = (backCam || devices[0]).deviceId;
 
-    // show video element
-    const vid = el(VIDEO_ID);
+    // 4) Show video element
+    const vid = document.getElementById(VIDEO_ID);
     vid.style.display = 'block';
 
-    // start continuous decode
+    // 5) Start continuous decode
     await codeReader.decodeFromVideoDevice(selectedDeviceId, VIDEO_ID, (result, err) => {
       if (result) {
         const value = (result.getText() || '').trim();
@@ -117,8 +122,8 @@ async function startScan(type) {
       // ignore decode errors; keep scanning
     });
   } catch (e) {
-    console.error('Scan start error:', e);
-    alert('Could not start camera. Check permissions.');
+    console.error('Camera/scan error:', e);
+    alert('Camera permission blocked or unavailable. Please allow camera access for this site.');
   }
 }
 
