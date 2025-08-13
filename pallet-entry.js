@@ -10,7 +10,13 @@ function loadRunCodes() {
   fetch(RUN_CODES_CSV)
     .then(response => response.text())
     .then(csv => {
-      runCodes = csv.trim().split('\n').map(code => code.trim()).filter(code => code);
+      runCodes = csv
+        .trim()
+        .split('\n')
+        .map(code => code.trim())
+        .filter(code => code);              // remove blanks
+      // tidy: unique + alpha sort (nice for datalist)
+      runCodes = Array.from(new Set(runCodes)).sort((a,b)=>a.localeCompare(b, undefined, {numeric:true}));
       console.log('Loaded run codes:', runCodes);
     });
 }
@@ -94,28 +100,55 @@ function startBarcodeScan() {
     });
 }
 
+/* ====== NEW: datalist hybrid dropdown for run codes ====== */
+function findRunCode(value) {
+  const v = (value || '').trim().toUpperCase();
+  return runCodes.find(c => c.toUpperCase() === v) || null;
+}
+
 function showStep2() {
-  let options = runCodes.map(code => `<option value="${code}">${code}</option>`).join('');
+  const options = runCodes.map(code => `<option value="${code}"></option>`).join('');
   app.innerHTML = `
     <label>Select run code:</label>
-    <select id="runCodeSelect">${options}</select>
-    <button onclick="confirmRunCode()">Confirm</button>
-    <button onclick="showStep1()">Back</button>
+    <input id="runCodeInput" list="runCodesList" placeholder="Type to search…" autocomplete="off" />
+    <datalist id="runCodesList">${options}</datalist>
+
+    <div class="actions mt-3">
+      <button onclick="confirmRunCode()">Next</button>
+      <button class="btn-ghost" onclick="showStep1()">Back</button>
+    </div>
   `;
+
+  const input = document.getElementById('runCodeInput');
+  input.focus();
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { confirmRunCode(); }
+  });
 }
 
 function confirmRunCode() {
-  runCode = document.getElementById('runCodeSelect').value;
+  const entered = document.getElementById('runCodeInput').value;
+  const matched = findRunCode(entered);
+
+  if (!matched) {
+    alert('Please choose a valid run code from the list. Start typing and pick a suggestion.');
+    return;
+  }
+
+  runCode = matched;
 
   app.innerHTML = `
     <p>Code: <strong>${palletCode}</strong></p>
     <p>Run Code: <strong>${runCode}</strong></p>
     <label>Enter number of units:</label>
     <input id="unitInput" type="number" min="1" />
-    <button onclick="confirmUnits()">Next</button>
-    <button onclick="showStep2()">Back</button>
+    <div class="actions mt-3">
+      <button onclick="confirmUnits()">Next</button>
+      <button class="btn-ghost" onclick="showStep2()">Back</button>
+    </div>
   `;
 }
+/* ====== /NEW ====== */
 
 function confirmUnits() {
   const input = document.getElementById('unitInput').value;
