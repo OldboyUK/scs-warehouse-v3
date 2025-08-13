@@ -1,40 +1,3 @@
-body {
-  font-family: sans-serif;
-  padding: 1em;
-  background-color: #f2f2f2;
-}
-
-.container {
-  background: white;
-  padding: 1em;
-  border-radius: 8px;
-  max-width: 500px;
-  margin: auto;
-}
-
-input, select, button {
-  font-size: 1.1em;
-  padding: 0.5em;
-  margin-top: 1em;
-  width: 100%;
-}
-
-.home-link {
-  background: #007BFF;
-  color: white;
-  padding: 12px 20px;
-  text-decoration: none;
-  border-radius: 6px;
-  font-weight: bold;
-  width: 250px;
-  text-align: center;
-}
-
-.home-link:nth-child(2),
-.home-link:nth-child(3) {
-  background: #6c757d;
-}
-
 /* ===== CSS Reset-ish / Variables ===== */
 :root{
   --bg: #0b1220;
@@ -46,7 +9,7 @@ input, select, button {
   --primary: #5b9cff;
   --primary-strong: #377df7;
   --primary-soft: rgba(91,156,255,0.12);
-  --accent: #22d3ee; /* cyan accent */
+  --accent: #22d3ee;
   --success: #22c55e;
   --danger: #ef4444;
   --shadow: 0 10px 30px rgba(0,0,0,0.35);
@@ -55,11 +18,12 @@ input, select, button {
 
 *{ box-sizing:border-box; -webkit-tap-highlight-color: transparent; }
 html,body{ height:100%; }
+
 body{
   margin:0;
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif;
   color: var(--text);
-  background: radial-gradient(1200px 800px at 80% -10%, rgba(56,97,251,0.25), transparent 60%) ,
+  background: radial-gradient(1200px 800px at 80% -10%, rgba(56,97,251,0.25), transparent 60%),
               radial-gradient(1000px 700px at -10% 10%, rgba(35,211,238,0.20), transparent 60%),
               var(--bg-accent);
   background-attachment: fixed;
@@ -129,12 +93,12 @@ body{
   box-shadow: 0 4px 12px rgba(91,156,255,0.25);
 }
 
-/* Greys for WIP pages if you want */
-.home-link.is-secondary{
-  color: var(--text);
-  background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03));
-  border: 1px solid var(--card-border);
-  box-shadow: none;
+/* Ensure ALL menu buttons look the same (no greys) */
+.menu .home-link.is-secondary{
+  color: #0b1220;
+  background: linear-gradient(180deg, #ffffff, #e8efff);
+  border: 1px solid #cfe0ff;
+  box-shadow: 0 6px 18px rgba(91,156,255,0.25);
 }
 
 /* ===== Forms ===== */
@@ -163,10 +127,7 @@ input:focus, select:focus{
 }
 
 /* Inline status + hints */
-.status{
-  margin-top: 12px;
-  color: var(--muted);
-}
+.status{ margin-top: 12px; color: var(--muted); }
 
 /* ===== Buttons ===== */
 button, .btn{
@@ -183,7 +144,6 @@ button, .btn{
   user-select: none;
   transition: transform .06s ease, box-shadow .12s ease, background .15s ease, border-color .15s ease, opacity .15s ease;
 }
-
 .btn-primary, button[type="submit"]{
   color: #fff;
   background: linear-gradient(180deg, var(--primary), var(--primary-strong));
@@ -231,25 +191,7 @@ video{
 .mt-3{ margin-top: 16px; }
 .mt-4{ margin-top: 24px; }
 
-/* Make all menu buttons identical */
-.menu .home-link,
-.menu .home-link.is-secondary{
-  color: #0b1220;
-  background: linear-gradient(180deg, #ffffff, #e8efff);
-  border: 1px solid #cfe0ff;
-  box-shadow: 0 6px 18px rgba(91,156,255,0.25);
-}
-
-/* If you still have the old nth-child greys, kill them */
-.menu .home-link:nth-child(2),
-.menu .home-link:nth-child(3){
-  background: linear-gradient(180deg, #ffffff, #e8efff) !important;
-  color: #0b1220 !important;
-  border: 1px solid #cfe0ff !important;
-  box-shadow: 0 6px 18px rgba(91,156,255,0.25) !important;
-}
-
-/* Small, discreet Home button (top-right) */
+/* ===== Small, discreet Home button (top-right) ===== */
 .home-btn{
   position: fixed;
   top: 14px;
@@ -272,19 +214,3 @@ video{
 }
 .home-btn:hover{ transform: translateY(-1px); background: rgba(255,255,255,0.14); }
 .home-btn:active{ transform: translateY(0);   background: rgba(255,255,255,0.10); }
-
-/* Make all three home-page menu buttons identical */
-.menu .home-link,
-.menu .home-link.is-secondary{
-  color: #0b1220;
-  background: linear-gradient(180deg, #ffffff, #e8efff);
-  border: 1px solid #cfe0ff;
-  box-shadow: 0 6px 18px rgba(91,156,255,0.25);
-}
-.menu .home-link:nth-child(2),
-.menu .home-link:nth-child(3){
-  background: linear-gradient(180deg, #ffffff, #e8efff) !important;
-  color: #0b1220 !important;
-  border: 1px solid #cfe0ff !important;
-  box-shadow: 0 6px 18px rgba(91,156,255,0.25) !important;
-}
