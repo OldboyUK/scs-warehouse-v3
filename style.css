@@ -18,3 +18,19 @@ input, select, button {
   margin-top: 1em;
   width: 100%;
 }
+
+.home-link {
+  background: #007BFF;
+  color: white;
+  padding: 12px 20px;
+  text-decoration: none;
+  border-radius: 6px;
+  font-weight: bold;
+  width: 250px;
+  text-align: center;
+}
+
+.home-link:nth-child(2),
+.home-link:nth-child(3) {
+  background: #6c757d;
+}
