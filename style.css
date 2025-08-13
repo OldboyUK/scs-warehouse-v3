@@ -263,3 +263,32 @@ select option{ text-align: center; } /* fallback */
 </svg>') center / contain no-repeat;
 }
 .home-btn:hover{ background: rgba(255,255,255,0.18); }
+
+/* === Normalise Pallet Dispatch buttons to match the rest === */
+/* Stop auto-styling submit buttons as blue */
+button[type="submit"]{
+  color: #0b1220;
+  background: linear-gradient(180deg, #ffffff, #e8efff);
+  border: 1px solid #cfe0ff;
+  box-shadow: 0 6px 18px rgba(91,156,255,0.25);
+}
+
+/* Make both action buttons look identical and evenly sized */
+.actions{ gap:16px; }
+.actions > button,
+.actions > .btn{
+  flex: 1 1 0;
+  min-width: 140px;
+  height: 48px;
+  padding: 0 18px;
+  border-radius: 14px;
+  color: #0b1220;
+  background: linear-gradient(180deg, #ffffff, #e8efff);
+  border: 1px solid #cfe0ff;
+  box-shadow: 0 6px 18px rgba(91,156,255,0.25);
+  transition: transform .08s ease, box-shadow .12s ease, background .15s ease;
+}
+.actions > button:hover,
+.actions > .btn:hover{ transform: translateY(-1px); box-shadow: 0 10px 26px rgba(91,156,255,0.35); }
+.actions > button:active,
+.actions > .btn:active{ transform: translateY(0);  box-shadow: 0 4px 12px rgba(91,156,255,0.25); }
