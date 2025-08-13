@@ -7,11 +7,16 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div style="text-align: center; padding: 40px;">
+  <div class="container" style="text-align:center;">
     <h1>Location Assignment</h1>
+    <p><a href="index.html" class="home-link">🏠 Home</a></p>
+
     <div id="app"></div>
-    <p><a href="index.html">⬅ Back to Home</a></p>
-    <script src="location-assignment.js"></script>
+
+    <!-- same video element style as pallet entry -->
+    <video id="video" playsinline muted style="width:300px;height:300px;border:1px solid #ccc;margin-top:12px;display:none;"></video>
   </div>
+
+  <script src="location-assignment.js"></script>
 </body>
 </html>

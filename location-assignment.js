@@ -1,20 +1,25 @@
-// location-assignment.js
+// location-assignment.js (uses BarcodeDetector + getUserMedia like Pallet Entry)
 
 let app = document.getElementById('app');
 let palletCode = '';
 let locationCode = '';
-let scanningType = null; // 'pallet' | 'location'
-let codeReader = null;
-let selectedDeviceId = null;
+let stream = null;
+const ENDPOINT = '/.netlify/functions/assignLocation'; // Netlify function
 
-const VIDEO_ID = 'preview';
-const ENDPOINT = '/.netlify/functions/assignLocation'; // Netlify function we built
+function $(id){ return document.getElementById(id); }
 
-function el(id) { return document.getElementById(id); }
+function stopCamera() {
+  try { stream && stream.getTracks().forEach(t => t.stop()); } catch {}
+  const v = $('video');
+  if (v) v.style.display = 'none';
+}
 
-function show(msgHtml) { app.innerHTML = msgHtml; }
+function show(html) {
+  app.innerHTML = html;
+}
 
 function showStep1() {
+  stopCamera();
   show(`
     <label>Enter or scan <b>Pallet ID</b>:</label>
     <input id="palletInput" placeholder="Type Pallet ID" />
@@ -22,17 +27,17 @@ function showStep1() {
     <hr>
     <button onclick="startScan('pallet')">📷 Scan Pallet Barcode</button>
   `);
-  stopScan();
 }
 
 function confirmPallet() {
-  const input = (el('palletInput').value || '').trim();
-  if (!input) { alert('Please enter a pallet ID.'); return; }
-  palletCode = input;
+  const val = ($('palletInput').value || '').trim();
+  if (!val) { alert('Please enter a pallet ID.'); return; }
+  palletCode = val;
   showStep2();
 }
 
 function showStep2() {
+  stopCamera();
   show(`
     <p>Pallet: <strong>${palletCode}</strong></p>
     <label>Enter or scan <b>Location ID</b>:</label>
@@ -42,25 +47,25 @@ function showStep2() {
     <button onclick="startScan('location')">📷 Scan Location Barcode</button>
     <button onclick="showStep1()">Back</button>
   `);
-  stopScan();
 }
 
 function confirmLocation() {
-  let loc = (el('locationInput').value || '').trim();
-  if (!loc) { alert('Please enter a location ID.'); return; }
-  if (loc.endsWith('-')) {
-    locationCode = loc;
+  const val = ($('locationInput').value || '').trim();
+  if (!val) { alert('Please enter a location ID.'); return; }
+  if (val.endsWith('-')) {
+    locationCode = val;
     askForShelf();
   } else {
-    locationCode = loc;
+    locationCode = val;
     submitAssignment();
   }
 }
 
 function askForShelf() {
+  stopCamera();
   show(`
     <p>Location code: <strong>${locationCode}</strong></p>
-    <p>Select shelf number:</p>
+    <p>This location requires a shelf. Tap 2, 3, or 4 to complete it.</p>
     <div style="display:flex;gap:10px;justify-content:center;">
       <button onclick="addShelf(2)">2</button>
       <button onclick="addShelf(3)">3</button>
@@ -68,7 +73,6 @@ function askForShelf() {
     </div>
     <p><button onclick="showStep2()">Back</button></p>
   `);
-  stopScan();
 }
 
 function addShelf(num) {
@@ -76,59 +80,50 @@ function addShelf(num) {
   submitAssignment();
 }
 
-async function startScan(type) {
-  scanningType = type;
-  try {
-    // 1) Explicit permission prompt
-    const tempStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-    tempStream.getTracks().forEach(t => t.stop());
-
-    // 2) Init ZXing reader
-    if (!codeReader) codeReader = new ZXing.BrowserMultiFormatReader();
-
-    // 3) Pick camera
-    const devices = await ZXing.BrowserCodeReader.listVideoInputDevices();
-    if (!devices.length) {
-      alert('No camera found.');
-      return;
-    }
-    const backCam = devices.find(d => /back|rear|environment/i.test(d.label));
-    selectedDeviceId = (backCam || devices[0]).deviceId;
-
-    // 4) Show video
-    const vid = document.getElementById('preview');
-    vid.style.display = 'block';
-    vid.setAttribute('playsinline', 'true'); // iOS fix
-
-    // 5) Start decode
-    await codeReader.decodeFromVideoDevice(selectedDeviceId, 'preview', (result) => {
-      if (result) {
-        const value = (result.getText() || '').trim();
-        stopScan();
-        if (scanningType === 'pallet') {
-          palletCode = value;
-          showStep2();
-        } else if (scanningType === 'location') {
-          if (value.endsWith('-')) { locationCode = value; askForShelf(); }
-          else { locationCode = value; submitAssignment(); }
-        }
-      }
-    });
-  } catch (e) {
-    console.error('Camera/scan error:', e);
-    alert('Camera permission blocked. Click the lock icon in the address bar and set Camera → Allow, then try again.');
+async function startScan(which) {
+  // Use same approach as Pallet Entry
+  if (typeof BarcodeDetector === 'undefined') {
+    alert('Barcode scanning is not supported in this browser.');
+    return;
   }
-}
-
-
-function stopScan() {
   try {
-    if (codeReader) {
-      codeReader.reset();
-    }
-  } catch {}
-  const vid = el(VIDEO_ID);
-  if (vid) vid.style.display = 'none';
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    const video = $('video');
+    video.srcObject = stream;
+    video.setAttribute('playsinline', 'true');
+    await video.play();
+    video.style.display = 'block';
+
+    const formats = ['code_128','ean_13','upc_a','upc_e','code_39','code_93','qr_code']; // broad support
+    const detector = new BarcodeDetector({ formats });
+
+    const loop = async () => {
+      try {
+        const barcodes = await detector.detect(video);
+        if (barcodes && barcodes.length > 0) {
+          stopCamera();
+          const value = (barcodes[0].rawValue || '').trim();
+
+          if (which === 'pallet') {
+            palletCode = value;
+            showStep2();
+          } else {
+            if (value.endsWith('-')) { locationCode = value; askForShelf(); }
+            else { locationCode = value; submitAssignment(); }
+          }
+          return; // stop loop
+        }
+      } catch (e) {
+        console.error('Barcode detection error:', e);
+        // keep looping; detection can be intermittent
+      }
+      requestAnimationFrame(loop);
+    };
+    loop();
+  } catch (e) {
+    console.error('getUserMedia error:', e);
+    alert('Camera access blocked. Click the site lock icon → allow Camera, then reload.');
+  }
 }
 
 function submitAssignment() {
@@ -153,43 +148,40 @@ function submitAssignment() {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: form
   })
-    .then(async res => {
-      const text = await res.text();
-      // try JSON first
-      let payload;
-      try { payload = JSON.parse(text); } catch { payload = { raw: text }; }
+  .then(async res => {
+    const text = await res.text();
+    let payload = null;
+    try { payload = JSON.parse(text); } catch {}
 
-      if (res.ok && payload && (payload.result === 'success' || payload.result === 'ok')) {
-        show(`
-          <p>✅ Location assigned successfully!</p>
-          <p>Pallet: <strong>${palletCode}</strong></p>
-          <p>Location: <strong>${locationCode}</strong></p>
-          <button onclick="showStep1()">Assign Another</button>
-        `);
-      } else {
-        const msg = (payload && payload.message) || text || 'Unknown error';
-        show(`
-          <p>❌ Error: ${msg}</p>
-          <pre style="text-align:left;white-space:pre-wrap;">${text}</pre>
-          <button onclick="showStep1()">Try Again</button>
-        `);
-      }
-    })
-    .catch(err => {
-      console.error('Fetch error:', err);
+    if (res.ok && payload && payload.result === 'success') {
       show(`
-        <p>❌ Network error: ${err && err.message ? err.message : err}</p>
-        <button onclick="showStep1()">Try Again</button>
+        <p>✅ Location assigned successfully!</p>
+        <p>Pallet: <strong>${palletCode}</strong></p>
+        <p>Location: <strong>${locationCode}</strong></p>
+        <button onclick="showStep1()">Assign Another</button>
       `);
-    });
+    } else {
+      const msg = (payload && payload.message) || text || 'Unknown error';
+      show(`
+        <p>❌ Error assigning location.</p>
+        <pre style="text-align:left;white-space:pre-wrap;border:1px solid #ddd;padding:8px;">${msg}</pre>
+        <button onclick="showStep2()">Try Again</button>
+      `);
+    }
+  })
+  .catch(err => {
+    console.error('Fetch error:', err);
+    show(`
+      <p>❌ Network error: ${err && err.message ? err.message : err}</p>
+      <button onclick="showStep2()">Try Again</button>
+    `);
+  });
 }
 
-// Expose to window (for inline onclick handlers)
 window.showStep1 = showStep1;
 window.confirmPallet = confirmPallet;
 window.confirmLocation = confirmLocation;
 window.startScan = startScan;
 window.addShelf = addShelf;
 
-// init
 showStep1();
