@@ -1,6 +1,5 @@
-// pallet-dispatch.js
-const app = document.getElementById('dispatch-app');
 
+const app = document.getElementById('dispatch-app');
 let palletId = '';
 
 function showEnterStep() {
@@ -30,7 +29,7 @@ function showConfirmStep() {
     <p>Pallet ID: <strong>${palletId}</strong></p>
     <p>Do you want to dispatch this pallet?</p>
     <div class="actions">
-      <button class="btn btn-success" onclick="submitDispatch()">Yes, Dispatch</button>
+      <button class="btn btn-primary" onclick="submitDispatch()">Yes, Dispatch</button>
       <button class="btn btn-ghost" onclick="showEnterStep()">No, Go Back</button>
     </div>
   `;
@@ -88,7 +87,7 @@ async function startScan() {
 }
 
 function formatDateTimeForSheets() {
-  // Use the browser time (London user) – format as DD/MM/YYYY and HH:MM:SS
+  // DD/MM/YYYY and HH:MM:SS (London local time)
   const now = new Date();
   const pad = n => String(n).padStart(2, '0');
   const date = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`;
