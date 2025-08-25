@@ -1,4 +1,5 @@
 // location-assignment.js
+// Flow: enter/scan pallet -> confirm pallet -> scan location -> confirm location -> submit
 
 const app   = document.getElementById('app');
 const video = document.getElementById('video');
@@ -9,12 +10,13 @@ let locationCode = '';
 let stream = null;
 let scanning = false;
 
+/* ───────────── Helpers ───────────── */
 const pad = n => String(n).padStart(2, '0');
 function nowForSheets(){
   const d = new Date();
   return {
-    date: `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()}`, // DD/MM/YYYY
-    time: `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}` // HH:MM:SS
+    date: `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()}`,
+    time: `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
   };
 }
 function stopCamera(){
@@ -88,7 +90,7 @@ function showPalletStep(){
 function confirmPallet(){
   const input = (document.getElementById('palletInput')?.value || '').trim();
   if (input.length !== 15 || isNaN(input)) {
-    alert('Please enter a valid 15‑digit number.');
+    alert('Please enter a valid 15-digit number.');
     return;
   }
   palletId = input;
@@ -100,8 +102,8 @@ function showConfirmPallet(){
   app.innerHTML = `
     <p>Pallet ID: <strong>${palletId}</strong></p>
     <div class="actions">
-      <button class="btn btn-primary" onclick="showLocationStep()">Scan/Enter Location</button>
-      <button class="btn btn-ghost" onclick="showPalletStep()">Change Pallet</button>
+      <button class="btn btn-danger" onclick="showPalletStep()">Change Pallet</button>
+      <button class="btn btn-success" onclick="showLocationStep()">Scan/Enter Location</button>
     </div>
   `;
 }
@@ -111,7 +113,7 @@ function startPalletScan(){
   app.appendChild(video);
   startCameraAndDetect(value => {
     if (value.length !== 15 || isNaN(value)) {
-      alert('Scanned pallet is not a valid 15‑digit number.');
+      alert('Scanned pallet is not a valid 15-digit number.');
       showPalletStep();
       return;
     }
@@ -127,11 +129,15 @@ function showLocationStep(){
     <label>Enter Location Code:</label>
     <input id="locationInput" placeholder="Scan or type location" />
     <div class="actions">
-      <button class="btn btn-primary" onclick="confirmLocationManual()">Next</button>
-      <button class="btn btn-ghost" onclick="startLocationScan()">📷 Scan Location</button>
-      <button class="btn btn-ghost" onclick="showConfirmPallet()">Back</button>
+      <button class="btn btn-danger" onclick="showConfirmPallet()">Back</button>
+      <button class="btn btn-success" onclick="confirmLocationManual()">Next</button>
     </div>
-    <p class="status">If the camera misreads, you can re‑scan on the next step.</p>
+    <hr>
+    <div class="actions">
+      <button class="btn btn-danger" onclick="showConfirmPallet()">Back</button>
+      <button class="btn btn-success" onclick="startLocationScan()">📷 Scan Location</button>
+    </div>
+    <p class="status">If the camera misreads, you can re-scan on the next step.</p>
   `;
 }
 
@@ -147,7 +153,6 @@ function startLocationScan(){
   app.appendChild(video);
   startCameraAndDetect(value => {
     locationCode = (value || '').trim();
-    // IMPORTANT: no auto-submit — show confirmation with Re-scan
     showConfirmLocation();
   });
 }
@@ -159,9 +164,8 @@ function showConfirmLocation(){
     <p>Location: <strong>${locationCode}</strong></p>
     <p>Is this correct?</p>
     <div class="actions">
-      <button class="btn btn-primary" onclick="submitAssignment()">Confirm & Submit</button>
-      <button class="btn btn-ghost" onclick="startLocationScan()">Re‑scan Location</button>
-      <button class="btn btn-ghost" onclick="showLocationStep()">Back</button>
+      <button class="btn btn-danger" onclick="startLocationScan()">Re-scan Location</button>
+      <button class="btn btn-success" onclick="submitAssignment()">Confirm & Submit</button>
     </div>
   `;
 }
