@@ -171,15 +171,6 @@ button, .btn{
   margin-top: 16px;
 }
 
-.btn-success { 
-  background: linear-gradient(180deg, #35e17a, #22c55e);
-  color: #06210f;
-}
-.btn-danger {
-  background: linear-gradient(180deg, #ff9a9a, #ef4444);
-  color: #2a0b0b;
-}
-
 /* ===== Video / Scanner preview ===== */
 video{
   width: 100%;
@@ -301,3 +292,13 @@ button[type="submit"]{
 .actions > .btn:hover{ transform: translateY(-1px); box-shadow: 0 10px 26px rgba(91,156,255,0.35); }
 .actions > button:active,
 .actions > .btn:active{ transform: translateY(0);  box-shadow: 0 4px 12px rgba(91,156,255,0.25); }
+
+
+.btn-success { 
+  background: linear-gradient(180deg, #35e17a, #22c55e);
+  color: #06210f;
+}
+.btn-danger {
+  background: linear-gradient(180deg, #ff9a9a, #ef4444);
+  color: #2a0b0b;
+}
