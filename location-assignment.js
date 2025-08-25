@@ -1,5 +1,5 @@
 // location-assignment.js
-// Flow: enter/scan pallet -> confirm pallet -> scan location -> confirm location -> submit
+// Flow: enter/scan pallet -> confirm pallet -> (enter OR scan) location -> confirm location -> submit
 
 const app   = document.getElementById('app');
 const video = document.getElementById('video');
@@ -10,7 +10,7 @@ let locationCode = '';
 let stream = null;
 let scanning = false;
 
-/* ───────────── Helpers ───────────── */
+/* Helpers */
 const pad = n => String(n).padStart(2, '0');
 function nowForSheets(){
   const d = new Date();
@@ -52,8 +52,7 @@ async function startCameraAndDetect(onDetected){
         if (codes.length > 0) {
           scanning = false;
           stopCamera();
-          const value = codes[0].rawValue || '';
-          onDetected(value);
+          onDetected((codes[0].rawValue || '').trim());
           return;
         }
       } catch (err) {
@@ -73,7 +72,7 @@ async function startCameraAndDetect(onDetected){
   }
 }
 
-/* ───────────── UI Steps ───────────── */
+/* UI Steps */
 function showPalletStep(){
   stopCamera();
   app.innerHTML = `
@@ -85,6 +84,7 @@ function showPalletStep(){
     </div>
     <p class="status">Tip: Use the camera or type manually.</p>
   `;
+  document.getElementById('palletInput').focus();
 }
 
 function confirmPallet(){
@@ -130,30 +130,28 @@ function showLocationStep(){
     <input id="locationInput" placeholder="Scan or type location" />
     <div class="actions">
       <button class="btn btn-danger" onclick="showConfirmPallet()">Back</button>
-      <button class="btn btn-success" onclick="confirmLocationManual()">Next</button>
-    </div>
-    <hr>
-    <div class="actions">
-      <button class="btn btn-danger" onclick="showConfirmPallet()">Back</button>
       <button class="btn btn-success" onclick="startLocationScan()">📷 Scan Location</button>
     </div>
-    <p class="status">If the camera misreads, you can re-scan on the next step.</p>
+    <p class="status">Or type a code and press <strong>Enter</strong> to continue.</p>
   `;
-}
 
-function confirmLocationManual(){
-  const input = (document.getElementById('locationInput')?.value || '').trim();
-  if (!input) { alert('Please enter a location code.'); return; }
-  locationCode = input;
-  showConfirmLocation();
+  const input = document.getElementById('locationInput');
+  input.focus();
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      locationCode = (input.value || '').trim();
+      if (!locationCode) { alert('Please enter a location code.'); return; }
+      showConfirmLocation();
+    }
+  }, { once: true });
 }
 
 function startLocationScan(){
   app.innerHTML = `<p>📷 Scanning location… Point camera at location barcode.</p>`;
   app.appendChild(video);
   startCameraAndDetect(value => {
-    locationCode = (value || '').trim();
-    showConfirmLocation();
+    locationCode = value;
+    showConfirmLocation(); // confirm (no auto-submit)
   });
 }
 
@@ -218,12 +216,11 @@ function submitAssignment(){
   });
 }
 
-/* ───────────── Expose + Init ───────────── */
+/* Expose + Init */
 window.showPalletStep = showPalletStep;
 window.confirmPallet = confirmPallet;
 window.startPalletScan = startPalletScan;
 window.showLocationStep = showLocationStep;
-window.confirmLocationManual = confirmLocationManual;
 window.startLocationScan = startLocationScan;
 window.showConfirmLocation = showConfirmLocation;
 window.submitAssignment = submitAssignment;

@@ -171,6 +171,15 @@ button, .btn{
   margin-top: 16px;
 }
 
+.btn-success { 
+  background: linear-gradient(180deg, #35e17a, #22c55e);
+  color: #06210f;
+}
+.btn-danger {
+  background: linear-gradient(180deg, #ff9a9a, #ef4444);
+  color: #2a0b0b;
+}
+
 /* ===== Video / Scanner preview ===== */
 video{
   width: 100%;
