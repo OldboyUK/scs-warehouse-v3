@@ -292,3 +292,36 @@ button[type="submit"]{
 .actions > .btn:hover{ transform: translateY(-1px); box-shadow: 0 10px 26px rgba(91,156,255,0.35); }
 .actions > button:active,
 .actions > .btn:active{ transform: translateY(0);  box-shadow: 0 4px 12px rgba(91,156,255,0.25); }
+
+
+
+/* --- Fix: preserve colour variants inside .actions (no other changes) --- */
+.actions > button.btn-primary,
+.actions > .btn.btn-primary{
+  color: #fff !important;
+  background: linear-gradient(180deg, var(--primary), var(--primary-strong)) !important;
+  box-shadow: 0 8px 20px rgba(55,125,247,0.35) !important;
+  border-color: transparent !important;
+}
+
+.actions > button.btn-success,
+.actions > .btn.btn-success{
+  background: linear-gradient(180deg, #35e17a, #22c55e) !important;
+  color: #06210f !important;
+  border-color: transparent !important;
+}
+
+.actions > button.btn-danger,
+.actions > .btn.btn-danger{
+  background: linear-gradient(180deg, #ff6b6b, #ef4444) !important;
+  color: #fff !important;
+  border-color: transparent !important;
+}
+
+.actions > button.btn-ghost,
+.actions > .btn.btn-ghost{
+  color: var(--text) !important;
+  background: transparent !important;
+  border: 1px solid var(--card-border) !important;
+  box-shadow: none !important;
+}
