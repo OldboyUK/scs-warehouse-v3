@@ -1,134 +1,3 @@
-/* ===== CSS Reset-ish / Variables ===== */
-:root{
-  --bg: #0b1220;
-  --bg-accent: linear-gradient(180deg,#0f1a33 0%, #0b1220 100%);
-  --card: rgba(255,255,255,0.06);
-  --card-border: rgba(255,255,255,0.12);
-  --text: #eef2ff;
-  --muted: #9aa4c1;
-  --primary: #5b9cff;
-  --primary-strong: #377df7;
-  --primary-soft: rgba(91,156,255,0.12);
-  --accent: #22d3ee;
-  --success: #22c55e;
-  --danger: #ef4444;
-  --shadow: 0 10px 30px rgba(0,0,0,0.35);
-  --radius: 16px;
-}
-
-*{ box-sizing:border-box; -webkit-tap-highlight-color: transparent; }
-html,body{ height:100%; }
-
-body{
-  margin:0;
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif;
-  color: var(--text);
-  background: radial-gradient(1200px 800px at 80% -10%, rgba(56,97,251,0.25), transparent 60%),
-              radial-gradient(1000px 700px at -10% 10%, rgba(35,211,238,0.20), transparent 60%),
-              var(--bg-accent);
-  background-attachment: fixed;
-  letter-spacing: 0.2px;
-}
-
-/* ===== Page Shell ===== */
-.header{
-  max-width: 980px;
-  margin: 40px auto 20px;
-  padding: 0 20px;
-}
-.app-title{
-  font-size: clamp(24px, 3vw, 36px);
-  font-weight: 800;
-  letter-spacing: 0.5px;
-  margin: 0;
-  background: linear-gradient(90deg, #ffffff, #bcd3ff);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-.app-sub{
-  color: var(--muted);
-  margin-top: 8px;
-}
-
-/* Card container for each page */
-.container{
-  max-width: 980px;
-  margin: 0 auto 60px;
-  padding: 24px;
-  border-radius: var(--radius);
-  background: linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.03));
-  border: 1px solid var(--card-border);
-  box-shadow: var(--shadow);
-}
-
-/* ===== Home Page Buttons (menu) ===== */
-.menu{
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 16px;
-  margin-top: 24px;
-}
-.home-link{
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 56px;
-  padding: 0 18px;
-  border-radius: 14px;
-  text-decoration: none;
-  font-weight: 700;
-  color: #0b1220;
-  background: linear-gradient(180deg, #ffffff, #e8efff);
-  border: 1px solid #cfe0ff;
-  box-shadow: 0 6px 18px rgba(91,156,255,0.25);
-  transition: transform .08s ease, box-shadow .12s ease, background .15s ease;
-}
-.home-link:hover{
-  transform: translateY(-1px);
-  box-shadow: 0 10px 26px rgba(91,156,255,0.35);
-}
-.home-link:active{
-  transform: translateY(0);
-  box-shadow: 0 4px 12px rgba(91,156,255,0.25);
-}
-
-/* Ensure ALL menu buttons look the same (no greys) */
-.menu .home-link.is-secondary{
-  color: #0b1220;
-  background: linear-gradient(180deg, #ffffff, #e8efff);
-  border: 1px solid #cfe0ff;
-  box-shadow: 0 6px 18px rgba(91,156,255,0.25);
-}
-
-/* ===== Forms ===== */
-label{
-  display:block;
-  font-weight: 600;
-  margin: 14px 0 6px;
-  color: #d7e0ff;
-}
-input, select{
-  width: 100%;
-  height: 46px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  border: 1px solid var(--card-border);
-  color: var(--text);
-  background: rgba(255,255,255,0.05);
-  outline: none;
-  transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
-}
-input::placeholder{ color: #93a0bf; }
-input:focus, select:focus{
-  border-color: #86b6ff;
-  box-shadow: 0 0 0 4px var(--primary-soft);
-  background: rgba(255,255,255,0.08);
-}
-
-/* Inline status + hints */
-.status{ margin-top: 12px; color: var(--muted); }
-
 /* ===== Buttons ===== */
 button, .btn{
   display: inline-flex;
@@ -144,7 +13,10 @@ button, .btn{
   user-select: none;
   transition: transform .06s ease, box-shadow .12s ease, background .15s ease, border-color .15s ease, opacity .15s ease;
 }
-.btn-primary, button[type="submit"]{
+
+/* Default blue buttons */
+.btn-primary,
+button[type="submit"]{
   color: #fff;
   background: linear-gradient(180deg, var(--primary), var(--primary-strong));
   box-shadow: 0 8px 20px rgba(55,125,247,0.35);
@@ -152,6 +24,7 @@ button, .btn{
 .btn-primary:hover{ transform: translateY(-1px); }
 .btn-primary:active{ transform: translateY(0); box-shadow: 0 4px 12px rgba(55,125,247,0.25); }
 
+/* Ghost buttons */
 .btn-ghost{
   color: var(--text);
   background: transparent;
@@ -160,121 +33,17 @@ button, .btn{
 .btn-ghost:hover{ background: rgba(255,255,255,0.06); }
 .btn-ghost:active{ background: rgba(255,255,255,0.04); }
 
+/* Colour variants */
 .btn-success{ background: linear-gradient(180deg, #35e17a, #22c55e); color:#06210f; }
-.btn-danger{ background: linear-gradient(180deg, #ff6b6b, #ef4444); color:#fff; }
+.btn-danger { background: linear-gradient(180deg, #ff6b6b, #ef4444); color:#fff; }
 
 /* Group buttons nicely */
 .actions{
   display:flex;
   flex-wrap: wrap;
-  gap:12px;
+  gap:16px;
   margin-top: 16px;
 }
-
-/* ===== Video / Scanner preview ===== */
-video{
-  width: 100%;
-  max-width: 360px;
-  height: auto;
-  border-radius: 12px;
-  border: 1px solid var(--card-border);
-  background: #0a0f1a;
-  margin-top: 12px;
-  box-shadow: 0 10px 24px rgba(0,0,0,0.35);
-}
-
-/* ===== Utilities ===== */
-.row{ display:flex; gap:12px; flex-wrap:wrap; }
-.row > *{ flex:1 1 220px; }
-.center{ text-align:center; }
-.mt-2{ margin-top: 8px; }
-.mt-3{ margin-top: 16px; }
-.mt-4{ margin-top: 24px; }
-
-/* ===== Small, discreet Home button (top-right) ===== */
-.home-btn{
-  position: fixed;
-  top: 14px;
-  right: 14px;
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  text-decoration: none;
-  font-size: 20px;
-  line-height: 1;
-  color: var(--text);
-  background: rgba(255,255,255,0.10);
-  border: 1px solid var(--card-border);
-  box-shadow: var(--shadow);
-  z-index: 1000;
-  transition: transform .08s ease, background .12s ease;
-}
-.home-btn:hover{ transform: translateY(-1px); background: rgba(255,255,255,0.14); }
-.home-btn:active{ transform: translateY(0);   background: rgba(255,255,255,0.10); }
-
-/* === 1) Home page buttons: same width + centred === */
-.menu{
-  grid-template-columns: 1fr;      /* single column on home like your mock */
-  justify-items: center;           /* centre the buttons */
-}
-.home-link{
-  width: clamp(280px, 84vw, 420px);  /* identical width regardless of text length */
-}
-
-/* === 2) Centre the text in the dropdown === */
-select{
-  text-align: center;
-  text-align-last: center;  /* supported on most modern browsers */
-}
-select option{ text-align: center; } /* fallback */
-
-/* === 3) "Next" & "Start Over": equal width + more spacing === */
-.actions{ gap: 16px; } /* a bit more room between the two buttons */
-.actions > button,
-.actions > .btn{
-  flex: 1 1 0;          /* make them equal width */
-  min-width: 140px;     /* avoids tiny buttons on very small screens */
-}
-
-/* === 4) Make the Home icon white (no HTML change needed) === */
-/* Hide the emoji text and draw a white SVG house instead */
-.home-btn{
-  font-size: 0;  /* hides the colourful emoji if it's still in the link */
-  color: #fff;   /* icon colour */
-  background: rgba(255,255,255,0.12);
-  border: 1px solid var(--card-border);
-}
-.home-btn::before{
-  content: "";
-  width: 20px;
-  height: 20px;
-  display: block;
-  background: currentColor;
-  -webkit-mask: url('data:image/svg+xml;utf8,\
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">\
-<path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/>\
-</svg>') center / contain no-repeat;
-          mask: url('data:image/svg+xml;utf8,\
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">\
-<path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/>\
-</svg>') center / contain no-repeat;
-}
-.home-btn:hover{ background: rgba(255,255,255,0.18); }
-
-/* === Normalise Pallet Dispatch buttons to match the rest === */
-/* Stop auto-styling submit buttons as blue */
-button[type="submit"]{
-  color: #0b1220;
-  background: linear-gradient(180deg, #ffffff, #e8efff);
-  border: 1px solid #cfe0ff;
-  box-shadow: 0 6px 18px rgba(91,156,255,0.25);
-}
-
-/* Make both action buttons look identical and evenly sized */
-.actions{ gap:16px; }
 .actions > button,
 .actions > .btn{
   flex: 1 1 0;
@@ -282,23 +51,17 @@ button[type="submit"]{
   height: 48px;
   padding: 0 18px;
   border-radius: 14px;
+}
+
+/* Default white style ONLY if no colour class is applied */
+.actions > button:not(.btn-primary):not(.btn-success):not(.btn-danger):not(.btn-ghost),
+.actions > .btn:not(.btn-primary):not(.btn-success):not(.btn-danger):not(.btn-ghost){
   color: #0b1220;
   background: linear-gradient(180deg, #ffffff, #e8efff);
   border: 1px solid #cfe0ff;
   box-shadow: 0 6px 18px rgba(91,156,255,0.25);
-  transition: transform .08s ease, box-shadow .12s ease, background .15s ease;
 }
 .actions > button:hover,
 .actions > .btn:hover{ transform: translateY(-1px); box-shadow: 0 10px 26px rgba(91,156,255,0.35); }
 .actions > button:active,
 .actions > .btn:active{ transform: translateY(0);  box-shadow: 0 4px 12px rgba(91,156,255,0.25); }
-
-
-.btn-success { 
-  background: linear-gradient(180deg, #35e17a, #22c55e);
-  color: #06210f;
-}
-.btn-danger {
-  background: linear-gradient(180deg, #ff9a9a, #ef4444);
-  color: #2a0b0b;
-}
