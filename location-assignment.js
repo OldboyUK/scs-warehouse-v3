@@ -1,11 +1,13 @@
 // location-assignment.js
-// Flow: enter/scan pallet -> confirm pallet -> (enter OR scan) location -> confirm location -> submit
+// Flow: enter/scan pallet -> confirm pallet -> (enter OR scan) location
+// If location ends with "-", ask for bay (2/3/4) -> confirm location -> submit
 
 const app   = document.getElementById('app');
 const video = document.getElementById('video');
 
 let palletId = '';
 let locationCode = '';
+let locationBase = ''; // used when code ends with "-"
 
 let stream = null;
 let scanning = false;
@@ -139,9 +141,9 @@ function showLocationStep(){
   input.focus();
   input.addEventListener('keydown', e => {
     if (e.key === 'Enter') {
-      locationCode = (input.value || '').trim();
-      if (!locationCode) { alert('Please enter a location code.'); return; }
-      showConfirmLocation();
+      const val = (input.value || '').trim();
+      if (!val) { alert('Please enter a location code.'); return; }
+      processLocationInput(val);
     }
   }, { once: true });
 }
@@ -149,10 +151,51 @@ function showLocationStep(){
 function startLocationScan(){
   app.innerHTML = `<p>📷 Scanning location… Point camera at location barcode.</p>`;
   app.appendChild(video);
-  startCameraAndDetect(value => {
-    locationCode = value;
-    showConfirmLocation(); // confirm (no auto-submit)
+  startCameraAndDetect(val => {
+    processLocationInput(val);
   });
+}
+
+/* New: handle base-with-hyphen vs full code */
+function processLocationInput(val){
+  // Normalise any stray spaces
+  const v = (val || '').trim();
+
+  if (v.endsWith('-')) {
+    // keep the base (without the trailing hyphen displayed)
+    locationBase = v; // keep with hyphen so concatenation is simple
+    showBayPicker();
+    return;
+  }
+
+  // Full code: continue to confirmation
+  locationCode = v;
+  showConfirmLocation();
+}
+
+function showBayPicker(){
+  stopCamera();
+  const prettyBase = locationBase; // shows ending hyphen to make it clear
+  app.innerHTML = `
+    <p>Pallet ID: <strong>${palletId}</strong></p>
+    <p>Location: <strong>${prettyBase}</strong></p>
+    <p>Select bay to complete this location:</p>
+    <div class="actions">
+      <button class="btn btn-primary" onclick="chooseBay(2)">2</button>
+      <button class="btn btn-primary" onclick="chooseBay(3)">3</button>
+      <button class="btn btn-primary" onclick="chooseBay(4)">4</button>
+    </div>
+    <div class="actions">
+      <button class="btn btn-danger" onclick="startLocationScan()">Re-scan Location</button>
+      <button class="btn btn-ghost" onclick="showLocationStep()">Back</button>
+    </div>
+  `;
+}
+
+function chooseBay(n){
+  // locationBase already ends with '-' e.g. W2-D-10-A-
+  locationCode = `${locationBase}${n}`;
+  showConfirmLocation();
 }
 
 function showConfirmLocation(){
@@ -196,6 +239,7 @@ function submitAssignment(){
       `;
       palletId = '';
       locationCode = '';
+      locationBase = '';
     } else {
       app.innerHTML = `
         <p>❌ Error: ${data.message || 'Unknown error'}</p>
@@ -224,5 +268,6 @@ window.showLocationStep = showLocationStep;
 window.startLocationScan = startLocationScan;
 window.showConfirmLocation = showConfirmLocation;
 window.submitAssignment = submitAssignment;
+window.chooseBay = chooseBay; // expose for buttons
 
 showPalletStep();
