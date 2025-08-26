@@ -156,35 +156,36 @@ function startLocationScan(){
   });
 }
 
-/* New: handle base-with-hyphen vs full code */
+/* Decide whether we need a bay */
 function processLocationInput(val){
-  // Normalise any stray spaces
   const v = (val || '').trim();
 
   if (v.endsWith('-')) {
-    // keep the base (without the trailing hyphen displayed)
-    locationBase = v; // keep with hyphen so concatenation is simple
+    locationBase = v; // keep the trailing "-" so we can append 2/3/4
     showBayPicker();
     return;
   }
 
-  // Full code: continue to confirmation
+  // Full code
   locationCode = v;
   showConfirmLocation();
 }
 
+/* Bay picker (2/3/4) – force single row */
 function showBayPicker(){
   stopCamera();
-  const prettyBase = locationBase; // shows ending hyphen to make it clear
   app.innerHTML = `
     <p>Pallet ID: <strong>${palletId}</strong></p>
-    <p>Location: <strong>${prettyBase}</strong></p>
+    <p>Location: <strong>${locationBase}</strong></p>
     <p>Select bay to complete this location:</p>
-    <div class="actions">
-      <button class="btn btn-primary" onclick="chooseBay(2)">2</button>
-      <button class="btn btn-primary" onclick="chooseBay(3)">3</button>
-      <button class="btn btn-primary" onclick="chooseBay(4)">4</button>
+
+    <!-- one line row -->
+    <div class="actions" style="justify-content:center; gap:12px; flex-wrap:nowrap;">
+      <button class="btn btn-primary" style="flex:0 0 auto; min-width:90px;" onclick="chooseBay(2)">2</button>
+      <button class="btn btn-primary" style="flex:0 0 auto; min-width:90px;" onclick="chooseBay(3)">3</button>
+      <button class="btn btn-primary" style="flex:0 0 auto; min-width:90px;" onclick="chooseBay(4)">4</button>
     </div>
+
     <div class="actions">
       <button class="btn btn-danger" onclick="startLocationScan()">Re-scan Location</button>
       <button class="btn btn-ghost" onclick="showLocationStep()">Back</button>
@@ -193,7 +194,6 @@ function showBayPicker(){
 }
 
 function chooseBay(n){
-  // locationBase already ends with '-' e.g. W2-D-10-A-
   locationCode = `${locationBase}${n}`;
   showConfirmLocation();
 }
@@ -268,6 +268,6 @@ window.showLocationStep = showLocationStep;
 window.startLocationScan = startLocationScan;
 window.showConfirmLocation = showConfirmLocation;
 window.submitAssignment = submitAssignment;
-window.chooseBay = chooseBay; // expose for buttons
+window.chooseBay = chooseBay; // for 2/3/4 buttons
 
 showPalletStep();
