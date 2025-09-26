@@ -12,6 +12,13 @@ function showEnterStep() {
     </div>
     <p class="status">Tip: You can scan with the camera or type manually.</p>
   `;
+
+  // NEW: autofocus the first field (active cell behaviour)
+  const input = document.getElementById('palletInput');
+  if (input) {
+    input.focus();
+    if (typeof input.select === 'function') input.select();
+  }
 }
 
 function confirmPallet() {

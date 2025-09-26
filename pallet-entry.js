@@ -99,7 +99,16 @@ function showStep1() {
       <button class="btn btn-primary" onclick="startBarcodeScan()">📷 Scan Barcode</button>
     </div>
   `;
+
+  // NEW: autofocus the first field (active cell behaviour)
+  const input = document.getElementById('codeInput');
+  if (input) {
+    input.focus();
+    // Optional nicety: if the browser autofills, select it so typing replaces
+    if (typeof input.select === 'function') input.select();
+  }
 }
+
 function confirmCode() {
   const input = document.getElementById('codeInput').value.trim();
   if (input.length !== 15 || isNaN(input)) {
