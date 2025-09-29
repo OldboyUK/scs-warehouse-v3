@@ -141,8 +141,9 @@ function showLocationStep(){
     <input id="locationInput" placeholder="Scan or type location" inputmode="none" autocomplete="off" />
 
     <div class="actions mt-3">
-      <button class="btn btn-success" id="confirmLocationBtn">Confirm Entry</button>
+      <!-- SWAPPED ORDER: Back first, then Confirm Entry -->
       <button class="btn btn-danger" onclick="showConfirmPallet()">Back</button>
+      <button class="btn btn-secondary" id="confirmLocationBtn">Confirm Entry</button>
     </div>
 
     <div id="bayChooser" class="mt-4" style="display:none">
@@ -163,7 +164,6 @@ function showLocationStep(){
     <p class="status">Tip: If the location ends with “-”, you’ll be asked to choose 2 / 3 / 4.</p>
   `;
 
-  // Inject minimal CSS for bay button layout (fits within screen width)
   ensureBayGridStyle();
 
   const input = document.getElementById('locationInput');
@@ -176,23 +176,29 @@ function showLocationStep(){
   // When the user taps/clicks the field, enable the soft keyboard.
   const enableSoftKeyboard = () => {
     if (input.getAttribute('inputmode') !== 'text') {
-      input.setAttribute('inputmode', 'text'); // allow dash and letters/numbers
-      // Re-focus to open the keyboard now that inputmode permits it.
+      input.setAttribute('inputmode', 'text');
       setTimeout(() => input.focus(), 0);
     }
   };
   input.addEventListener('pointerdown', enableSoftKeyboard, { passive: true });
-  input.addEventListener('focus', () => {
-    // If focus comes from an explicit tap and inputmode is none, switch it.
-    // Some browsers may not fire pointerdown before focus via assistive tech.
-    if (document.activeElement === input && input.getAttribute('inputmode') === 'none') {
-      // Do nothing; hardware scanners can still type. Tap handler will switch it.
+
+  // Live status: turn Confirm Entry green when exactly 10 chars
+  const updateConfirmBtn = () => {
+    const len = (input.value || '').trim().length;
+    if (len === 10) {
+      confirmBtn.classList.add('btn-success');
+      confirmBtn.classList.remove('btn-secondary');
+    } else {
+      confirmBtn.classList.add('btn-secondary');
+      confirmBtn.classList.remove('btn-success');
     }
-  });
+  };
+  updateConfirmBtn();
 
   // HID scanner / typing: as soon as trailing '-' appears, prompt for bay
   input.addEventListener('input', () => {
     const v = (input.value || '').trim();
+    updateConfirmBtn();
     if (v.endsWith('-')) {
       locationBase = v;
       showBayPickerInline();
@@ -209,7 +215,7 @@ function showLocationStep(){
     }
   });
 
-  // Confirm Entry button
+  // Confirm Entry
   confirmBtn.addEventListener('click', () => {
     const val = (input.value || '').trim();
     if (!val) { alert('Please enter a location code.'); input.focus(); return; }
@@ -251,7 +257,7 @@ function processLocationInput(val){
   const v = (val || '').trim();
   if (v.endsWith('-')) {
     locationBase = v; // keep the trailing "-" so we can append 2/3/4
-    showBayPicker();  // full-page picker flow (also uses grid so it fits)
+    showBayPicker();  // full-page picker flow
     return;
   }
   locationCode = v;
