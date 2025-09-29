@@ -113,7 +113,7 @@ function showConfirmPallet(){
     <p>Pallet ID: <strong>${palletId}</strong></p>
     <div class="actions">
       <button class="btn btn-danger" onclick="showPalletStep()">Change Pallet</button>
-      <button class="btn btn-success" onclick="showLocationStep()">Scan/Enter Location</button>
+      <button class="btn btn-success" onclick="showLocationStep()">Confirm Pallet ID</button>
     </div>
   `;
 }
@@ -147,9 +147,9 @@ function showLocationStep(){
     <div id="bayChooser" class="mt-4" style="display:none">
       <p>This location ends with “-”. Choose a bay:</p>
       <div class="actions" style="justify-content:center; gap:12px; flex-wrap:nowrap;">
-        <button class="btn btn-secondary" onclick="chooseBay(2)">2</button>
-        <button class="btn btn-secondary" onclick="chooseBay(3)">3</button>
-        <button class="btn btn-secondary" onclick="chooseBay(4)">4</button>
+        <button class="btn btn-secondary" style="transform:scale(0.6);" onclick="chooseBay(2)">2</button>
+        <button class="btn btn-secondary" style="transform:scale(0.6);" onclick="chooseBay(3)">3</button>
+        <button class="btn btn-secondary" style="transform:scale(0.6);" onclick="chooseBay(4)">4</button>
       </div>
     </div>
 
@@ -164,21 +164,19 @@ function showLocationStep(){
   const input = document.getElementById('locationInput');
   const confirmBtn = document.getElementById('confirmLocationBtn');
 
-  // Active-cell behaviour
-  input.focus(); if (input.select) input.select();
+  // ❌ No auto-focus here (so keyboard doesn’t pop up)
+  // input.focus(); if (input.select) input.select();
 
-  // HID scanner / typing: as soon as trailing '-' appears, prompt for bay
   input.addEventListener('input', () => {
     const v = (input.value || '').trim();
     if (v.endsWith('-')) {
-      locationBase = v; // keep trailing '-'
-      showBayPickerInline(); // reveal chooser inline on this page
+      locationBase = v;
+      showBayPickerInline();
     } else {
       hideBayPickerInline();
     }
   });
 
-  // Enter submits (uses same logic as clicking Confirm Entry)
   input.addEventListener('keydown', e => {
     if (e.key === 'Enter' || e.key === 'Tab') {
       e.preventDefault();
@@ -186,7 +184,6 @@ function showLocationStep(){
     }
   });
 
-  // Confirm Entry button
   confirmBtn.addEventListener('click', () => {
     const val = (input.value || '').trim();
     if (!val) { alert('Please enter a location code.'); input.focus(); return; }
@@ -202,22 +199,17 @@ function startLocationScan(){
   });
 }
 
-/* Decide whether we need a bay */
 function processLocationInput(val){
   const v = (val || '').trim();
-
   if (v.endsWith('-')) {
-    locationBase = v; // keep the trailing "-" so we can append 2/3/4
-    showBayPicker();  // full-page picker flow
+    locationBase = v;
+    showBayPicker();
     return;
   }
-
-  // Full code
   locationCode = v;
   showConfirmLocation();
 }
 
-/* Inline bay picker (on the same page) */
 function showBayPickerInline(){
   const chooser = document.getElementById('bayChooser');
   if (chooser) chooser.style.display = '';
@@ -227,20 +219,17 @@ function hideBayPickerInline(){
   if (chooser) chooser.style.display = 'none';
 }
 
-/* Full-page bay picker (used after camera scan or manual confirm) */
 function showBayPicker(){
   stopCamera();
   app.innerHTML = `
     <p>Pallet ID: <strong>${palletId}</strong></p>
     <p>Location: <strong>${locationBase}</strong></p>
     <p>Select bay to complete this location:</p>
-
     <div class="actions" style="justify-content:center; gap:12px; flex-wrap:nowrap;">
-      <button class="btn btn-primary" style="flex:0 0 auto; min-width:90px;" onclick="chooseBay(2)">2</button>
-      <button class="btn btn-primary" style="flex:0 0 auto; min-width:90px;" onclick="chooseBay(3)">3</button>
-      <button class="btn btn-primary" style="flex:0 0 auto; min-width:90px;" onclick="chooseBay(4)">4</button>
+      <button class="btn btn-primary" style="transform:scale(0.6);" onclick="chooseBay(2)">2</button>
+      <button class="btn btn-primary" style="transform:scale(0.6);" onclick="chooseBay(3)">3</button>
+      <button class="btn btn-primary" style="transform:scale(0.6);" onclick="chooseBay(4)">4</button>
     </div>
-
     <div class="actions">
       <button class="btn btn-danger" onclick="startLocationScan()">Re-scan Location</button>
       <button class="btn btn-ghost" onclick="showLocationStep()">Back</button>
@@ -249,10 +238,7 @@ function showBayPicker(){
 }
 
 function chooseBay(n){
-  // If inline picker was used and user clicks one of the inline buttons,
-  // locationBase will already be set (with trailing '-').
   if (!locationBase) {
-    // Fallback: try to read from the input in case user typed it there
     const input = document.getElementById('locationInput');
     const v = (input?.value || '').trim();
     if (v.endsWith('-')) locationBase = v;
@@ -264,10 +250,8 @@ function chooseBay(n){
     return;
   }
   locationCode = `${locationBase}${n}`;
-  // If we are on the inline page, reflect it in the field for clarity
   const input = document.getElementById('locationInput');
   if (input) input.value = locationCode;
-
   showConfirmLocation();
 }
 
@@ -286,7 +270,6 @@ function showConfirmLocation(){
 
 function submitAssignment(){
   const { date, time } = nowForSheets();
-
   const body = new URLSearchParams();
   body.append('pallet', palletId);
   body.append('location', locationCode);
@@ -341,6 +324,6 @@ window.showLocationStep = showLocationStep;
 window.startLocationScan = startLocationScan;
 window.showConfirmLocation = showConfirmLocation;
 window.submitAssignment = submitAssignment;
-window.chooseBay = chooseBay; // for 2/3/4 buttons
+window.chooseBay = chooseBay;
 
 showPalletStep();
