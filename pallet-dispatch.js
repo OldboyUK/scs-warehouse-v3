@@ -1,4 +1,3 @@
-
 const app = document.getElementById('dispatch-app');
 let palletId = '';
 
@@ -6,25 +5,31 @@ function showEnterStep() {
   app.innerHTML = `
     <label>Enter Pallet Identifier (15-digit code):</label>
     <input id="palletInput" maxlength="15" placeholder="Scan or type 15 digits"/>
-    <div class="actions">
-      <button class="btn btn-primary" onclick="confirmPallet()">Next</button>
-      <button class="btn btn-ghost" onclick="startScan()">📷 Scan Barcode</button>
+    <div class="actions mt-3">
+      <button class="btn btn-success" onclick="confirmPallet()">Confirm Pallet ID</button>
     </div>
+    <hr>
     <p class="status">Tip: You can scan with the camera or type manually.</p>
+    <div class="actions mt-4">
+      <button class="btn btn-primary" onclick="startScan()">📷 Use Camera</button>
+    </div>
   `;
 
-  // NEW: autofocus the first field (active cell behaviour)
+  // Keep autofocus (active cell behaviour)
   const input = document.getElementById('palletInput');
   if (input) {
     input.focus();
     if (typeof input.select === 'function') input.select();
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') confirmPallet();
+    });
   }
 }
 
 function confirmPallet() {
   const input = document.getElementById('palletInput').value.trim();
   if (input.length !== 15 || isNaN(input)) {
-    alert('Please enter a valid 15‑digit number.');
+    alert('Please enter a valid 15-digit number.');
     return;
   }
   palletId = input;
@@ -36,8 +41,8 @@ function showConfirmStep() {
     <p>Pallet ID: <strong>${palletId}</strong></p>
     <p>Do you want to dispatch this pallet?</p>
     <div class="actions">
-      <button class="btn btn-primary" onclick="submitDispatch()">Yes, Dispatch</button>
       <button class="btn btn-ghost" onclick="showEnterStep()">No, Go Back</button>
+      <button class="btn btn-primary" onclick="submitDispatch()">Yes, Dispatch</button>
     </div>
   `;
 }
@@ -48,8 +53,9 @@ async function startScan() {
     return;
   }
 
+  let stream;
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
     const video = document.createElement('video');
     video.srcObject = stream;
     video.setAttribute('playsinline', 'true');
@@ -67,9 +73,9 @@ async function startScan() {
         const barcodes = await detector.detect(video);
         if (barcodes.length > 0) {
           stream.getTracks().forEach(t => t.stop());
-          const raw = barcodes[0].rawValue || '';
+          const raw = (barcodes[0].rawValue || '').trim();
           if (raw.length !== 15 || isNaN(raw)) {
-            alert('Scanned code is not a valid 15‑digit number.');
+            alert('Scanned code is not a valid 15-digit number.');
             showEnterStep();
             return;
           }
