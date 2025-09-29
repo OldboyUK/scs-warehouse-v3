@@ -92,19 +92,19 @@ function showStep1() {
     <label>Enter 15-digit code:</label>
     <input id="codeInput" maxlength="15" />
     <div class="actions mt-3">
-      <button class="btn btn-success" onclick="confirmCode()">Confirm Manual Entry</button>
+      <button class="btn btn-success" onclick="confirmCode()">Confirm Pallet Barcode</button>
     </div>
     <hr>
-    <div class="actions">
-      <button class="btn btn-primary" onclick="startBarcodeScan()">📷 Scan Barcode</button>
+    <p class="status">Tip: You can also scan using your camera.</p>
+    <div class="actions mt-5">
+      <button class="btn btn-primary" onclick="startBarcodeScan()">📷 Use Camera</button>
     </div>
   `;
 
-  // NEW: autofocus the first field (active cell behaviour)
+  // Keep autofocus behaviour
   const input = document.getElementById('codeInput');
   if (input) {
     input.focus();
-    // Optional nicety: if the browser autofills, select it so typing replaces
     if (typeof input.select === 'function') input.select();
   }
 }
