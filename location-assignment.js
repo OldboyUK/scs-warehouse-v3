@@ -136,8 +136,9 @@ function showLocationStep(){
   stopCamera();
   app.innerHTML = `
     <p>Pallet ID: <strong>${palletId}</strong></p>
-    <label>Enter Location Code:</label>
-    <input id="locationInput" placeholder="Scan or type location" />
+    <label for="locationInput">Enter Location Code:</label>
+    <!-- Start with inputmode='none' so keyboard DOES NOT pop, but keep focus so scanners can type -->
+    <input id="locationInput" placeholder="Scan or type location" inputmode="none" autocomplete="off" />
 
     <div class="actions mt-3">
       <button class="btn btn-success" id="confirmLocationBtn">Confirm Entry</button>
@@ -146,10 +147,11 @@ function showLocationStep(){
 
     <div id="bayChooser" class="mt-4" style="display:none">
       <p>This location ends with “-”. Choose a bay:</p>
-      <div class="actions" style="justify-content:center; gap:12px; flex-wrap:nowrap;">
-        <button class="btn btn-secondary" style="transform:scale(0.6);" onclick="chooseBay(2)">2</button>
-        <button class="btn btn-secondary" style="transform:scale(0.6);" onclick="chooseBay(3)">3</button>
-        <button class="btn btn-secondary" style="transform:scale(0.6);" onclick="chooseBay(4)">4</button>
+      <!-- Grid ensures buttons fit the screen; tight together -->
+      <div class="bay-grid">
+        <button class="btn btn-secondary" onclick="chooseBay(2)">2</button>
+        <button class="btn btn-secondary" onclick="chooseBay(3)">3</button>
+        <button class="btn btn-secondary" onclick="chooseBay(4)">4</button>
       </div>
     </div>
 
@@ -161,12 +163,34 @@ function showLocationStep(){
     <p class="status">Tip: If the location ends with “-”, you’ll be asked to choose 2 / 3 / 4.</p>
   `;
 
+  // Inject minimal CSS for bay button layout (fits within screen width)
+  ensureBayGridStyle();
+
   const input = document.getElementById('locationInput');
   const confirmBtn = document.getElementById('confirmLocationBtn');
 
-  // ❌ No auto-focus here (so keyboard doesn’t pop up)
-  // input.focus(); if (input.select) input.select();
+  // Keep the field focused so HID scanners can type immediately,
+  // but DON'T show the soft keyboard because inputmode="none".
+  input.focus();
 
+  // When the user taps/clicks the field, enable the soft keyboard.
+  const enableSoftKeyboard = () => {
+    if (input.getAttribute('inputmode') !== 'text') {
+      input.setAttribute('inputmode', 'text'); // allow dash and letters/numbers
+      // Re-focus to open the keyboard now that inputmode permits it.
+      setTimeout(() => input.focus(), 0);
+    }
+  };
+  input.addEventListener('pointerdown', enableSoftKeyboard, { passive: true });
+  input.addEventListener('focus', () => {
+    // If focus comes from an explicit tap and inputmode is none, switch it.
+    // Some browsers may not fire pointerdown before focus via assistive tech.
+    if (document.activeElement === input && input.getAttribute('inputmode') === 'none') {
+      // Do nothing; hardware scanners can still type. Tap handler will switch it.
+    }
+  });
+
+  // HID scanner / typing: as soon as trailing '-' appears, prompt for bay
   input.addEventListener('input', () => {
     const v = (input.value || '').trim();
     if (v.endsWith('-')) {
@@ -177,6 +201,7 @@ function showLocationStep(){
     }
   });
 
+  // Enter/Tab submits (uses same logic as clicking Confirm Entry)
   input.addEventListener('keydown', e => {
     if (e.key === 'Enter' || e.key === 'Tab') {
       e.preventDefault();
@@ -184,11 +209,33 @@ function showLocationStep(){
     }
   });
 
+  // Confirm Entry button
   confirmBtn.addEventListener('click', () => {
     const val = (input.value || '').trim();
     if (!val) { alert('Please enter a location code.'); input.focus(); return; }
     processLocationInput(val);
   });
+}
+
+function ensureBayGridStyle(){
+  if (document.getElementById('bay-grid-style')) return;
+  const style = document.createElement('style');
+  style.id = 'bay-grid-style';
+  style.textContent = `
+    .bay-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      width: 100%;
+    }
+    .bay-grid .btn {
+      width: 100%;
+      min-width: 0;
+      padding-left: 0.5rem;
+      padding-right: 0.5rem;
+    }
+  `;
+  document.head.appendChild(style);
 }
 
 function startLocationScan(){
@@ -199,17 +246,19 @@ function startLocationScan(){
   });
 }
 
+/* Decide whether we need a bay */
 function processLocationInput(val){
   const v = (val || '').trim();
   if (v.endsWith('-')) {
-    locationBase = v;
-    showBayPicker();
+    locationBase = v; // keep the trailing "-" so we can append 2/3/4
+    showBayPicker();  // full-page picker flow (also uses grid so it fits)
     return;
   }
   locationCode = v;
   showConfirmLocation();
 }
 
+/* Inline bay picker (on the same page) */
 function showBayPickerInline(){
   const chooser = document.getElementById('bayChooser');
   if (chooser) chooser.style.display = '';
@@ -219,22 +268,26 @@ function hideBayPickerInline(){
   if (chooser) chooser.style.display = 'none';
 }
 
+/* Full-page bay picker (used after camera scan or manual confirm) */
 function showBayPicker(){
   stopCamera();
   app.innerHTML = `
     <p>Pallet ID: <strong>${palletId}</strong></p>
     <p>Location: <strong>${locationBase}</strong></p>
     <p>Select bay to complete this location:</p>
-    <div class="actions" style="justify-content:center; gap:12px; flex-wrap:nowrap;">
-      <button class="btn btn-primary" style="transform:scale(0.6);" onclick="chooseBay(2)">2</button>
-      <button class="btn btn-primary" style="transform:scale(0.6);" onclick="chooseBay(3)">3</button>
-      <button class="btn btn-primary" style="transform:scale(0.6);" onclick="chooseBay(4)">4</button>
+
+    <div class="bay-grid">
+      <button class="btn btn-primary" onclick="chooseBay(2)">2</button>
+      <button class="btn btn-primary" onclick="chooseBay(3)">3</button>
+      <button class="btn btn-primary" onclick="chooseBay(4)">4</button>
     </div>
+
     <div class="actions">
       <button class="btn btn-danger" onclick="startLocationScan()">Re-scan Location</button>
       <button class="btn btn-ghost" onclick="showLocationStep()">Back</button>
     </div>
   `;
+  ensureBayGridStyle();
 }
 
 function chooseBay(n){
