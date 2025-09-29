@@ -80,22 +80,30 @@ function showPalletStep(){
   app.innerHTML = `
     <label>Enter Pallet Identifier (15-digit code):</label>
     <input id="palletInput" maxlength="15" placeholder="Scan or type 15 digits" />
-    <div class="actions">
-      <button class="btn btn-primary" onclick="confirmPallet()">Next</button>
-      <button class="btn btn-ghost" onclick="startPalletScan()">📷 Scan Pallet</button>
+    <div class="actions mt-3">
+      <button class="btn btn-success" onclick="confirmPallet()">Confirm Pallet Barcode</button>
     </div>
-    <p class="status">Tip: Use the camera or type manually.</p>
+    <hr>
+    <p class="status">Tip: You can also scan using your camera.</p>
+    <div class="actions mt-5">
+      <button class="btn btn-primary" onclick="startPalletScan()">📷 Use Camera</button>
+    </div>
   `;
-  document.getElementById('palletInput').focus();
+  const input = document.getElementById('palletInput');
+  input.focus(); if (input.select) input.select();
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') confirmPallet();
+  });
 }
 
 function confirmPallet(){
-  const input = (document.getElementById('palletInput')?.value || '').trim();
-  if (input.length !== 15 || isNaN(input)) {
+  const inputVal = (document.getElementById('palletInput')?.value || '').trim();
+  if (inputVal.length !== 15 || isNaN(inputVal)) {
     alert('Please enter a valid 15-digit number.');
-    return;
+    const input = document.getElementById('palletInput');
+    input?.focus(); return;
   }
-  palletId = input;
+  palletId = inputVal;
   showConfirmPallet();
 }
 
@@ -130,22 +138,60 @@ function showLocationStep(){
     <p>Pallet ID: <strong>${palletId}</strong></p>
     <label>Enter Location Code:</label>
     <input id="locationInput" placeholder="Scan or type location" />
-    <div class="actions">
+
+    <div class="actions mt-3">
+      <button class="btn btn-success" id="confirmLocationBtn">Confirm Entry</button>
       <button class="btn btn-danger" onclick="showConfirmPallet()">Back</button>
-      <button class="btn btn-success" onclick="startLocationScan()">📷 Scan Location</button>
     </div>
-    <p class="status">Or type a code and press <strong>Enter</strong> to continue.</p>
+
+    <div id="bayChooser" class="mt-4" style="display:none">
+      <p>This location ends with “-”. Choose a bay:</p>
+      <div class="actions" style="justify-content:center; gap:12px; flex-wrap:nowrap;">
+        <button class="btn btn-secondary" onclick="chooseBay(2)">2</button>
+        <button class="btn btn-secondary" onclick="chooseBay(3)">3</button>
+        <button class="btn btn-secondary" onclick="chooseBay(4)">4</button>
+      </div>
+    </div>
+
+    <hr>
+    <div class="actions mt-4">
+      <button class="btn btn-primary" onclick="startLocationScan()">📷 Use Camera</button>
+    </div>
+
+    <p class="status">Tip: If the location ends with “-”, you’ll be asked to choose 2 / 3 / 4.</p>
   `;
 
   const input = document.getElementById('locationInput');
-  input.focus();
-  input.addEventListener('keydown', e => {
-    if (e.key === 'Enter') {
-      const val = (input.value || '').trim();
-      if (!val) { alert('Please enter a location code.'); return; }
-      processLocationInput(val);
+  const confirmBtn = document.getElementById('confirmLocationBtn');
+
+  // Active-cell behaviour
+  input.focus(); if (input.select) input.select();
+
+  // HID scanner / typing: as soon as trailing '-' appears, prompt for bay
+  input.addEventListener('input', () => {
+    const v = (input.value || '').trim();
+    if (v.endsWith('-')) {
+      locationBase = v; // keep trailing '-'
+      showBayPickerInline(); // reveal chooser inline on this page
+    } else {
+      hideBayPickerInline();
     }
-  }, { once: true });
+  });
+
+  // Enter submits (uses same logic as clicking Confirm Entry)
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
+      confirmBtn.click();
+    }
+  });
+
+  // Confirm Entry button
+  confirmBtn.addEventListener('click', () => {
+    const val = (input.value || '').trim();
+    if (!val) { alert('Please enter a location code.'); input.focus(); return; }
+    processLocationInput(val);
+  });
 }
 
 function startLocationScan(){
@@ -162,7 +208,7 @@ function processLocationInput(val){
 
   if (v.endsWith('-')) {
     locationBase = v; // keep the trailing "-" so we can append 2/3/4
-    showBayPicker();
+    showBayPicker();  // full-page picker flow
     return;
   }
 
@@ -171,7 +217,17 @@ function processLocationInput(val){
   showConfirmLocation();
 }
 
-/* Bay picker (2/3/4) – force single row */
+/* Inline bay picker (on the same page) */
+function showBayPickerInline(){
+  const chooser = document.getElementById('bayChooser');
+  if (chooser) chooser.style.display = '';
+}
+function hideBayPickerInline(){
+  const chooser = document.getElementById('bayChooser');
+  if (chooser) chooser.style.display = 'none';
+}
+
+/* Full-page bay picker (used after camera scan or manual confirm) */
 function showBayPicker(){
   stopCamera();
   app.innerHTML = `
@@ -179,7 +235,6 @@ function showBayPicker(){
     <p>Location: <strong>${locationBase}</strong></p>
     <p>Select bay to complete this location:</p>
 
-    <!-- one line row -->
     <div class="actions" style="justify-content:center; gap:12px; flex-wrap:nowrap;">
       <button class="btn btn-primary" style="flex:0 0 auto; min-width:90px;" onclick="chooseBay(2)">2</button>
       <button class="btn btn-primary" style="flex:0 0 auto; min-width:90px;" onclick="chooseBay(3)">3</button>
@@ -194,7 +249,25 @@ function showBayPicker(){
 }
 
 function chooseBay(n){
+  // If inline picker was used and user clicks one of the inline buttons,
+  // locationBase will already be set (with trailing '-').
+  if (!locationBase) {
+    // Fallback: try to read from the input in case user typed it there
+    const input = document.getElementById('locationInput');
+    const v = (input?.value || '').trim();
+    if (v.endsWith('-')) locationBase = v;
+  }
+  if (!locationBase) {
+    alert('No base location found. Please scan or type the location ending with “-” again.');
+    const input = document.getElementById('locationInput');
+    input?.focus();
+    return;
+  }
   locationCode = `${locationBase}${n}`;
+  // If we are on the inline page, reflect it in the field for clarity
+  const input = document.getElementById('locationInput');
+  if (input) input.value = locationCode;
+
   showConfirmLocation();
 }
 
@@ -205,7 +278,7 @@ function showConfirmLocation(){
     <p>Location: <strong>${locationCode}</strong></p>
     <p>Is this correct?</p>
     <div class="actions">
-      <button class="btn btn-danger" onclick="startLocationScan()">Re-scan Location</button>
+      <button class="btn btn-danger" onclick="showLocationStep()">Change Location</button>
       <button class="btn btn-success" onclick="submitAssignment()">Confirm & Submit</button>
     </div>
   `;
