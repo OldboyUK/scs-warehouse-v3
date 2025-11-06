@@ -4,7 +4,7 @@ const SHARED_TOKEN = 'J4PAN88';
 
 // Fallback so Pallet Entry works even if the env var isn't set yet.
 // (Use your actual Apps Script /exec URL here.)
-const FALLBACK_PALLET_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyILeG2KOvbzEdqZc5DvFTTJZWGuJrZYE5XTBIr6LOVEavwv3gRG2sCmrMImrS8GFY/exec';
+const FALLBACK_PALLET_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw1gFyQTjsRRdVYkNCVQtz6rF2eNwAnuS-HVidL8bljHLW2pIpp4gjydCJwKXBO3HZn/exec';
 
 exports.handler = async function (event) {
   try {
