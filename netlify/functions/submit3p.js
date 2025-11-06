@@ -2,10 +2,8 @@
 const fetch = require('node-fetch');
 
 const SHARED_TOKEN = 'J4PAN88';
-
-// Prefer env var so you can rotate endpoints easily.
-// netlify env:set GOODS3P_SCRIPT_URL "https://script.google.com/macros/s/XXXXX/exec"
-const FALLBACK_GOODS3P_SCRIPT_URL = ''; // optional fallback
+// Set in Netlify env: GOODS3P_SCRIPT_URL = your Apps Script /exec URL
+const FALLBACK_GOODS3P_SCRIPT_URL = ''; // optional fallback, usually keep empty
 
 exports.handler = async function (event) {
   try {
@@ -15,21 +13,19 @@ exports.handler = async function (event) {
 
     const scriptURL = process.env.GOODS3P_SCRIPT_URL || FALLBACK_GOODS3P_SCRIPT_URL;
     if (!scriptURL) {
-      return { statusCode: 500, body: JSON.stringify({ result: 'error', message: 'Missing GOODS3P_SCRIPT_URL environment variable' }) };
+      return { statusCode: 500, body: JSON.stringify({ result: 'error', message: 'Missing GOODS3P_SCRIPT_URL env var' }) };
     }
 
     const params = new URLSearchParams(event.body || '');
     const required = ['pallet','units','date','time','helper','company','product','format','abv','bbe','duty'];
-    const missing = required.filter(k => !params.get(k));
-    if (missing.length){
-      return { statusCode: 400, body: JSON.stringify({ result: 'error', message: `Missing parameters: ${missing.join(', ')}` }) };
+    for (const k of required) {
+      if (!params.get(k)) {
+        return { statusCode: 400, body: JSON.stringify({ result:'error', message:`Missing parameter: ${k}` }) };
+      }
     }
 
-    // Forward to Apps Script
-    const body = new URLSearchParams();
-    required.forEach(k => body.append(k, params.get(k)));
+    const body = new URLSearchParams(event.body || '');
     body.append('token', SHARED_TOKEN);
-    body.append('action', 'goods_in_3p'); // optional: route on Apps Script
 
     const res = await fetch(scriptURL, {
       method: 'POST',
@@ -38,7 +34,6 @@ exports.handler = async function (event) {
     });
 
     const text = await res.text();
-    // Try JSON first
     try {
       const json = JSON.parse(text);
       return { statusCode: res.status || 200, body: JSON.stringify(json) };

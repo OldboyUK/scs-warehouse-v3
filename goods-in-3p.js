@@ -220,12 +220,11 @@ function wireCombo(id){
   document.addEventListener('click', e=>{ if (!wrap.contains(e.target)) close(); }, {capture:true});
 }
 
-// --- Steps ---
-// FIRST SCREEN: scanner-ready focused field (no soft keyboard until tap)
 function showStep1(){
   app.innerHTML = `
     <label>Enter Pallet Identifier (15-digit code):</label>
-    <input id="palletInput" maxlength="15" placeholder="Scan or type 15 digits" />
+    <input id="palletInput" maxlength="15" placeholder="Scan or type 15 digits"
+           inputmode="none" autocomplete="off" autocapitalize="off" />
     <div class="actions mt-3">
       <button class="btn btn-success" onclick="confirmPallet()">Confirm Pallet Barcode</button>
     </div>
@@ -235,13 +234,11 @@ function showStep1(){
       <button class="btn btn-primary" onclick="scanPallet()">📷 Use Camera</button>
     </div>
   `;
-
   const input = document.getElementById('palletInput');
-  scannerReadyFocus(input); // <-- focus + readOnly trick for scanners
-
-  // Submit on Enter (once input is active)
-  input.addEventListener('keydown', e=>{ if(e.key==='Enter') confirmPallet(); });
+  input.focus(); if (input.select) input.select();   // <- scanner-ready focus (no VK due to inputmode=none)
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') confirmPallet(); });
 }
+
 function confirmPallet(){
   const v = (document.getElementById('palletInput').value||'').trim();
   if (v.length!==15 || isNaN(v)){ alert('Please enter a valid 15-digit number.'); return; }
@@ -519,7 +516,12 @@ function sameLoadout(){
   `;
   // Scanner-ready focus on the Same Loadout pallet field too
   scannerReadyFocus(document.getElementById('samePallet'));
-}
+  const input = document.getElementById('samePallet');
+  input.setAttribute('inputmode','none');
+  input.setAttribute('autocomplete','off');
+  input.setAttribute('autocapitalize','off');
+  input.focus(); if (input.select) input.select();
+}  
 function confirmSamePallet(){
   const v = (document.getElementById('samePallet').value||'').trim();
   if (v.length!==15 || isNaN(v)){ alert('Please enter a valid 15-digit number.'); return; }
