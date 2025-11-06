@@ -1,19 +1,26 @@
-// goods-in-3p.js (UPDATED)
-// Changes:
-// 1) Format is asked BEFORE Units
-// 2) Packing Format is a fixed dropdown list
-// 3) Duty Status is a fixed dropdown of 3 options
-// 4) BBE entered as DDMMYYYY; converted to DD/MM/YYYY when writing to Sheets
+// goods-in-3p.js (MERGED)
+// - Format is asked BEFORE Units
+// - Packing Format is a fixed dropdown list
+// - Duty Status is a fixed dropdown of 3 options
+// - BBE entered as DDMMYYYY; converted to DD/MM/YYYY when submitting
+// - ABV auto-fills for listed products using col E from PRODUCT DATABASE (3P)
+//   keyed by col A "Company | Product"
 
+// === BASIC WIRING ===
 const app   = document.getElementById('app');
 const video = document.getElementById('video');
 
-// === CONFIG: publish these two sheets as CSV and paste the CSV URLs here ===
-const PRODUCTS_3P_CSV = '<<<PASTE_PUBLISHED_CSV_URL_FOR_PRODUCTS_3P>>>';
-const CUSTOMERS_CSV   = '<<<PASTE_PUBLISHED_CSV_URL_FOR_CUSTOMERS>>>';
-const SCRIPT_URL = '/.netlify/functions/submit3p';
+// === CONFIG: paste your published CSV URLs ===
+// PRODUCTS (3P): column A must be "Company | Product"
+const PRODUCTS_3P_CSV   = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=60083586&single=true&output=csv';
+// CUSTOMERS (SCS & 3P): column A company names
+const CUSTOMERS_CSV     = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=2137345148&single=true&output=csv';
+// PRODUCT DATABASE (3P): column A "Company | Product", column E ABV
+const PRODUCT_DB_3P_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=1881254286&single=true&output=csv';
+// Netlify function to relay to Apps Script
+const SCRIPT_URL        = '/.netlify/functions/submit3p';
 
-// --- Fixed dropdowns ---
+// === Fixed dropdowns ===
 const FORMAT_OPTIONS = [
   '12 x 330ml',
   '12 x 500ml',
@@ -47,25 +54,26 @@ const DUTY_OPTIONS = [
   "Don't know"
 ];
 
-// State
+// === State ===
 let palletId = '';
-let listedItem = '';
+let listedItem = '';   // "Company | Product" helper
 let company = '';
 let product = '';
-let abv = '';
+let abv = '';          // auto-filled for listed; manual for non-listed
 let units = 0;
 let format = '';
 let duty = '';
-let bbe = ''; // stored as DDMMYYYY (8 digits)
+let bbe = '';          // stored raw as DDMMYYYY (8 digits)
 
 // For Same Loadout
 let lastLoadout = null; // { listedItem, company, product, abv, units, format, duty }
 
-// Data
-let productsList = []; // ["Company | Product", ...]
-let customersList = []; // ["Company", ...]
+// === Data ===
+let productsList = [];   // from PRODUCTS (3P) col A
+let customersList = [];  // from CUSTOMERS col A
+let abvByHelper = new Map(); // PRODUCT DATABASE (3P): key col A "Company | Product", val col E ABV
 
-// --- CSV helpers ---
+// === CSV helpers ===
 function parseCSV(text){
   const lines = text.replace(/\r/g,'').split('\n').filter(x => x.length);
   const rows = [];
@@ -104,8 +112,9 @@ function bbeWithSlashes(raw8){
   return m ? `${m[1]}/${m[2]}/${m[3]}` : '';
 }
 
-// --- Lookups ---
+// === Lookups ===
 function loadLookups(){
+  // PRODUCTS (3P)
   if (PRODUCTS_3P_CSV && PRODUCTS_3P_CSV.startsWith('http')){
     fetch(PRODUCTS_3P_CSV).then(r=>r.text()).then(text=>{
       const rows = parseCSV(text);
@@ -114,6 +123,7 @@ function loadLookups(){
         .sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
     }).catch(console.error);
   }
+  // CUSTOMERS
   if (CUSTOMERS_CSV && CUSTOMERS_CSV.startsWith('http')){
     fetch(CUSTOMERS_CSV).then(r=>r.text()).then(text=>{
       const rows = parseCSV(text);
@@ -122,9 +132,21 @@ function loadLookups(){
         .sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
     }).catch(console.error);
   }
+  // PRODUCT DATABASE (3P): col A helper, col E ABV
+  if (PRODUCT_DB_3P_CSV && PRODUCT_DB_3P_CSV.startsWith('http')){
+    fetch(PRODUCT_DB_3P_CSV).then(r=>r.text()).then(text=>{
+      const rows = parseCSV(text);
+      abvByHelper.clear();
+      for (const r of rows){
+        const helper = (r[0] || '').trim();
+        const abvVal = (r[4] || '').toString().trim(); // column E index 4
+        if (helper) abvByHelper.set(helper, abvVal);
+      }
+    }).catch(console.error);
+  }
 }
 
-// --- Camera scan utility ---
+// === Camera scan utility ===
 async function startScan(onValue){
   if (typeof BarcodeDetector === 'undefined'){
     alert('Barcode scanning is not supported in this browser.');
@@ -164,16 +186,18 @@ async function startScan(onValue){
   }
 }
 
-// --- UI helpers ---
+// === UI helpers ===
 function confirmationBlock(){
   return `
     <div style="border:1px solid var(--card-border);border-radius:12px;padding:10px;background:rgba(255,255,255,0.05); margin-bottom:8px;">
       <div>Pallet ID: <strong style="color:#fff">${escapeHTML(palletId)}</strong></div>
-      ${listedItem ? `<div>Product: <strong style="color:#fff">${escapeHTML(listedItem)}</strong></div>` : `
-        <div>Company: <strong style="color:#fff">${escapeHTML(company || '-')}</strong></div>
-        <div>Product: <strong style="color:#fff">${escapeHTML(product || '-')}</strong></div>
-        <div>ABV: <strong style="color:#fff">${escapeHTML(abv || '-')}</strong></div>
-      `}
+      ${listedItem
+        ? `<div>Product: <strong style="color:#fff">${escapeHTML(listedItem)}</strong></div>`
+        : `
+          <div>Company: <strong style="color:#fff">${escapeHTML(company || '-')}</strong></div>
+          <div>Product: <strong style="color:#fff">${escapeHTML(product || '-')}</strong></div>
+        `}
+      <div>ABV: <strong style="color:#fff">${escapeHTML(abv || '-')}</strong></div>
       <div>Packing Format: <strong style="color:#fff">${escapeHTML(format || '-')}</strong></div>
       <div>Units on Pallet: <strong style="color:#fff">${escapeHTML(String(units||''))}</strong></div>
       <div>Best Before: <strong style="color:#fff">${escapeHTML(bbeWithSlashes(bbe) || '-' )}</strong></div>
@@ -228,7 +252,7 @@ function wireCombo(id){
   document.addEventListener('click', e=>{ if (!wrap.contains(e.target)) close(); }, {capture:true});
 }
 
-// --- Steps ---
+// === Steps ===
 function showStep1(){
   app.innerHTML = `
     <label>Enter Pallet Identifier (15-digit code):</label>
@@ -276,15 +300,21 @@ function showPathChooser(){
   `;
   wireCombo('productCombo');
 }
+
 function chooseListed(){
   const val = (document.getElementById('productCombo').value || '').trim();
   if (!val){ alert('Please choose a product from the list.'); return; }
   listedItem = val;
+
+  // Split helper into company/product
   const parts = listedItem.split('|').map(s=>s.trim());
   company = parts[0] || '';
   product = parts[1] || '';
-  abv = ''; // not captured for listed path
-  // NEW ORDER: go to FORMAT first
+
+  // Auto-fill ABV from PRODUCT DATABASE (3P)
+  abv = abvByHelper.get(listedItem) || '';
+
+  // Next: Format (dropdown) BEFORE Units
   showFormat();
 }
 
@@ -343,11 +373,10 @@ function confirmManualABV(){
   const v = (document.getElementById('abvInput').value||'').trim();
   if (!v || isNaN(v) || Number(v) < 0){ alert('Please enter a valid ABV.'); return; }
   abv = v;
-  // NEW ORDER: go to FORMAT first
   showFormat();
 }
 
-// NEW: Format (dropdown) BEFORE Units
+// === Format BEFORE Units ===
 function showFormat(){
   app.innerHTML = `
     <label for="formatSelect">Select Packing Format:</label>
@@ -387,7 +416,7 @@ function confirmUnits(){
   showDuty();
 }
 
-// UPDATED: Duty dropdown with 3 options
+// === Duty dropdown ===
 function showDuty(){
   app.innerHTML = `
     <label for="dutySelect">Current Duty Status:</label>
@@ -410,7 +439,7 @@ function confirmDuty(){
   showBBE();
 }
 
-// UPDATED: BBE expects DDMMYYYY (8 digits)
+// === BBE expects DDMMYYYY (8 digits) ===
 function showBBE(){
   app.innerHTML = `
     ${textInputRow('bbeInput','Best Before Date (DDMMYYYY):','placeholder="DDMMYYYY" inputmode="numeric" maxlength="8"')}
@@ -442,19 +471,19 @@ function showConfirm(){
 function submit3P(){
   const { date, time } = nowForSheets();
   const helper = listedItem || `${company} | ${product}`;
-  const bbeOut = bbeWithSlashes(bbe); // convert DDMMYYYY -> DD/MM/YYYY just before submit
+  const bbeOut = bbeWithSlashes(bbe); // DDMMYYYY -> DD/MM/YYYY
 
   const body = new URLSearchParams();
   body.append('pallet', palletId);       // A
   body.append('units', String(units));   // B
-  body.append('date', date);             // (not used by GAS; server time is used for C/D)
+  body.append('date', date);             // (GAS uses server time for C/D)
   body.append('time', time);
   body.append('helper', helper);         // E
   body.append('company', company);       // F
   body.append('product', product);       // G
   body.append('format', format);         // H
   body.append('abv', abv);               // I
-  body.append('bbe', bbeOut);            // J (DD/MM/YYYY as required)
+  body.append('bbe', bbeOut);            // J
   body.append('duty', duty);             // K
 
   app.innerHTML = `<p class="status">Submitting…</p>`;
@@ -533,7 +562,7 @@ function scanSame(){
   });
 }
 
-// Expose
+// Expose for onclick
 window.confirmPallet = confirmPallet;
 window.scanPallet    = scanPallet;
 window.chooseListed  = chooseListed;
