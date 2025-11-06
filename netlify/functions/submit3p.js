@@ -3,7 +3,7 @@ const fetch = require('node-fetch');
 
 const SHARED_TOKEN = 'J4PAN88';
 // Set in Netlify env: GOODS3P_SCRIPT_URL = your Apps Script /exec URL
-const FALLBACK_GOODS3P_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw1gFyQTjsRRdVYkNCVQtz6rF2eNwAnuS-HVidL8bljHLW2pIpp4gjydCJwKXBO3HZn/exec'; // optional fallback, usually keep empty
+const FALLBACK_GOODS3P_SCRIPT_URL = ''; // optional fallback, usually keep empty
 
 exports.handler = async function (event) {
   try {
