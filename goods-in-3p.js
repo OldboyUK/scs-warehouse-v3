@@ -66,18 +66,40 @@ function bbeWithSlashes(raw8){
   const m = /^(\d{2})(\d{2})(\d{4})$/.exec(String(raw8||'').trim());
   return m ? `${m[1]}/${m[2]}/${m[3]}` : '';
 }
-// Parse DDMMYYYY -> Date (local) or null if invalid calendar date
 function parseDDMMYYYY(raw){
   const m = /^(\d{2})(\d{2})(\d{4})$/.exec(String(raw||'').trim());
   if (!m) return null;
   const d = parseInt(m[1],10), M = parseInt(m[2],10), Y = parseInt(m[3],10);
   if (M < 1 || M > 12) return null;
   const dt = new Date(Y, M-1, d);
-  // Validate normalised components (reject 31/02, etc.)
   if (dt.getFullYear() !== Y || (dt.getMonth()+1) !== M || dt.getDate() !== d) return null;
   return dt;
 }
 function startOfDay(date){ const d = new Date(date); d.setHours(0,0,0,0); return d; }
+
+// NEW: Focus the input on the first physical keystroke (scanner/keyboard) and keep that first char
+function focusOnFirstKey(inputId) {
+  const handler = (ev) => {
+    // Only react to printable chars, Enter, or Tab
+    const isPrintable = ev.key && ev.key.length === 1;
+    const isControl = ev.key === 'Enter' || ev.key === 'Tab';
+    if (!isPrintable && !isControl) return;
+
+    const el = document.getElementById(inputId);
+    if (el && document.activeElement !== el) {
+      // If printable, pre-insert the first char so it isn't lost
+      if (isPrintable) {
+        el.value = (el.value || '') + ev.key;
+      }
+      el.focus({ preventScroll: true });
+      // Place caret at end
+      const len = el.value.length;
+      try { el.setSelectionRange(len, len); } catch(_) {}
+    }
+    window.removeEventListener('keydown', handler, true);
+  };
+  window.addEventListener('keydown', handler, true);
+}
 
 // --- Load lookups ---
 function loadLookups(){
@@ -150,9 +172,10 @@ function textInputRow(id, label, attrs=''){
   return `<label for="${id}">${label}</label><input id="${id}" ${attrs} />`;
 }
 function combo(id, placeholder, list){
+  // NOTE: no auto-focus; allow VK on tap; scanner can start typing to focus
   return `
     <div id="${id}-wrap" style="position:relative;">
-      <input id="${id}" placeholder="${placeholder}" autocomplete="off" style="width:100%; padding-right:42px;">
+      <input id="${id}" placeholder="${placeholder}" autocomplete="off" autocapitalize="off" spellcheck="false" />
       <button id="${id}-toggle" type="button" aria-label="Open suggestions"
         style="position:absolute; right:6px; top:6px; height:34px; width:34px; border-radius:10px; border:1px solid var(--card-border); background:rgba(255,255,255,0.08); color:var(--text); cursor:pointer;">▾</button>
       <div id="${id}-list" hidden
@@ -184,11 +207,12 @@ function wireCombo(id){
 }
 
 // --- Steps ---
-// FIRST SCREEN: no auto-focus (prevents keypad popping)
+// FIRST SCREEN: no auto-focus; scanner keystroke focuses & keeps first char
 function showStep1(){
   app.innerHTML = `
     <label>Enter Pallet Identifier (15-digit code):</label>
-    <input id="palletInput" maxlength="15" placeholder="Scan or type 15 digits" />
+    <input id="palletInput" maxlength="15" placeholder="Scan or type 15 digits"
+           autocomplete="off" autocapitalize="off" spellcheck="false" />
     <div class="actions mt-3">
       <button class="btn btn-success" onclick="confirmPallet()">Confirm Pallet Barcode</button>
     </div>
@@ -198,7 +222,13 @@ function showStep1(){
       <button class="btn btn-primary" onclick="scanPallet()">📷 Use Camera</button>
     </div>
   `;
-  // Intentionally NOT focusing the input here
+
+  // Do NOT auto-focus (prevents soft keyboard). Focus on first physical keystroke:
+  focusOnFirstKey('palletInput');
+
+  // Submit on Enter once focused
+  const input = document.getElementById('palletInput');
+  input.addEventListener('keydown', e=>{ if(e.key==='Enter') confirmPallet(); });
 }
 function confirmPallet(){
   const v = (document.getElementById('palletInput').value||'').trim();
@@ -213,7 +243,7 @@ function scanPallet(){
   });
 }
 
-// SECOND SCREEN: product chooser — also no auto-focus
+// SECOND SCREEN: no auto-focus; first keystroke focuses product search box
 function showPathChooser(){
   app.innerHTML = `
     <p>Pallet ID: <strong>${escapeHTML(palletId)}</strong></p>
@@ -229,6 +259,7 @@ function showPathChooser(){
     </div>
   `;
   wireCombo('productCombo');
+  focusOnFirstKey('productCombo');
 }
 function chooseListed(){
   const val = (document.getElementById('productCombo').value || '').trim();
@@ -253,6 +284,7 @@ function startManual(){
     </div>
   `;
   wireCombo('ownerCombo');
+  focusOnFirstKey('ownerCombo');
 }
 function confirmOwner(){
   const val = (document.getElementById('ownerCombo').value || '').trim();
@@ -262,12 +294,13 @@ function confirmOwner(){
 function showManualProductName(){
   app.innerHTML = `
     <p>Owner: <strong>${escapeHTML(company)}</strong></p>
-    ${textInputRow('prodName','Enter Product Name:','placeholder="Type product name"')}
+    ${textInputRow('prodName','Enter Product Name:','placeholder="Type product name" autocomplete="off" autocapitalize="off" spellcheck="false"')}
     <div class="actions mt-3">
       <button class="btn btn-ghost" onclick="startManual()">Back</button>
       <button class="btn btn-primary" onclick="confirmManualProductName()">Next</button>
     </div>
   `;
+  focusOnFirstKey('prodName');
 }
 function confirmManualProductName(){
   const val = (document.getElementById('prodName').value||'').trim();
@@ -284,6 +317,7 @@ function showManualABV(){
       <button class="btn btn-primary" onclick="confirmManualABV()">Next</button>
     </div>
   `;
+  // Numeric fields typically don't need scanner focus assist
 }
 function confirmManualABV(){
   const v = (document.getElementById('abvInput').value||'').trim();
@@ -350,7 +384,7 @@ function confirmDuty(){
 function showBBE(){
   app.innerHTML = `
     ${textInputRow('bbeInput','Best Before Date (DDMMYYYY):','placeholder="DDMMYYYY" inputmode="numeric" maxlength="8"')}
-    <div class="status">Enter 8 digits, e.g. 01062026 for 01/06/2026. It must be today or later, up to 5 years ahead.</div>
+    <div class="status">Enter 8 digits, e.g. 01062026. Must be today or later, up to 5 years ahead.</div>
     <div class="actions mt-3">
       <button class="btn btn-ghost" onclick="showDuty()">Back</button>
       <button class="btn btn-primary" onclick="confirmBBE()">Next</button>
@@ -382,7 +416,7 @@ function showConfirm(){
   `;
 }
 
-// More explicit diagnostics around submission responses
+// Submit with diagnostics
 function submit3P(){
   const { date, time } = nowForSheets();
   const helper = listedItem || `${company} | ${product}`;
@@ -402,7 +436,9 @@ function submit3P(){
   body.append('duty', duty);
 
   app.innerHTML = `<p class="status">Submitting…</p>
-  <pre style="white-space:pre-wrap; opacity:.7; font-size:.9em;">Payload preview:
+  <details open style="margin-top:8px;">
+    <summary>Payload preview</summary>
+    <pre style="white-space:pre-wrap; opacity:.75; font-size:.9em;">
 pallet=${escapeHTML(palletId)}
 units=${escapeHTML(String(units))}
 helper=${escapeHTML(helper)}
@@ -411,7 +447,8 @@ product=${escapeHTML(product)}
 format=${escapeHTML(format)}
 abv=${escapeHTML(abv)}
 bbe=${escapeHTML(bbeOut)}
-duty=${escapeHTML(duty)}</pre>`;
+duty=${escapeHTML(duty)}</pre>
+  </details>`;
 
   fetch(SCRIPT_URL, { method: 'POST', headers: { 'Content-Type':'application/x-www-form-urlencoded' }, body })
     .then(async r => {
@@ -462,7 +499,8 @@ function sameLoadout(){
 
   app.innerHTML = `
     <label>Enter Pallet Identifier (15-digit code):</label>
-    <input id="samePallet" maxlength="15" placeholder="Scan or type 15 digits"/>
+    <input id="samePallet" maxlength="15" placeholder="Scan or type 15 digits"
+           autocomplete="off" autocapitalize="off" spellcheck="false" />
     <div class="actions mt-3">
       <button class="btn btn-success" onclick="confirmSamePallet()">Confirm Manual Entry</button>
     </div>
@@ -472,6 +510,8 @@ function sameLoadout(){
     </div>
     <p class="status">This reuses the last owner/product/ABV/format/units/duty.</p>
   `;
+  // Same scanner-first behaviour here
+  focusOnFirstKey('samePallet');
 }
 function confirmSamePallet(){
   const v = (document.getElementById('samePallet').value||'').trim();
