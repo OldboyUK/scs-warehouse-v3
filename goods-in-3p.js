@@ -1,6 +1,7 @@
 const app   = document.getElementById('app');
 const video = document.getElementById('video');
 
+
 // PRODUCTS (3P): column A must be "Company | Product"
 const PRODUCTS_3P_CSV   = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=60083586&single=true&output=csv';
 // CUSTOMERS (SCS & 3P): column A company names
@@ -9,6 +10,7 @@ const CUSTOMERS_CSV     = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGux
 const PRODUCT_DB_3P_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=1881254286&single=true&output=csv';
 // Netlify function to relay to Apps Script
 const SCRIPT_URL     = '/.netlify/functions/submit3p'; // Netlify relay -> Apps Script
+
 
 // Fixed dropdowns
 const FORMAT_OPTIONS = [
@@ -77,28 +79,41 @@ function parseDDMMYYYY(raw){
 }
 function startOfDay(date){ const d = new Date(date); d.setHours(0,0,0,0); return d; }
 
-// NEW: Focus the input on the first physical keystroke (scanner/keyboard) and keep that first char
-function focusOnFirstKey(inputId) {
-  const handler = (ev) => {
-    // Only react to printable chars, Enter, or Tab
-    const isPrintable = ev.key && ev.key.length === 1;
-    const isControl = ev.key === 'Enter' || ev.key === 'Tab';
-    if (!isPrintable && !isControl) return;
+// NEW: Scanner-ready focus trick (focused + readOnly, no VK until tap; first key captured)
+function scannerReadyFocus(input){
+  if (!input) return;
+  input.readOnly = true;               // suppress VK on focus
+  input.setAttribute('inputmode','none');
+  input.setAttribute('autocomplete','off');
+  input.setAttribute('autocapitalize','off');
+  input.setAttribute('spellcheck','false');
+  input.focus({ preventScroll: true }); // ready for scanner
 
-    const el = document.getElementById(inputId);
-    if (el && document.activeElement !== el) {
-      // If printable, pre-insert the first char so it isn't lost
-      if (isPrintable) {
-        el.value = (el.value || '') + ev.key;
-      }
-      el.focus({ preventScroll: true });
-      // Place caret at end
-      const len = el.value.length;
-      try { el.setSelectionRange(len, len); } catch(_) {}
+  const keyHandler = (ev) => {
+    const printable = ev.key && ev.key.length === 1;
+    const allow = printable || ev.key === 'Enter' || ev.key === 'Tab';
+    if (!allow) return;
+    // enable typing and keep first char
+    input.readOnly = false;
+    input.removeAttribute('inputmode');
+    if (printable) {
+      // If user/scanner pressed a printable char, append it manually once
+      input.value = (input.value || '') + ev.key;
+      const len = input.value.length;
+      try { input.setSelectionRange(len, len); } catch (_) {}
     }
-    window.removeEventListener('keydown', handler, true);
+    // From now on, let the browser handle input normally
+    input.removeEventListener('keydown', keyHandler, true);
   };
-  window.addEventListener('keydown', handler, true);
+  input.addEventListener('keydown', keyHandler, true);
+
+  // If user taps to edit, enable typing and show VK
+  const pointerHandler = () => {
+    input.readOnly = false;
+    input.removeAttribute('inputmode');
+    input.removeEventListener('pointerdown', pointerHandler, true);
+  };
+  input.addEventListener('pointerdown', pointerHandler, true);
 }
 
 // --- Load lookups ---
@@ -172,7 +187,6 @@ function textInputRow(id, label, attrs=''){
   return `<label for="${id}">${label}</label><input id="${id}" ${attrs} />`;
 }
 function combo(id, placeholder, list){
-  // NOTE: no auto-focus; allow VK on tap; scanner can start typing to focus
   return `
     <div id="${id}-wrap" style="position:relative;">
       <input id="${id}" placeholder="${placeholder}" autocomplete="off" autocapitalize="off" spellcheck="false" />
@@ -207,12 +221,11 @@ function wireCombo(id){
 }
 
 // --- Steps ---
-// FIRST SCREEN: no auto-focus; scanner keystroke focuses & keeps first char
+// FIRST SCREEN: scanner-ready focused field (no soft keyboard until tap)
 function showStep1(){
   app.innerHTML = `
     <label>Enter Pallet Identifier (15-digit code):</label>
-    <input id="palletInput" maxlength="15" placeholder="Scan or type 15 digits"
-           autocomplete="off" autocapitalize="off" spellcheck="false" />
+    <input id="palletInput" maxlength="15" placeholder="Scan or type 15 digits" />
     <div class="actions mt-3">
       <button class="btn btn-success" onclick="confirmPallet()">Confirm Pallet Barcode</button>
     </div>
@@ -223,11 +236,10 @@ function showStep1(){
     </div>
   `;
 
-  // Do NOT auto-focus (prevents soft keyboard). Focus on first physical keystroke:
-  focusOnFirstKey('palletInput');
-
-  // Submit on Enter once focused
   const input = document.getElementById('palletInput');
+  scannerReadyFocus(input); // <-- focus + readOnly trick for scanners
+
+  // Submit on Enter (once input is active)
   input.addEventListener('keydown', e=>{ if(e.key==='Enter') confirmPallet(); });
 }
 function confirmPallet(){
@@ -243,7 +255,7 @@ function scanPallet(){
   });
 }
 
-// SECOND SCREEN: no auto-focus; first keystroke focuses product search box
+// SECOND SCREEN: no auto-focus to avoid VK; user can type/tap as before
 function showPathChooser(){
   app.innerHTML = `
     <p>Pallet ID: <strong>${escapeHTML(palletId)}</strong></p>
@@ -259,7 +271,6 @@ function showPathChooser(){
     </div>
   `;
   wireCombo('productCombo');
-  focusOnFirstKey('productCombo');
 }
 function chooseListed(){
   const val = (document.getElementById('productCombo').value || '').trim();
@@ -284,7 +295,6 @@ function startManual(){
     </div>
   `;
   wireCombo('ownerCombo');
-  focusOnFirstKey('ownerCombo');
 }
 function confirmOwner(){
   const val = (document.getElementById('ownerCombo').value || '').trim();
@@ -300,7 +310,6 @@ function showManualProductName(){
       <button class="btn btn-primary" onclick="confirmManualProductName()">Next</button>
     </div>
   `;
-  focusOnFirstKey('prodName');
 }
 function confirmManualProductName(){
   const val = (document.getElementById('prodName').value||'').trim();
@@ -317,7 +326,6 @@ function showManualABV(){
       <button class="btn btn-primary" onclick="confirmManualABV()">Next</button>
     </div>
   `;
-  // Numeric fields typically don't need scanner focus assist
 }
 function confirmManualABV(){
   const v = (document.getElementById('abvInput').value||'').trim();
@@ -499,19 +507,18 @@ function sameLoadout(){
 
   app.innerHTML = `
     <label>Enter Pallet Identifier (15-digit code):</label>
-    <input id="samePallet" maxlength="15" placeholder="Scan or type 15 digits"
-           autocomplete="off" autocapitalize="off" spellcheck="false" />
+    <input id="samePallet" maxlength="15" placeholder="Scan or type 15 digits" />
     <div class="actions mt-3">
       <button class="btn btn-success" onclick="confirmSamePallet()">Confirm Manual Entry</button>
     </div>
     <hr>
     <div class="actions">
-      <button class="btn btn-primary" onclick="scanSame()">📷 Use Camera</button>
+      <button class="btn btn-primary" onclick="scanSame()">📷 Scan Barcode</button>
     </div>
     <p class="status">This reuses the last owner/product/ABV/format/units/duty.</p>
   `;
-  // Same scanner-first behaviour here
-  focusOnFirstKey('samePallet');
+  // Scanner-ready focus on the Same Loadout pallet field too
+  scannerReadyFocus(document.getElementById('samePallet'));
 }
 function confirmSamePallet(){
   const v = (document.getElementById('samePallet').value||'').trim();
