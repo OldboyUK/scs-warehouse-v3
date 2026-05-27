@@ -15,11 +15,11 @@ exports.handler = async function (event) {
     const scriptURL = process.env.PALLET_SCRIPT_URL || FALLBACK_PALLET_SCRIPT_URL;
 
     const params = new URLSearchParams(event.body || '');
-    const code   = params.get('code');
-    const run    = params.get('run');
-    const units  = params.get('units');
-    const date   = params.get('date');   // ← Added
-    const time   = params.get('time');   // ← Added
+    const code  = params.get('code');
+    const run   = params.get('run');
+    const units = params.get('units');
+    const date  = params.get('date');
+    const time  = params.get('time');
 
     if (!code || !run || !units) {
       return {
@@ -32,8 +32,8 @@ exports.handler = async function (event) {
     body.append('code', code);
     body.append('run', run);
     body.append('units', units);
-    if (date) body.append('date', date);     // ← Added
-    if (time) body.append('time', time);     // ← Added
+    if (date) body.append('date', date);
+    if (time) body.append('time', time);
     body.append('token', SHARED_TOKEN);
 
     const response = await fetch(scriptURL, {

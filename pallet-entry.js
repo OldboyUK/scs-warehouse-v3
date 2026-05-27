@@ -256,7 +256,6 @@ function confirmUnits() {
 }
 
 function submitEntry(units, isSameLoadout = false) {
-  // Generate date and time in the exact format your sheet expects
   const now = new Date();
   const pad = n => String(n).padStart(2, '0');
   const date = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
@@ -266,12 +265,12 @@ function submitEntry(units, isSameLoadout = false) {
   body.append("code", palletCode);
   body.append("run", runCode);
   body.append("units", units);
-  body.append("date", date);      // ← Added
-  body.append("time", time);      // ← Added
+  body.append("date", date);
+  body.append("time", time);
 
   fetch(SCRIPT_URL, { 
-    method: 'POST', 
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, 
+    method:'POST', 
+    headers:{ 'Content-Type':'application/x-www-form-urlencoded' }, 
     body 
   })
     .then(res => res.json())
