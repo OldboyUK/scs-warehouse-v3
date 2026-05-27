@@ -4,10 +4,6 @@ const SHARED_TOKEN = 'J4PAN88';
 exports.handler = async function (event) {
   try {
     const scriptURL = process.env.PALLET_SCRIPT_URL;
-    
-    if (!scriptURL) {
-      return { statusCode: 500, body: JSON.stringify({ result: 'error', message: 'PALLET_SCRIPT_URL env var missing' }) };
-    }
 
     const params = new URLSearchParams(event.body || '');
     const body = new URLSearchParams();
@@ -26,21 +22,10 @@ exports.handler = async function (event) {
     });
 
     const text = await response.text();
-
-    return { 
-      statusCode: response.status || 200, 
-      body: text 
-    };
+    return { statusCode: response.status || 200, body: text };
 
   } catch (err) {
-    console.error("Netlify Function Error:", err);
-    return { 
-      statusCode: 500, 
-      body: JSON.stringify({ 
-        result: 'error', 
-        message: err.message,
-        stack: err.stack 
-      }) 
-    };
+    console.error("Submit function error:", err);
+    return { statusCode: 500, body: JSON.stringify({ result: 'error', message: 'Internal server error' }) };
   }
 };
