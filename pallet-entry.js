@@ -11,7 +11,7 @@ let lastLoadout = null; // { runCode, product, format, units }
 // CSVs
 const RUN_CODES_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=1875380966&single=true&output=csv';
 const ORDER_LOG_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=792145998&single=true&output=csv';
-const SCRIPT_URL   = '/.netlify/functions/submit';
+const SCRIPT_URL = `${window.location.origin}/.netlify/functions/submit`;
 
 // ORDER LOG lookup: run -> { product, format }
 const orderLog = new Map();
