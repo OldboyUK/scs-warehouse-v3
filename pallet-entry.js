@@ -269,16 +269,15 @@ function submitEntry(units, isSameLoadout = false) {
   body.append("time", time);
 
   fetch(SCRIPT_URL, { 
-    method:'POST', 
-    headers:{ 'Content-Type':'application/x-www-form-urlencoded' }, 
+    method: 'POST', 
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, 
     body 
   })
     .then(res => res.json())
     .then(data => {
       if (data.result === 'success') {
-        const info = orderLog.get(runCode) || { product:'-', format:'-' };
+        const info = orderLog.get(runCode) || { product: '-', format: '-' };
         lastLoadout = { runCode, product: info.product, format: info.format, units };
-
         showPostSubmitOptions();
       } else {
         app.innerHTML = `<p>❌ Error: ${data.message || 'Unknown error'}</p>

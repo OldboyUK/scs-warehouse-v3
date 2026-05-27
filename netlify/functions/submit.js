@@ -3,9 +3,17 @@ const SHARED_TOKEN = 'J4PAN88';
 
 exports.handler = async function (event) {
   try {
+    if (event.httpMethod !== 'POST') {
+      return { statusCode: 405, body: JSON.stringify({ result: 'error', message: 'Method Not Allowed' }) };
+    }
+
     const scriptURL = process.env.PALLET_SCRIPT_URL;
+    if (!scriptURL) {
+      return { statusCode: 500, body: JSON.stringify({ result: 'error', message: 'PALLET_SCRIPT_URL not configured' }) };
+    }
 
     const params = new URLSearchParams(event.body || '');
+
     const body = new URLSearchParams();
     body.append('code', params.get('code'));
     body.append('run', params.get('run'));
@@ -25,7 +33,10 @@ exports.handler = async function (event) {
     return { statusCode: response.status || 200, body: text };
 
   } catch (err) {
-    console.error("Submit function error:", err);
-    return { statusCode: 500, body: JSON.stringify({ result: 'error', message: 'Internal server error' }) };
+    console.error('Pallet submit error:', err);
+    return { 
+      statusCode: 500, 
+      body: JSON.stringify({ result: 'error', message: 'Internal server error' }) 
+    };
   }
 };
