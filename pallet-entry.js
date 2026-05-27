@@ -256,16 +256,27 @@ function confirmUnits() {
 }
 
 function submitEntry(units, isSameLoadout = false) {
+  // Generate date and time in the exact format your sheet expects
+  const now = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const date = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
+  const time = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+
   const body = new URLSearchParams();
   body.append("code", palletCode);
   body.append("run", runCode);
   body.append("units", units);
+  body.append("date", date);      // ← Added
+  body.append("time", time);      // ← Added
 
-  fetch(SCRIPT_URL, { method:'POST', headers:{ 'Content-Type':'application/x-www-form-urlencoded' }, body })
+  fetch(SCRIPT_URL, { 
+    method: 'POST', 
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, 
+    body 
+  })
     .then(res => res.json())
     .then(data => {
       if (data.result === 'success') {
-        // Remember this loadout for the fast loop
         const info = orderLog.get(runCode) || { product:'-', format:'-' };
         lastLoadout = { runCode, product: info.product, format: info.format, units };
 
