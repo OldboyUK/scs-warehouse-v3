@@ -337,7 +337,7 @@ function submitAssignment(){
 
   app.innerHTML = `<p class="status">Submitting…</p>`;
 
-  fetch('/.netlify/functions/assignLocation', {
+  fetch(`${window.location.origin}/.netlify/functions/assignLocation`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body
