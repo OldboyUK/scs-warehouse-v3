@@ -10,10 +10,7 @@ exports.handler = async function (event) {
 
     const scriptURL = process.env.LOCATION_SCRIPT_URL;
     if (!scriptURL) {
-      return {
-        statusCode: 500,
-        body: JSON.stringify({ result: 'error', message: 'Missing LOCATION_SCRIPT_URL environment variable' })
-      };
+      return { statusCode: 500, body: JSON.stringify({ result: 'error', message: 'Missing LOCATION_SCRIPT_URL environment variable' }) };
     }
 
     const params = new URLSearchParams(event.body || '');
@@ -32,6 +29,7 @@ exports.handler = async function (event) {
     body.append('date', date);
     body.append('time', time);
     body.append('token', SHARED_TOKEN);
+    body.append('action', 'location_assignment');   // ← This was missing
 
     const res = await fetch(scriptURL, {
       method: 'POST',
@@ -40,7 +38,6 @@ exports.handler = async function (event) {
     });
 
     const text = await res.text();
-    // Try to return JSON if Apps Script returned JSON
     try {
       const json = JSON.parse(text);
       return { statusCode: res.status || 200, body: JSON.stringify(json) };
@@ -48,6 +45,7 @@ exports.handler = async function (event) {
       return { statusCode: res.status || 200, body: JSON.stringify({ result: 'ok', raw: text }) };
     }
   } catch (err) {
+    console.error(err);
     return { statusCode: 500, body: JSON.stringify({ result: 'error', message: String(err) }) };
   }
 };
