@@ -25,33 +25,59 @@ fetch(CSV_URL)
     statusEl.textContent = 'Failed to load table.';
   });
 
-function parseCSV(text){
-  // Simple CSV parser that handles quoted fields
-  const lines = text.replace(/\r/g,'').split('\n').filter(x => x.length);
+function parseCSV(text) {
   const rows = [];
-  for (const line of lines) {
-    const out = [];
-    let cur = '';
-    let inQ = false;
-    for (let i=0; i<line.length; i++){
-      const ch = line[i];
-      if (inQ) {
-        if (ch === '"') {
-          if (line[i+1] === '"') { cur += '"'; i++; } // escaped quote
-          else { inQ = false; }
-        } else {
-          cur += ch;
-        }
-      } else {
-        if (ch === ',') { out.push(cur); cur=''; }
-        else if (ch === '"') { inQ = true; }
-        else { cur += ch; }
-      }
+  let row = [];
+  let cell = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    const next = text[i + 1];
+
+    // Escaped quotes
+    if (char === '"' && inQuotes && next === '"') {
+      cell += '"';
+      i++;
     }
-    out.push(cur);
-    rows.push(out);
+
+    // Toggle quote mode
+    else if (char === '"') {
+      inQuotes = !inQuotes;
+    }
+
+    // Column separator
+    else if (char === ',' && !inQuotes) {
+      row.push(cell);
+      cell = '';
+    }
+
+    // Row separator
+    else if ((char === '\n' || char === '\r') && !inQuotes) {
+
+      // Handle Windows CRLF
+      if (char === '\r' && next === '\n') {
+        i++;
+      }
+
+      row.push(cell);
+      rows.push(row);
+
+      row = [];
+      cell = '';
+    }
+
+    // Normal text
+    else {
+      cell += char;
+    }
   }
-  return rows;
+
+  // Final row
+  row.push(cell);
+  rows.push(row);
+
+  return rows.filter(r => r.length > 1 || r[0] !== '');
 }
 
 function buildTable(rows){
@@ -73,6 +99,7 @@ function buildTable(rows){
     rows[r].forEach(cell => {
       const td = document.createElement('td');
       td.textContent = cell;
+      td.style.whiteSpace = 'pre-line';
       tr.appendChild(td);
     });
     tbody.appendChild(tr);
