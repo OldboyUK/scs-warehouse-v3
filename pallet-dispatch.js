@@ -3,32 +3,31 @@ let palletId = '';
 
 const VALID_PALLETS_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=1165333250&single=true&output=csv';
 
-let validPallets = new Map(); // palletId → array of lines
+let palletConfigs = new Map(); // palletId → array of strings
 
-function loadValidPallets() {
-  fetch(VALID_PALLETS_CSV)
-    .then(r => r.text())
-    .then(text => {
-      const lines = text.replace(/\r/g, '').split('\n').filter(Boolean);
-      validPallets.clear();
+async function loadValidPallets() {
+  try {
+    const res = await fetch(VALID_PALLETS_CSV);
+    const text = await res.text();
+    
+    const lines = text.replace(/\r/g, '').split('\n').filter(Boolean);
+    
+    palletConfigs.clear();
 
-      for (let i = 1; i < lines.length; i++) {
-        // Improved parsing to handle commas and newlines better
-        const firstComma = lines[i].indexOf(',');
-        if (firstComma === -1) continue;
+    for (let i = 1; i < lines.length; i++) {
+      const cells = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/); // Better CSV split
+      const id = (cells[0] || '').trim().replace(/^"|"$/g, '');
+      const desc = (cells[1] || '').trim().replace(/^"|"$/g, '');
 
-        const id = lines[i].substring(0, firstComma).trim().replace(/^"|"$/g, '');
-        let desc = lines[i].substring(firstComma + 1).trim().replace(/^"|"$/g, '');
-
-        if (id && desc) {
-          // Split by newline if present
-          const configLines = desc.split(/\\n|\n|\r/).filter(Boolean);
-          validPallets.set(id, configLines);
-        }
+      if (id && desc) {
+        if (!palletConfigs.has(id)) palletConfigs.set(id, []);
+        palletConfigs.get(id).push(desc);
       }
-      console.log(`Loaded ${validPallets.size} pallets`);
-    })
-    .catch(err => console.error('CSV load error:', err));
+    }
+    console.log(`Loaded ${palletConfigs.size} pallets with configurations`);
+  } catch (e) {
+    console.error("Failed to load pallets:", e);
+  }
 }
 
 function showEnterStep() {
@@ -46,11 +45,8 @@ function showEnterStep() {
   `;
 
   const input = document.getElementById('palletInput');
-  if (input) {
-    input.focus();
-    input.select();
-    input.addEventListener('keydown', e => { if (e.key === 'Enter') confirmPallet(); });
-  }
+  input.focus(); input.select();
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') confirmPallet(); });
 }
 
 function confirmPallet() {
@@ -64,16 +60,16 @@ function confirmPallet() {
 }
 
 function showConfirmStep() {
-  const configs = validPallets.get(palletId) || [];
+  const configs = palletConfigs.get(palletId) || [];
 
   let html = configs.length 
-    ? configs.map(line => `<div>${line}</div>`).join('')
+    ? configs.map(line => `<div style="margin: 4px 0;">${line}</div>`).join('')
     : `<span style="color:#ff6b6b;">❌ Pallet not found in master list</span>`;
 
   app.innerHTML = `
     <p><strong>Pallet ID:</strong> ${palletId}</p>
     <p><strong>Pallet Configuration:</strong></p>
-    <div style="margin-left: 12px; line-height: 1.6; white-space: pre-wrap;">${html}</div>
+    <div style="margin-left: 16px; line-height: 1.6;">${html}</div>
     
     <div class="actions">
       <button class="btn btn-danger" onclick="showEnterStep()">Change Pallet</button>
