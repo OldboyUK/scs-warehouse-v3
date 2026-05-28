@@ -5,30 +5,89 @@ const VALID_PALLETS_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGux
 
 let validPallets = new Map();
 
+/* =========================
+   CSV LOADER (FIXED)
+   Handles multiline cells
+========================= */
 async function loadValidPallets() {
   try {
     const response = await fetch(VALID_PALLETS_CSV);
     const text = await response.text();
-    
-    const rows = text.split('\n').filter(line => line.trim() !== '');
-    
+
+    const rows = [];
+    let current = '';
+    let inQuotes = false;
+
+    // Proper CSV row parsing
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+      const next = text[i + 1];
+
+      // Handle escaped quotes ("")
+      if (char === '"' && inQuotes && next === '"') {
+        current += '"';
+        i++;
+        continue;
+      }
+
+      // Toggle quote mode
+      if (char === '"') {
+        inQuotes = !inQuotes;
+        continue;
+      }
+
+      // Only split rows when NOT inside quotes
+      if ((char === '\n' || char === '\r') && !inQuotes) {
+
+        // Handle Windows CRLF
+        if (char === '\r' && next === '\n') {
+          i++;
+        }
+
+        if (current.trim()) {
+          rows.push(current);
+        }
+
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+
+    // Final row
+    if (current.trim()) {
+      rows.push(current);
+    }
+
     validPallets.clear();
 
+    // Skip header row
     for (let i = 1; i < rows.length; i++) {
-      // Split on first comma only
+
       const firstCommaIndex = rows[i].indexOf(',');
       if (firstCommaIndex === -1) continue;
-      
-      const id = rows[i].substring(0, firstCommaIndex).trim().replace(/^"|"$/g, '');
-      const description = rows[i].substring(firstCommaIndex + 1).trim().replace(/^"|"$/g, '');
+
+      const id = rows[i]
+        .substring(0, firstCommaIndex)
+        .trim()
+        .replace(/^"|"$/g, '');
+
+      const description = rows[i]
+        .substring(firstCommaIndex + 1)
+        .trim()
+        .replace(/^"|"$/g, '');
 
       if (id) {
-        if (!validPallets.has(id)) validPallets.set(id, []);
+        if (!validPallets.has(id)) {
+          validPallets.set(id, []);
+        }
+
         validPallets.get(id).push(description);
       }
     }
-    
+
     console.log(`✅ Loaded ${validPallets.size} pallets`);
+
   } catch (err) {
     console.error("Failed to load pallet list", err);
   }
@@ -38,144 +97,240 @@ function showEnterStep() {
   app.innerHTML = `
     <label>Enter Pallet Identifier (15-digit code):</label>
     <input id="palletInput" maxlength="15" placeholder="Scan or type 15 digits"/>
+    
     <div class="actions mt-3">
       <button class="btn btn-success" onclick="confirmPallet()">Confirm Pallet ID</button>
     </div>
+
     <hr>
+
     <p class="status">Tip: You can scan with the camera or type manually.</p>
+
     <div class="actions mt-4">
       <button class="btn btn-primary" onclick="startScan()">📷 Use Camera</button>
     </div>
   `;
 
   const input = document.getElementById('palletInput');
-  input.focus(); input.select();
-  input.addEventListener('keydown', e => { if (e.key === 'Enter') confirmPallet(); });
+
+  input.focus();
+
+  if (input.select) {
+    input.select();
+  }
+
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      confirmPallet();
+    }
+  });
 }
 
 function confirmPallet() {
   const val = document.getElementById('palletInput').value.trim();
+
   if (val.length !== 15 || isNaN(val)) {
     alert('Please enter a valid 15-digit number.');
     return;
   }
+
   palletId = val;
   showConfirmStep();
 }
 
 function showConfirmStep() {
+
   const configs = validPallets.get(palletId) || [];
 
-  let displayHTML = configs.length 
-    ? configs.map(line => `<div>${line}</div>`).join('')
-    : `<span style="color:#ff6b6b;">❌ Pallet not found in master list</span>`;
+  let displayHTML = configs.length
+    ? configs.map(line => `
+        <div style="white-space: pre-line; margin-bottom: 10px;">
+          ${line}
+        </div>
+      `).join('')
+    : `
+        <span style="color:#ff6b6b;">
+          ❌ Pallet not found in master list
+        </span>
+      `;
 
   app.innerHTML = `
     <p><strong>Pallet ID:</strong> ${palletId}</p>
+
     <p><strong>Pallet Configuration:</strong></p>
-    <div style="margin-left: 12px; line-height: 1.6;">${displayHTML}</div>
-    
+
+    <div style="margin-left: 12px; line-height: 1.6;">
+      ${displayHTML}
+    </div>
+
     <div class="actions">
-      <button class="btn btn-danger" onclick="showEnterStep()">Change Pallet</button>
-      ${configs.length ? `<button class="btn btn-success" onclick="submitDispatch()">Confirm & Dispatch</button>` : ''}
+      <button class="btn btn-danger" onclick="showEnterStep()">
+        Change Pallet
+      </button>
+
+      ${configs.length
+        ? `
+          <button class="btn btn-success" onclick="submitDispatch()">
+            Confirm & Dispatch
+          </button>
+        `
+        : ''
+      }
     </div>
   `;
 }
 
 async function startScan() {
+
   if (typeof BarcodeDetector === 'undefined') {
     alert('Barcode scanning is not supported in this browser.');
     return;
   }
 
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment' }
+    });
+
     const video = document.createElement('video');
+
     video.srcObject = stream;
     video.setAttribute('playsinline', 'true');
+
     await video.play();
 
-    app.innerHTML = `<p>📷 Scanning... Point camera at barcode.</p>`;
+    app.innerHTML = `
+      <p>📷 Scanning... Point camera at barcode.</p>
+    `;
+
     app.appendChild(video);
+
     video.style.width = '300px';
     video.style.height = '300px';
 
-    const detector = new BarcodeDetector({ formats: ['code_128', 'ean_13'] });
+    const detector = new BarcodeDetector({
+      formats: ['code_128', 'ean_13']
+    });
 
     const scan = async () => {
+
       try {
+
         const barcodes = await detector.detect(video);
+
         if (barcodes.length > 0) {
+
           stream.getTracks().forEach(t => t.stop());
+
           const raw = (barcodes[0].rawValue || '').trim();
+
           if (raw.length !== 15 || isNaN(raw)) {
             alert('Scanned code is not a valid 15-digit number.');
             showEnterStep();
             return;
           }
+
           palletId = raw;
           showConfirmStep();
+
         } else {
           requestAnimationFrame(scan);
         }
+
       } catch (err) {
+
         console.error(err);
+
         stream.getTracks().forEach(t => t.stop());
+
         alert('Barcode detection failed.');
+
         showEnterStep();
       }
     };
+
     scan();
+
   } catch (err) {
     alert('Camera access denied or unavailable.');
   }
 }
 
 function formatDateTimeForSheets() {
+
   const now = new Date();
+
   const pad = n => String(n).padStart(2, '0');
+
   const date = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`;
+
   const time = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+
   return { date, time };
 }
 
 function submitDispatch() {
+
   const { date, time } = formatDateTimeForSheets();
 
   const url = `${window.location.origin}/.netlify/functions/dispatch`;
+
   const body = new URLSearchParams();
+
   body.append('pallet', palletId);
   body.append('date', date);
   body.append('time', time);
 
   app.innerHTML = `<p class="status">Submitting…</p>`;
 
-  fetch(url, { 
-    method: 'POST', 
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, 
-    body 
+  fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body
   })
     .then(r => r.json())
     .then(data => {
+
       if (data.result === 'ok' || data.result === 'success') {
+
         app.innerHTML = `
           <p>✅ Pallet <strong>${palletId}</strong> dispatched.</p>
+
           <div class="actions">
-            <button class="btn btn-primary" onclick="showEnterStep()">Dispatch Another</button>
+            <button class="btn btn-primary" onclick="showEnterStep()">
+              Dispatch Another
+            </button>
           </div>
         `;
+
       } else {
+
         app.innerHTML = `
           <p>❌ Error: ${data.message || 'Unknown error'}</p>
-          <div class="actions"><button class="btn btn-ghost" onclick="showEnterStep()">Try Again</button></div>
+
+          <div class="actions">
+            <button class="btn btn-ghost" onclick="showEnterStep()">
+              Try Again
+            </button>
+          </div>
         `;
       }
     })
     .catch(err => {
+
       console.error('Network error:', err);
+
       app.innerHTML = `
         <p>❌ Network error. Please try again.</p>
-        <div class="actions"><button class="btn btn-ghost" onclick="showEnterStep()">Back</button></div>
+
+        <div class="actions">
+          <button class="btn btn-ghost" onclick="showEnterStep()">
+            Back
+          </button>
+        </div>
       `;
     });
 }
