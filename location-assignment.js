@@ -344,6 +344,7 @@ function submitAssignment(){
   })
   .then(r => r.json())
   .then(data => {
+    console.log("Response from Netlify:", data);   // for debugging
     if (data.result === 'ok' || data.result === 'success') {
       app.innerHTML = `
         <p>✅ Location assigned.</p>
@@ -365,7 +366,7 @@ function submitAssignment(){
     }
   })
   .catch(err => {
-    console.error(err);
+    console.error("Fetch error:", err);
     app.innerHTML = `
       <p>❌ Network error. Please try again.</p>
       <div class="actions">
