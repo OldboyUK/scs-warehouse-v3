@@ -63,14 +63,14 @@ function confirmPallet() {
 }
 
 function showConfirmStep() {
-  const description = validPallets.get(palletId) || "❌ Pallet not found in master list";
+  let description = validPallets.get(palletId) || "❌ Pallet not found in database. Please ensure that the pallet has been 1. Added to the inventory or 2. Not dispatched already";
+
+  // Convert CHAR(10) line breaks into HTML line breaks
+  description = description.replace(/\n/g, '<br>');
 
   app.innerHTML = `
     <p><strong>Pallet ID:</strong> ${palletId}</p>
     <p><strong>Pallet Configuration:</strong><br>${description}</p>
-    
-    ${!validPallets.has(palletId) ? 
-      `<p style="color:#ff6b6b; margin-top:8px;">This pallet is not in the approved list.</p>` : ''}
     
     <div class="actions">
       <button class="btn btn-danger" onclick="showEnterStep()">Change Pallet</button>
