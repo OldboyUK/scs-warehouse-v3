@@ -3,30 +3,34 @@ let palletId = '';
 
 const VALID_PALLETS_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=1165333250&single=true&output=csv';
 
-let palletConfigs = new Map(); // palletId → array of strings
+let validPallets = new Map();
 
 async function loadValidPallets() {
   try {
-    const res = await fetch(VALID_PALLETS_CSV);
-    const text = await res.text();
+    const response = await fetch(VALID_PALLETS_CSV);
+    const text = await response.text();
     
-    const lines = text.replace(/\r/g, '').split('\n').filter(Boolean);
+    const rows = text.split('\n').filter(line => line.trim() !== '');
     
-    palletConfigs.clear();
+    validPallets.clear();
 
-    for (let i = 1; i < lines.length; i++) {
-      const cells = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/); // Better CSV split
-      const id = (cells[0] || '').trim().replace(/^"|"$/g, '');
-      const desc = (cells[1] || '').trim().replace(/^"|"$/g, '');
+    for (let i = 1; i < rows.length; i++) {
+      // Split on first comma only
+      const firstCommaIndex = rows[i].indexOf(',');
+      if (firstCommaIndex === -1) continue;
+      
+      const id = rows[i].substring(0, firstCommaIndex).trim().replace(/^"|"$/g, '');
+      const description = rows[i].substring(firstCommaIndex + 1).trim().replace(/^"|"$/g, '');
 
-      if (id && desc) {
-        if (!palletConfigs.has(id)) palletConfigs.set(id, []);
-        palletConfigs.get(id).push(desc);
+      if (id) {
+        if (!validPallets.has(id)) validPallets.set(id, []);
+        validPallets.get(id).push(description);
       }
     }
-    console.log(`Loaded ${palletConfigs.size} pallets with configurations`);
-  } catch (e) {
-    console.error("Failed to load pallets:", e);
+    
+    console.log(`✅ Loaded ${validPallets.size} pallets`);
+  } catch (err) {
+    console.error("Failed to load pallet list", err);
   }
 }
 
@@ -60,16 +64,16 @@ function confirmPallet() {
 }
 
 function showConfirmStep() {
-  const configs = palletConfigs.get(palletId) || [];
+  const configs = validPallets.get(palletId) || [];
 
-  let html = configs.length 
-    ? configs.map(line => `<div style="margin: 4px 0;">${line}</div>`).join('')
+  let displayHTML = configs.length 
+    ? configs.map(line => `<div>${line}</div>`).join('')
     : `<span style="color:#ff6b6b;">❌ Pallet not found in master list</span>`;
 
   app.innerHTML = `
     <p><strong>Pallet ID:</strong> ${palletId}</p>
     <p><strong>Pallet Configuration:</strong></p>
-    <div style="margin-left: 16px; line-height: 1.6;">${html}</div>
+    <div style="margin-left: 12px; line-height: 1.6;">${displayHTML}</div>
     
     <div class="actions">
       <button class="btn btn-danger" onclick="showEnterStep()">Change Pallet</button>
