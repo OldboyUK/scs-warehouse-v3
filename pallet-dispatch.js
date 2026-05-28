@@ -1,35 +1,30 @@
 const app = document.getElementById('dispatch-app');
 let palletId = '';
 
-// CSV with valid pallets
 const VALID_PALLETS_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=1165333250&single=true&output=csv';
 
-let validPallets = new Map(); // palletId → full description (with newlines)
-
-function parseCSV(text) {
-  const lines = text.replace(/\r/g, '').split('\n').filter(Boolean);
-  return lines.map(line => {
-    // Simple split, preserving content inside quotes if needed
-    return line.split(',').map(cell => cell.trim().replace(/^"|"$/g, ''));
-  });
-}
+let palletData = new Map(); // palletId → array of full descriptions
 
 function loadValidPallets() {
   fetch(VALID_PALLETS_CSV)
     .then(r => r.text())
     .then(text => {
-      const rows = parseCSV(text);
-      validPallets.clear();
+      const rows = text.replace(/\r/g, '').split('\n').filter(Boolean);
+      palletData.clear();
+
       for (let i = 1; i < rows.length; i++) {
-        const id = (rows[i][0] || '').trim();
-        let desc = (rows[i][1] || '').trim();
-        if (id && desc) {
-          validPallets.set(id, desc);
+        const cells = rows[i].split(',');
+        const id = (cells[0] || '').trim();
+        let desc = (cells[1] || '').trim().replace(/^"|"$/g, '');
+
+        if (id) {
+          if (!palletData.has(id)) palletData.set(id, []);
+          palletData.get(id).push(desc);
         }
       }
-      console.log(`Loaded ${validPallets.size} pallets`);
+      console.log(`Loaded ${palletData.size} pallets`);
     })
-    .catch(err => console.error('Failed to load pallet list:', err));
+    .catch(err => console.error(err));
 }
 
 function showEnterStep() {
@@ -47,38 +42,35 @@ function showEnterStep() {
   `;
 
   const input = document.getElementById('palletInput');
-  if (input) {
-    input.focus();
-    input.select();
-    input.addEventListener('keydown', e => { if (e.key === 'Enter') confirmPallet(); });
-  }
+  input.focus(); input.select();
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') confirmPallet(); });
 }
 
 function confirmPallet() {
-  const input = document.getElementById('palletInput').value.trim();
-  if (input.length !== 15 || isNaN(input)) {
+  const val = document.getElementById('palletInput').value.trim();
+  if (val.length !== 15 || isNaN(val)) {
     alert('Please enter a valid 15-digit number.');
     return;
   }
-  palletId = input;
+  palletId = val;
   showConfirmStep();
 }
 
 function showConfirmStep() {
-  let description = validPallets.get(palletId) || "❌ Pallet not found in master list";
+  const configs = palletData.get(palletId) || [];
 
-  // Convert newlines to <br> for HTML display
-  const htmlDescription = description.replace(/\n/g, '<br>');
+  let html = configs.length 
+    ? configs.map(line => `<div>${line}</div>`).join('') 
+    : `<span style="color:#ff6b6b;">❌ Pallet not found in master list</span>`;
 
   app.innerHTML = `
     <p><strong>Pallet ID:</strong> ${palletId}</p>
     <p><strong>Pallet Configuration:</strong></p>
-    <div style="margin-left: 12px; line-height: 1.5; white-space: pre-wrap;">${htmlDescription}</div>
+    <div style="margin-left: 12px; line-height: 1.5;">${html}</div>
     
     <div class="actions">
       <button class="btn btn-danger" onclick="showEnterStep()">Change Pallet</button>
-      ${validPallets.has(palletId) ? 
-        `<button class="btn btn-success" onclick="submitDispatch()">Confirm & Dispatch</button>` : ''}
+      ${configs.length ? `<button class="btn btn-success" onclick="submitDispatch()">Confirm & Dispatch</button>` : ''}
     </div>
   `;
 }
