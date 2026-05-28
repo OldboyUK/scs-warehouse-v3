@@ -3,28 +3,30 @@ let palletId = '';
 
 const VALID_PALLETS_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=1165333250&single=true&output=csv';
 
-let palletData = new Map(); // palletId → array of full descriptions
+let validPallets = new Map();
 
 function loadValidPallets() {
   fetch(VALID_PALLETS_CSV)
     .then(r => r.text())
     .then(text => {
-      const rows = text.replace(/\r/g, '').split('\n').filter(Boolean);
-      palletData.clear();
+      const lines = text.replace(/\r/g, '').split('\n').filter(Boolean);
+      validPallets.clear();
 
-      for (let i = 1; i < rows.length; i++) {
-        const cells = rows[i].split(',');
-        const id = (cells[0] || '').trim();
-        let desc = (cells[1] || '').trim().replace(/^"|"$/g, '');
-
-        if (id) {
-          if (!palletData.has(id)) palletData.set(id, []);
-          palletData.get(id).push(desc);
+      for (let i = 1; i < lines.length; i++) {
+        // Better CSV parsing for lines with commas inside quotes
+        const match = lines[i].match(/^(.*?),(.*)$/);
+        if (match) {
+          const id = match[1].trim().replace(/^"|"$/g, '');
+          let desc = match[2].trim().replace(/^"|"$/g, '');
+          if (id) {
+            if (!validPallets.has(id)) validPallets.set(id, []);
+            validPallets.get(id).push(desc);
+          }
         }
       }
-      console.log(`Loaded ${palletData.size} pallets`);
+      console.log(`Loaded ${validPallets.size} pallets`);
     })
-    .catch(err => console.error(err));
+    .catch(err => console.error('CSV load error:', err));
 }
 
 function showEnterStep() {
@@ -57,16 +59,16 @@ function confirmPallet() {
 }
 
 function showConfirmStep() {
-  const configs = palletData.get(palletId) || [];
+  const configs = validPallets.get(palletId) || [];
 
   let html = configs.length 
-    ? configs.map(line => `<div>${line}</div>`).join('') 
+    ? configs.map(d => `<div style="margin-bottom:4px;">${d}</div>`).join('')
     : `<span style="color:#ff6b6b;">❌ Pallet not found in master list</span>`;
 
   app.innerHTML = `
     <p><strong>Pallet ID:</strong> ${palletId}</p>
     <p><strong>Pallet Configuration:</strong></p>
-    <div style="margin-left: 12px; line-height: 1.5;">${html}</div>
+    <div style="margin-left: 12px; line-height: 1.6;">${html}</div>
     
     <div class="actions">
       <button class="btn btn-danger" onclick="showEnterStep()">Change Pallet</button>
