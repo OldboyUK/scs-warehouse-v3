@@ -3,7 +3,7 @@ let palletId = '';
 
 const VALID_PALLETS_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=1165333250&single=true&output=csv';
 
-let validPallets = new Map();
+let validPallets = new Map(); // palletId → array of lines
 
 function loadValidPallets() {
   fetch(VALID_PALLETS_CSV)
@@ -13,15 +13,17 @@ function loadValidPallets() {
       validPallets.clear();
 
       for (let i = 1; i < lines.length; i++) {
-        // Better CSV parsing for lines with commas inside quotes
-        const match = lines[i].match(/^(.*?),(.*)$/);
-        if (match) {
-          const id = match[1].trim().replace(/^"|"$/g, '');
-          let desc = match[2].trim().replace(/^"|"$/g, '');
-          if (id) {
-            if (!validPallets.has(id)) validPallets.set(id, []);
-            validPallets.get(id).push(desc);
-          }
+        // Improved parsing to handle commas and newlines better
+        const firstComma = lines[i].indexOf(',');
+        if (firstComma === -1) continue;
+
+        const id = lines[i].substring(0, firstComma).trim().replace(/^"|"$/g, '');
+        let desc = lines[i].substring(firstComma + 1).trim().replace(/^"|"$/g, '');
+
+        if (id && desc) {
+          // Split by newline if present
+          const configLines = desc.split(/\\n|\n|\r/).filter(Boolean);
+          validPallets.set(id, configLines);
         }
       }
       console.log(`Loaded ${validPallets.size} pallets`);
@@ -44,8 +46,11 @@ function showEnterStep() {
   `;
 
   const input = document.getElementById('palletInput');
-  input.focus(); input.select();
-  input.addEventListener('keydown', e => { if (e.key === 'Enter') confirmPallet(); });
+  if (input) {
+    input.focus();
+    input.select();
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') confirmPallet(); });
+  }
 }
 
 function confirmPallet() {
@@ -62,13 +67,13 @@ function showConfirmStep() {
   const configs = validPallets.get(palletId) || [];
 
   let html = configs.length 
-    ? configs.map(d => `<div style="margin-bottom:4px;">${d}</div>`).join('')
+    ? configs.map(line => `<div>${line}</div>`).join('')
     : `<span style="color:#ff6b6b;">❌ Pallet not found in master list</span>`;
 
   app.innerHTML = `
     <p><strong>Pallet ID:</strong> ${palletId}</p>
     <p><strong>Pallet Configuration:</strong></p>
-    <div style="margin-left: 12px; line-height: 1.6;">${html}</div>
+    <div style="margin-left: 12px; line-height: 1.6; white-space: pre-wrap;">${html}</div>
     
     <div class="actions">
       <button class="btn btn-danger" onclick="showEnterStep()">Change Pallet</button>
