@@ -1,17 +1,16 @@
 const app = document.getElementById('dispatch-app');
 let palletId = '';
 
-// CSV with valid pallets (A = Pallet ID, B = Description)
+// CSV with valid pallets
 const VALID_PALLETS_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=1165333250&single=true&output=csv';
 
-let validPallets = new Map(); // palletId → description
+let validPallets = new Map(); // palletId → array of descriptions
 
 function parseCSV(text) {
-  const lines = text.replace(/\r/g, '').split('\n');
-  return lines.map(line => line.split(',').map(cell => cell.trim()));
+  const lines = text.replace(/\r/g, '').split('\n').filter(Boolean);
+  return lines.map(line => line.split(',').map(cell => cell.trim().replace(/^"|"$/g, '')));
 }
 
-// Load valid pallets
 function loadValidPallets() {
   fetch(VALID_PALLETS_CSV)
     .then(r => r.text())
@@ -21,7 +20,10 @@ function loadValidPallets() {
       for (let i = 1; i < rows.length; i++) {
         const id = (rows[i][0] || '').trim();
         const desc = (rows[i][1] || '').trim();
-        if (id) validPallets.set(id, desc);
+        if (id) {
+          if (!validPallets.has(id)) validPallets.set(id, []);
+          validPallets.get(id).push(desc);
+        }
       }
       console.log(`Loaded ${validPallets.size} valid pallets`);
     })
@@ -45,10 +47,8 @@ function showEnterStep() {
   const input = document.getElementById('palletInput');
   if (input) {
     input.focus();
-    if (input.select) input.select();
-    input.addEventListener('keydown', e => {
-      if (e.key === 'Enter') confirmPallet();
-    });
+    input.select();
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') confirmPallet(); });
   }
 }
 
@@ -63,19 +63,20 @@ function confirmPallet() {
 }
 
 function showConfirmStep() {
-  let description = validPallets.get(palletId) || "❌ Pallet not found in database. Please ensure that the pallet has been 1. Added to the inventory or 2. Not dispatched already";
+  const descriptions = validPallets.get(palletId) || [];
 
-  // Convert CHAR(10) line breaks into HTML line breaks
-  description = description.replace(/\n/g, '<br>');
+  let configHTML = descriptions.length 
+    ? descriptions.map(d => `<div>${d}</div>`).join('') 
+    : `<span style="color:#ff6b6b;">❌ Pallet not found in master list</span>`;
 
   app.innerHTML = `
     <p><strong>Pallet ID:</strong> ${palletId}</p>
-    <p><strong>Pallet Configuration:</strong><br>${description}</p>
+    <p><strong>Pallet Configuration:</strong></p>
+    <div style="margin-left: 12px; line-height: 1.4;">${configHTML}</div>
     
     <div class="actions">
       <button class="btn btn-danger" onclick="showEnterStep()">Change Pallet</button>
-      ${validPallets.has(palletId) ? 
-        `<button class="btn btn-success" onclick="submitDispatch()">Confirm & Dispatch</button>` : ''}
+      ${descriptions.length ? `<button class="btn btn-success" onclick="submitDispatch()">Confirm & Dispatch</button>` : ''}
     </div>
   `;
 }
