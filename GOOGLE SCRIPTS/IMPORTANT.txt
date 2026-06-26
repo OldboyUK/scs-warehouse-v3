@@ -6,4 +6,7 @@ https://script.google.com/macros/s/AKfycbzmf9xmeYbhl1T8B92b4_E7ZDLrVwIvJJtC_Ro-c
 Deployment ID:
 AKfycbzmf9xmeYbhl1T8B92b4_E7ZDLrVwIvJJtC_Ro-cZbxUd5y0skpNj24wtxaYPI2M_RB
 
-Netlify functions read this URL from netlify/functions/scriptConfig.js (override with APPS_SCRIPT_URL in Netlify env if needed).
+Netlify functions use netlify/functions/scriptConfig.js by default.
+
+Optional override: set APPS_SCRIPT_URL in Netlify env (recommended single variable for all functions).
+Legacy per-function vars (GOODS3P_SCRIPT_URL, etc.) are only used if neither APPS_SCRIPT_URL nor scriptConfig is set.

@@ -10,7 +10,7 @@ exports.handler = async function (event) {
       return { statusCode: 405, body: JSON.stringify({ result: 'error', message: 'Method Not Allowed' }) };
     }
 
-    const scriptURL = process.env.GOODS3P_SCRIPT_URL || process.env.APPS_SCRIPT_URL || APPS_SCRIPT_URL;
+    const scriptURL = process.env.APPS_SCRIPT_URL || APPS_SCRIPT_URL || process.env.GOODS3P_SCRIPT_URL;
 
     const params = new URLSearchParams(event.body || '');
     const required = ['pallet', 'units', 'helper', 'format', 'bbe', 'duty', 'run'];

@@ -9,7 +9,7 @@ exports.handler = async function (event) {
       return { statusCode: 405, body: JSON.stringify({ result: 'error', message: 'Method Not Allowed' }) };
     }
 
-    const scriptURL = process.env.LOCATION_SCRIPT_URL || process.env.APPS_SCRIPT_URL || APPS_SCRIPT_URL;
+    const scriptURL = process.env.APPS_SCRIPT_URL || APPS_SCRIPT_URL || process.env.LOCATION_SCRIPT_URL;
 
     const params = new URLSearchParams(event.body || '');
     const pallet   = params.get('pallet');
