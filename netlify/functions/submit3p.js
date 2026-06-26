@@ -1,9 +1,8 @@
 // /.netlify/functions/submit3p.js
 const fetch = require('node-fetch');
+const { APPS_SCRIPT_URL } = require('./scriptConfig');
 
 const SHARED_TOKEN = 'J4PAN88';
-// Set in Netlify env: GOODS3P_SCRIPT_URL = your Apps Script /exec URL
-const FALLBACK_GOODS3P_SCRIPT_URL = ''; // optional fallback, usually keep empty
 
 exports.handler = async function (event) {
   try {
@@ -11,13 +10,10 @@ exports.handler = async function (event) {
       return { statusCode: 405, body: JSON.stringify({ result: 'error', message: 'Method Not Allowed' }) };
     }
 
-    const scriptURL = process.env.GOODS3P_SCRIPT_URL || FALLBACK_GOODS3P_SCRIPT_URL;
-    if (!scriptURL) {
-      return { statusCode: 500, body: JSON.stringify({ result: 'error', message: 'Missing GOODS3P_SCRIPT_URL env var' }) };
-    }
+    const scriptURL = process.env.GOODS3P_SCRIPT_URL || process.env.APPS_SCRIPT_URL || APPS_SCRIPT_URL;
 
     const params = new URLSearchParams(event.body || '');
-    const required = ['pallet','units','date','time','helper','company','product','format','abv','bbe','duty'];
+    const required = ['pallet', 'units', 'helper', 'format', 'bbe', 'duty', 'run'];
     for (const k of required) {
       if (!params.get(k)) {
         return { statusCode: 400, body: JSON.stringify({ result:'error', message:`Missing parameter: ${k}` }) };
@@ -26,6 +22,7 @@ exports.handler = async function (event) {
 
     const body = new URLSearchParams(event.body || '');
     body.append('token', SHARED_TOKEN);
+    body.append('action', 'goods_in_3p');
 
     const res = await fetch(scriptURL, {
       method: 'POST',

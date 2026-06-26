@@ -1,0 +1,66 @@
+SCS Warehouse Management System (WMS) - Project Overview
+
+Purpose
+
+This project is a custom Warehouse Management System (WMS) built for
+Somerset Cider Solutions (SCS).
+
+It is a lightweight web application used internally to manage pallet
+movements and warehouse operations. The front-end is hosted by Netlify,
+Google Sheets act as the database, and Google Apps Script provides the
+backend logic.
+
+Architecture
+
+Browser (HTML/CSS/JavaScript) -> Netlify Hosting -> Netlify Functions
+(Node.js) -> Google Apps Script -> Google Sheets
+
+The browser never communicates directly with Apps Script. Netlify
+Functions receive requests, add a shared token and routing action, then
+forward them to Apps Script, which validates the request and updates the
+appropriate spreadsheet before returning JSON.
+
+Deployment Workflow
+
+Visual Studio Code -> Edit files locally -> PowerShell (git add / git
+commit / git push) -> GitHub -> Netlify automatic deployment
+
+Front End
+
+-   Vanilla HTML
+-   Vanilla CSS
+-   Vanilla JavaScript
+-   BarcodeDetector API
+-   fetch()
+-   Published Google Sheets CSV feeds for read-only lookups
+
+Backend
+
+Netlify Functions: - Hide Apps Script URL - Add authentication token -
+Forward requests
+
+Google Apps Script: - Validate requests - Route actions - Update Google
+Sheets - Return JSON
+
+Main Modules
+
+-   Pallet Entry
+-   Goods In (3P)
+-   Picking
+-   Put Away / Location Assignment
+-   Pallet Dispatch
+-   Pallet Finder
+
+Each module generally follows:
+
+Browser -> Netlify Function -> Apps Script -> Google Sheets
+
+Design Principles
+
+-   No JavaScript frameworks.
+-   Keep dependencies minimal.
+-   Preserve existing workflows unless asked otherwise.
+-   Maintain compatibility with Google Sheets.
+-   Prefer modifying existing code over complete rewrites.
+-   When changing a module, also consider corresponding Netlify
+    Functions and Apps Script handlers.

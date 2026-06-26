@@ -1,0 +1,9 @@
+Please note, all files within the GOOGLE SCRIPTS folder are not hosted on Netlify. These scripts are connected to the Google Sheets back end and are deployed manually in Google Apps Script.
+
+Current web app URL:
+https://script.google.com/macros/s/AKfycbz1j75941T1iuFikVgk1NyG4HMDqhn6M271Z-mnhvyape7ains2IVGx4uCMUgg5TCoV/exec
+
+Deployment ID:
+AKfycbz1j75941T1iuFikVgk1NyG4HMDqhn6M271Z-mnhvyape7ains2IVGx4uCMUgg5TCoV
+
+Netlify functions read this URL from netlify/functions/scriptConfig.js (override with APPS_SCRIPT_URL in Netlify env if needed).

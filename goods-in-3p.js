@@ -2,12 +2,12 @@ const app   = document.getElementById('app');
 const video = document.getElementById('video');
 
 
-// PRODUCTS (3P): column A must be "Company | Product"
-const PRODUCTS_3P_CSV   = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=60083586&single=true&output=csv';
-// CUSTOMERS (SCS & 3P): column A company names
-const CUSTOMERS_CSV     = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=2137345148&single=true&output=csv';
-// PRODUCT DATABASE (3P): column A "Company | Product", column E ABV
-const PRODUCT_DB_3P_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=1881254286&single=true&output=csv';
+// PRODUCTS (3P): column A = liquid code (e.g. LIB-TE1(T))
+const PRODUCTS_3P_CSV    = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=60083586&single=true&output=csv';
+// PRODUCT DATABASE (3P): column A liquid code, column K ABV — products ending (X)
+const PRODUCT_DB_3P_CSV  = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=134597692&single=true&output=csv';
+// PRODUCT DATABASE (3PT): column A liquid code, column K ABV — products ending (T)
+const PRODUCT_DB_3PT_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=1159810450&single=true&output=csv';
 // Netlify function to relay to Apps Script
 const SCRIPT_URL     = '/.netlify/functions/submit3p'; // Netlify relay -> Apps Script
 
@@ -23,8 +23,6 @@ const DUTY_OPTIONS = ['Duty already paid','Duty Suspended',"Don't know"];
 // State
 let palletId = '';
 let listedItem = '';
-let company = '';
-let product = '';
 let abv = '';
 let units = 0;
 let format = '';
@@ -34,8 +32,8 @@ let lastLoadout = null;
 
 // Lookups
 let productsList = [];
-let customersList = [];
-let abvByHelper = new Map();
+let abvByCodeX = new Map();
+let abvByCodeT = new Map();
 
 // --- Utils ---
 function parseCSV(text){
@@ -78,6 +76,37 @@ function parseDDMMYYYY(raw){
   return dt;
 }
 function startOfDay(date){ const d = new Date(date); d.setHours(0,0,0,0); return d; }
+function getWeekNumber(date){
+  const d = new Date(date.getTime());
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + 3 - (d.getDay() + 6) % 7);
+  const week1 = new Date(d.getFullYear(), 0, 4);
+  return 1 + Math.round(((d - week1) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+}
+function buildRunCode(liquidCode){
+  const d = new Date();
+  const yearDigit = d.getFullYear() % 10;
+  const week = getWeekNumber(d);
+  return `${liquidCode}-${yearDigit}${week}`;
+}
+function lookupAbv(liquidCode){
+  const code = (liquidCode || '').trim();
+  if (code.endsWith('(X)')) return abvByCodeX.get(code) || '';
+  if (code.endsWith('(T)')) return abvByCodeT.get(code) || '';
+  return '';
+}
+function loadAbvMap(csvUrl, targetMap){
+  if (!csvUrl || !csvUrl.startsWith('http')) return;
+  fetch(csvUrl).then(r => r.text()).then(t => {
+    const rows = parseCSV(t);
+    targetMap.clear();
+    for (const r of rows){
+      const code = (r[0] || '').trim();
+      const abvVal = (r[10] || '').toString().trim(); // column K
+      if (code) targetMap.set(code, abvVal);
+    }
+  }).catch(console.error);
+}
 
 // NEW: Scanner-ready focus trick (focused + readOnly, no VK until tap; first key captured)
 function scannerReadyFocus(input){
@@ -125,24 +154,8 @@ function loadLookups(){
         .sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
     }).catch(console.error);
   }
-  if (CUSTOMERS_CSV && CUSTOMERS_CSV.startsWith('http')){
-    fetch(CUSTOMERS_CSV).then(r=>r.text()).then(t=>{
-      const rows = parseCSV(t);
-      customersList = Array.from(new Set(rows.map(r => (r[0]||'').trim()).filter(Boolean)))
-        .sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
-    }).catch(console.error);
-  }
-  if (PRODUCT_DB_3P_CSV && PRODUCT_DB_3P_CSV.startsWith('http')){
-    fetch(PRODUCT_DB_3P_CSV).then(r=>r.text()).then(t=>{
-      const rows = parseCSV(t);
-      abvByHelper.clear();
-      for (const r of rows){
-        const helper = (r[0]||'').trim();
-        const abvVal = (r[4]||'').toString().trim(); // col E
-        if (helper) abvByHelper.set(helper, abvVal);
-      }
-    }).catch(console.error);
-  }
+  loadAbvMap(PRODUCT_DB_3P_CSV, abvByCodeX);
+  loadAbvMap(PRODUCT_DB_3PT_CSV, abvByCodeT);
 }
 
 // --- Camera scanning ---
@@ -172,9 +185,7 @@ function confirmationBlock(){
   return `
     <div style="border:1px solid var(--card-border);border-radius:12px;padding:10px;background:rgba(255,255,255,0.05); margin-bottom:8px;">
       <div>Pallet ID: <strong style="color:#fff">${escapeHTML(palletId)}</strong></div>
-      ${listedItem ? `<div>Product: <strong style="color:#fff">${escapeHTML(listedItem)}</strong></div>` :
-        `<div>Company: <strong style="color:#fff">${escapeHTML(company||'-')}</strong></div>
-         <div>Product: <strong style="color:#fff">${escapeHTML(product||'-')}</strong></div>`}
+      <div>Product: <strong style="color:#fff">${escapeHTML(listedItem || '-')}</strong></div>
       <div>ABV: <strong style="color:#fff">${escapeHTML(abv || '-')}</strong></div>
       <div>Packing Format: <strong style="color:#fff">${escapeHTML(format||'-')}</strong></div>
       <div>Units on Pallet: <strong style="color:#fff">${escapeHTML(String(units||''))}</strong></div>
@@ -262,10 +273,6 @@ function showPathChooser(){
       <button class="btn btn-ghost" onclick="showStep1()">Back</button>
       <button class="btn btn-primary" onclick="chooseListed()">Next</button>
     </div>
-    <hr class="mt-4">
-    <div class="actions">
-      <button class="btn btn-secondary" onclick="startManual()">Enter product not listed above</button>
-    </div>
   `;
   wireCombo('productCombo');
 }
@@ -273,61 +280,8 @@ function chooseListed(){
   const val = (document.getElementById('productCombo').value || '').trim();
   if (!val){ alert('Please choose a product from the list.'); return; }
   listedItem = val;
-  const parts = listedItem.split('|').map(s=>s.trim());
-  company = parts[0] || '';
-  product = parts[1] || '';
-  abv = abvByHelper.get(listedItem) || ''; // auto-fill from DB
+  abv = lookupAbv(listedItem);
   showFormat();
-}
-
-function startManual(){
-  listedItem = ''; company = ''; product = ''; abv = '';
-  app.innerHTML = `
-    <p>Pallet ID: <strong>${escapeHTML(palletId)}</strong></p>
-    <label>Name of product owner:</label>
-    ${combo('ownerCombo','Type company name', customersList)}
-    <div class="actions mt-3">
-      <button class="btn btn-ghost" onclick="showPathChooser()">Back</button>
-      <button class="btn btn-primary" onclick="confirmOwner()">Next</button>
-    </div>
-  `;
-  wireCombo('ownerCombo');
-}
-function confirmOwner(){
-  const val = (document.getElementById('ownerCombo').value || '').trim();
-  if (!val){ alert('Please choose or type a company name.'); return; }
-  company = val; showManualProductName();
-}
-function showManualProductName(){
-  app.innerHTML = `
-    <p>Owner: <strong>${escapeHTML(company)}</strong></p>
-    ${textInputRow('prodName','Enter Product Name:','placeholder="Type product name" autocomplete="off" autocapitalize="off" spellcheck="false"')}
-    <div class="actions mt-3">
-      <button class="btn btn-ghost" onclick="startManual()">Back</button>
-      <button class="btn btn-primary" onclick="confirmManualProductName()">Next</button>
-    </div>
-  `;
-}
-function confirmManualProductName(){
-  const val = (document.getElementById('prodName').value||'').trim();
-  if (!val){ alert('Please enter a product name.'); return; }
-  product = val; showManualABV();
-}
-function showManualABV(){
-  app.innerHTML = `
-    <p>Owner: <strong>${escapeHTML(company)}</strong></p>
-    <p>Product: <strong>${escapeHTML(product)}</strong></p>
-    ${textInputRow('abvInput','Enter ABV (e.g. 4.5):','type="number" step="0.1" min="0" max="100"')}
-    <div class="actions mt-3">
-      <button class="btn btn-ghost" onclick="showManualProductName()">Back</button>
-      <button class="btn btn-primary" onclick="confirmManualABV()">Next</button>
-    </div>
-  `;
-}
-function confirmManualABV(){
-  const v = (document.getElementById('abvInput').value||'').trim();
-  if (!v || isNaN(v) || Number(v) < 0){ alert('Please enter a valid ABV.'); return; }
-  abv = v; showFormat();
 }
 
 // Format BEFORE Units
@@ -339,7 +293,7 @@ function showFormat(){
       ${FORMAT_OPTIONS.map(opt => `<option value="${escapeHTML(opt)}">${escapeHTML(opt)}</option>`).join('')}
     </select>
     <div class="actions mt-3">
-      <button class="btn btn-ghost" onclick="${listedItem ? 'showPathChooser()' : 'showManualABV()'}">Back</button>
+      <button class="btn btn-ghost" onclick="showPathChooser()">Back</button>
       <button class="btn btn-primary" onclick="confirmFormat()">Next</button>
     </div>
   `;
@@ -424,33 +378,33 @@ function showConfirm(){
 // Submit with diagnostics
 function submit3P(){
   const { date, time } = nowForSheets();
-  const helper = listedItem || `${company} | ${product}`;
+  const runCode = buildRunCode(listedItem);
   const bbeOut = bbeWithSlashes(bbe);
 
   const body = new URLSearchParams();
   body.append('pallet', palletId);
   body.append('units', String(units));
-  body.append('date', date); // Apps Script uses server time for C/D
+  body.append('date', date);
   body.append('time', time);
-  body.append('helper', helper);
-  body.append('company', company);
-  body.append('product', product);
+  body.append('helper', listedItem);
+  body.append('company', '');
+  body.append('product', '');
   body.append('format', format);
   body.append('abv', abv);
   body.append('bbe', bbeOut);
   body.append('duty', duty);
+  body.append('run', runCode);
 
   app.innerHTML = `<p class="status">Submitting…</p>
   <details open style="margin-top:8px;">
     <summary>Payload preview</summary>
     <pre style="white-space:pre-wrap; opacity:.75; font-size:.9em;">
 pallet=${escapeHTML(palletId)}
+run=${escapeHTML(runCode)}
 units=${escapeHTML(String(units))}
-helper=${escapeHTML(helper)}
-company=${escapeHTML(company)}
-product=${escapeHTML(product)}
+helper=${escapeHTML(listedItem)}
 format=${escapeHTML(format)}
-abv=${escapeHTML(abv)}
+abv=${escapeHTML(abv || '-')}
 bbe=${escapeHTML(bbeOut)}
 duty=${escapeHTML(duty)}</pre>
   </details>`;
@@ -467,7 +421,7 @@ duty=${escapeHTML(duty)}</pre>
         throw new Error(`Upstream error: ${text}`);
       }
       // Success
-      lastLoadout = { listedItem, company, product, abv, units, format, duty };
+      lastLoadout = { listedItem, abv, units, format, duty };
       app.innerHTML = `
         <p>✅ Entry submitted successfully.</p>
         <div class="actions mt-3">
@@ -489,14 +443,12 @@ duty=${escapeHTML(duty)}</pre>
 }
 
 function resetAll(){
-  palletId=''; listedItem=''; company=''; product=''; abv=''; units=0; format=''; duty=''; bbe='';
+  palletId=''; listedItem=''; abv=''; units=0; format=''; duty=''; bbe='';
   showStep1();
 }
 function sameLoadout(){
   if (!lastLoadout){ resetAll(); return; }
   listedItem = lastLoadout.listedItem;
-  company    = lastLoadout.company;
-  product    = lastLoadout.product;
   abv        = lastLoadout.abv;
   units      = lastLoadout.units;
   format     = lastLoadout.format;
@@ -512,7 +464,7 @@ function sameLoadout(){
     <div class="actions">
       <button class="btn btn-primary" onclick="scanSame()">📷 Scan Barcode</button>
     </div>
-    <p class="status">This reuses the last owner/product/ABV/format/units/duty.</p>
+    <p class="status">This reuses the last product/ABV/format/units/duty.</p>
   `;
   // Scanner-ready focus on the Same Loadout pallet field too
   scannerReadyFocus(document.getElementById('samePallet'));
@@ -539,10 +491,6 @@ function scanSame(){
 window.confirmPallet = confirmPallet;
 window.scanPallet    = scanPallet;
 window.chooseListed  = chooseListed;
-window.startManual   = startManual;
-window.confirmOwner  = confirmOwner;
-window.confirmManualProductName = confirmManualProductName;
-window.confirmManualABV = confirmManualABV;
 window.confirmUnits  = confirmUnits;
 window.confirmFormat = confirmFormat;
 window.confirmDuty   = confirmDuty;

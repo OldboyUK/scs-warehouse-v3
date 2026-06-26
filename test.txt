@@ -1,0 +1,13 @@
+Hello from Cursor!
+
+This file was created to show that I can read and write files in your SCS Warehouse App V3 project.
+
+If you can see this in your folder, Cursor is working with your repo correctly.
+
+Joke of the day:
+
+Why did the pallet break up with the forklift?
+
+It said their relationship had no lift.
+
+Created: 26 June 2025
