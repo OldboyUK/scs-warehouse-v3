@@ -1,6 +1,6 @@
 /** SCS Warehouse - Unified Router **/
-/** Web app: https://script.google.com/macros/s/AKfycbz1j75941T1iuFikVgk1NyG4HMDqhn6M271Z-mnhvyape7ains2IVGx4uCMUgg5TCoV/exec */
-/** Deployment ID: AKfycbz1j75941T1iuFikVgk1NyG4HMDqhn6M271Z-mnhvyape7ains2IVGx4uCMUgg5TCoV */
+/** Web app: https://script.google.com/macros/s/AKfycbzmf9xmeYbhl1T8B92b4_E7ZDLrVwIvJJtC_Ro-cZbxUd5y0skpNj24wtxaYPI2M_RB/exec */
+/** Deployment ID: AKfycbzmf9xmeYbhl1T8B92b4_E7ZDLrVwIvJJtC_Ro-cZbxUd5y0skpNj24wtxaYPI2M_RB */
 
 /** ====== CONFIG ====== **/
 const API_TOKEN = 'J4PAN88';
@@ -11,7 +11,6 @@ const SSID_DISPATCH = '1nlXghFbza3hblt80Oegu81hpWGv2C4Ax3iPVA43XsrA';
 
 const SHEET_PALLET_ENTRY        = 'PALLET ENTRY';
 const SHEET_DISPATCH            = 'PALLET DISPATCH';
-const SHEET_GOODS3P             = 'PALLET ENTRY (3P)';
 const SHEET_LOCATION_ASSIGNMENT = 'LOCATION ASSIGNMENT';
 
 /** ====== MAIN ENTRY POINT ====== **/
@@ -46,39 +45,25 @@ function isPalletEntry(p)   { return !!(p.code && p.run && p.units); }
 
 /** ====== HANDLERS ====== **/
 
-// GOODS IN (3P)
+// GOODS IN (3P) — writes to PALLET ENTRY (same sheet as COUNTS)
 function handleGoods3P(p) {
   const pallet  = (p.pallet  || '').trim();
   const units   = (p.units   || '').trim();
-  const helper  = (p.helper  || '').trim();
-  const company = (p.company || '').trim();
-  const product = (p.product || '').trim();
   const format  = (p.format  || '').trim();
-  const abv     = (p.abv     || '').trim();
   let   bbe     = (p.bbe     || '').trim();
   const duty    = (p.duty    || '').trim();
   const runCode = (p.run     || '').trim();
+
+  if (!pallet || !units || !runCode || !format) {
+    return json({ result: 'error', message: 'Missing required fields' });
+  }
 
   const tz = Session.getScriptTimeZone();
   const now = new Date();
   const dateStr = Utilities.formatDate(now, tz, 'dd/MM/yyyy');
   const timeStr = Utilities.formatDate(now, tz, 'HH:mm:ss');
-  const helperSafe = helper || (company + ' | ' + product).trim();
 
   const ss = openSpreadsheet(SSID_MAIN);
-
-  const sh3p = ss.getSheetByName(SHEET_GOODS3P);
-  if (!sh3p) return json({ result: 'error', message: 'Sheet not found: ' + SHEET_GOODS3P });
-
-  sh3p.appendRow([
-    pallet, Number(units), dateStr, timeStr, helperSafe,
-    company, product, format, abv, bbe, duty
-  ]);
-
-  if (!runCode) {
-    return json({ result: 'error', message: 'Missing run code' });
-  }
-
   const shMain = ss.getSheetByName(SHEET_PALLET_ENTRY);
   if (!shMain) return json({ result: 'error', message: 'PALLET ENTRY sheet not found' });
 
