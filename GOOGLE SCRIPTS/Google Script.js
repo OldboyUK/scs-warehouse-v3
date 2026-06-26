@@ -11,6 +11,7 @@ const SSID_DISPATCH = '1nlXghFbza3hblt80Oegu81hpWGv2C4Ax3iPVA43XsrA';
 const SHEET_PALLET_ENTRY        = 'PALLET ENTRY';
 const SHEET_DISPATCH            = 'PALLET DISPATCH';
 const SHEET_LOCATION_ASSIGNMENT = 'LOCATION ASSIGNMENT';
+const SHEET_PRODUCT_DB_3PT      = 'PRODUCT DATABASE (3PT)';
 
 /** ====== MAIN ENTRY POINT ====== **/
 function doPost(e) {
@@ -26,6 +27,7 @@ function doPost(e) {
 
     // Priority order - be more specific
     if (action === 'location_assignment')               return handleLocationAssignment(p);
+    if (action === 'add_third_party_product')            return handleAddThirdPartyProduct(p);
     if (action === 'goods_in_3p' || isGoods3P(p))       return handleGoods3P(p);
     if (action === 'dispatch'    || isDispatch(p))      return handleDispatch(p);
     if (action === 'pallet_entry'|| isPalletEntry(p))   return handlePalletEntry(p);
@@ -70,6 +72,47 @@ function handleGoods3P(p) {
   writeGoods3PToPalletEntry(shMain, nextRow, pallet, runCode, units, dateStr, timeStr, format, bbe, duty);
 
   return json({ result: 'success' });
+}
+
+// ADVANCED OPTIONS — Add Third Party Product → PRODUCT DATABASE (3PT)
+function handleAddThirdPartyProduct(p) {
+  const customer        = (p.customer        || '').trim();
+  const productName     = (p.productName     || '').trim();
+  const recipeIteration = (p.recipeIteration || '').trim();
+  const liquidType      = (p.liquidType      || '').trim();
+  const abv             = (p.abv             || '').trim();
+
+  if (!customer || !productName || !recipeIteration || !liquidType || !abv) {
+    return json({ result: 'error', message: 'Missing required fields' });
+  }
+
+  const recipeNum = Number(recipeIteration);
+  const abvNum    = Number(abv);
+  if (isNaN(recipeNum) || recipeNum < 1) {
+    return json({ result: 'error', message: 'Invalid recipe iteration' });
+  }
+  if (isNaN(abvNum) || abvNum < 0 || abvNum > 100) {
+    return json({ result: 'error', message: 'ABV must be between 0 and 100' });
+  }
+
+  const ss = openSpreadsheet(SSID_MAIN);
+  const sh = ss.getSheetByName(SHEET_PRODUCT_DB_3PT);
+  if (!sh) return json({ result: 'error', message: 'Sheet not found: ' + SHEET_PRODUCT_DB_3PT });
+
+  const row = findFirstBlankDisplayRowInColumnA(sh, 2);
+  if (!row) return json({ result: 'error', message: 'No available row found in column A' });
+
+  const tz = Session.getScriptTimeZone();
+  const dateStr = Utilities.formatDate(new Date(), tz, 'dd/MM/yyyy');
+
+  // Column A has formulas — do not write to A; only write specified cells
+  sh.getRange(row, 2).setValue(customer);     // B
+  sh.getRange(row, 4).setValue(productName);   // D
+  sh.getRange(row, 10).setValue(liquidType);  // J
+  sh.getRange(row, 11).setValue(abvNum);       // K
+  sh.getRange(row, 32).setValue(dateStr);      // AF
+
+  return json({ result: 'success', row: row });
 }
 
 // DISPATCH
@@ -155,6 +198,21 @@ function findNextDataRow(sh) {
     }
   }
   return lastRow + 1;
+}
+
+function findFirstBlankDisplayRowInColumnA(sh, startRow) {
+  startRow = startRow || 2;
+  const maxRows = sh.getMaxRows();
+  const numRows = maxRows - startRow + 1;
+  if (numRows <= 0) return null;
+
+  const displayValues = sh.getRange(startRow, 1, numRows, 1).getDisplayValues();
+  for (let i = 0; i < displayValues.length; i++) {
+    if ((displayValues[i][0] || '').trim() === '') {
+      return startRow + i;
+    }
+  }
+  return null;
 }
 
 function writeGoods3PToPalletEntry(sh, nextRow, pallet, runCode, units, dateStr, timeStr, format, bbe, duty) {
