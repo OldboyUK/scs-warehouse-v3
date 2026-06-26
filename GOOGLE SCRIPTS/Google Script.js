@@ -1,6 +1,5 @@
 /** SCS Warehouse - Unified Router **/
-/** Web app: https://script.google.com/macros/s/AKfycbzmf9xmeYbhl1T8B92b4_E7ZDLrVwIvJJtC_Ro-cZbxUd5y0skpNj24wtxaYPI2M_RB/exec */
-/** Deployment ID: AKfycbzmf9xmeYbhl1T8B92b4_E7ZDLrVwIvJJtC_Ro-cZbxUd5y0skpNj24wtxaYPI2M_RB */
+/** Deploy manually in Google Apps Script; set the /exec URL in Netlify env (APPS_SCRIPT_URL). */
 
 /** ====== CONFIG ====== **/
 const API_TOKEN = 'J4PAN88';

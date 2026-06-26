@@ -1,5 +1,15 @@
-// Unified SCS Warehouse Apps Script web app (all actions route through doPost)
-module.exports = {
-  DEPLOYMENT_ID: 'AKfycbzmf9xmeYbhl1T8B92b4_E7ZDLrVwIvJJtC_Ro-cZbxUd5y0skpNj24wtxaYPI2M_RB',
-  APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbzmf9xmeYbhl1T8B92b4_E7ZDLrVwIvJJtC_Ro-cZbxUd5y0skpNj24wtxaYPI2M_RB/exec'
-};
+// Apps Script URL must be set in Netlify env (never commit the /exec URL to the repo).
+// Preferred: APPS_SCRIPT_URL — legacy per-function keys still supported as fallback.
+function getAppsScriptUrl(legacyEnvKey) {
+  return (
+    process.env.APPS_SCRIPT_URL ||
+    (legacyEnvKey && process.env[legacyEnvKey]) ||
+    ''
+  );
+}
+
+function missingUrlMessage(legacyEnvKey) {
+  return `Missing Apps Script URL. Set APPS_SCRIPT_URL or ${legacyEnvKey} in Netlify env.`;
+}
+
+module.exports = { getAppsScriptUrl, missingUrlMessage };

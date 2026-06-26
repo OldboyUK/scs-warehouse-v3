@@ -1,6 +1,6 @@
 // /.netlify/functions/submit3p.js
 const fetch = require('node-fetch');
-const { APPS_SCRIPT_URL } = require('./scriptConfig');
+const { getAppsScriptUrl, missingUrlMessage } = require('./scriptConfig');
 
 const SHARED_TOKEN = 'J4PAN88';
 
@@ -10,7 +10,10 @@ exports.handler = async function (event) {
       return { statusCode: 405, body: JSON.stringify({ result: 'error', message: 'Method Not Allowed' }) };
     }
 
-    const scriptURL = process.env.APPS_SCRIPT_URL || APPS_SCRIPT_URL || process.env.GOODS3P_SCRIPT_URL;
+    const scriptURL = getAppsScriptUrl('GOODS3P_SCRIPT_URL');
+    if (!scriptURL) {
+      return { statusCode: 500, body: JSON.stringify({ result: 'error', message: missingUrlMessage('GOODS3P_SCRIPT_URL') }) };
+    }
 
     const params = new URLSearchParams(event.body || '');
     const required = ['pallet', 'units', 'helper', 'format', 'bbe', 'duty', 'run'];
