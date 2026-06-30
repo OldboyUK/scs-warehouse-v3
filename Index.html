@@ -7,18 +7,46 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div style="text-align: center; padding: 40px; font-family: Arial, sans-serif;">
-    <h1>SCS Warehouse Management Beta</h1>
-    <div style="display: flex; flex-direction: column; gap: 15px; align-items: center; margin-top: 30px;">
-      <a href="pallet-entry.html" class="home-link">COUNTS</a>
-      <a href="goods-in-3p.html" class="home-link">GOODS IN (3P)</a>
-      <a href="picking.html" class="home-link">PICKING</a>
-      <a href="location-assignment.html" class="home-link">PUT AWAY</a>
-      <a href="collections.html" class="home-link">COLLECTIONS</a>
-      <a href="pallet-dispatch.html" class="home-link">PALLET DISPATCH</a>
-      <a href="pallet-finder.html" class="home-link">INQUIRY</a>
-      <a href="advanced-options.html" class="home-link">ADVANCED OPTIONS</a>
-    </div>
-  </div>
+  <header class="header" style="text-align:center;">
+    <h1 class="app-title">SCS Warehouse Management Beta</h1>
+  </header>
+
+  <main class="container home-menu-wrap">
+    <nav class="home-menu" aria-label="Main menu">
+
+      <section class="menu-category">
+        <h2 class="menu-category-title">Goods In</h2>
+        <div class="menu-category-links">
+          <a href="pallet-entry.html" class="home-link">Counts</a>
+          <a href="goods-in-3p.html" class="home-link">Goods In (3P)</a>
+        </div>
+      </section>
+
+      <section class="menu-category">
+        <h2 class="menu-category-title">Warehouse</h2>
+        <div class="menu-category-links">
+          <a href="location-assignment.html" class="home-link">Put Away</a>
+          <a href="picking.html" class="home-link">Picking</a>
+          <a href="pallet-finder.html" class="home-link">Inquiry</a>
+        </div>
+      </section>
+
+      <section class="menu-category">
+        <h2 class="menu-category-title">Dispatch</h2>
+        <div class="menu-category-links">
+          <a href="collections.html" class="home-link">Collections</a>
+          <a href="pallet-dispatch.html" class="home-link">Pallet Dispatch</a>
+        </div>
+      </section>
+
+      <section class="menu-category">
+        <h2 class="menu-category-title">Admin</h2>
+        <div class="menu-category-links">
+          <a href="advanced-options.html" class="home-link">Advanced Options</a>
+        </div>
+      </section>
+
+    </nav>
+  </main>
 </body>
 </html>

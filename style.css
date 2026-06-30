@@ -93,6 +93,33 @@ body{
   box-shadow: 0 4px 12px rgba(91,156,255,0.25);
 }
 
+/* ===== Home page category menu ===== */
+.home-menu-wrap{
+  max-width: 420px;
+}
+.home-menu{
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+.menu-category-title{
+  margin: 0 0 12px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.menu-category-links{
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+.menu-category-links .home-link{
+  width: 100%;
+  display: flex;
+}
+
 /* Ensure ALL menu buttons look the same (no greys) */
 .menu .home-link.is-secondary{
   color: #0b1220;

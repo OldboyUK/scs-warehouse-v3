@@ -1,9 +1,15 @@
 const app = document.getElementById('app');
 
+const ADMIN_MENU_ITEMS = [
+  { label: 'Add Third Party Product', href: 'add-third-party-product.html' }
+];
+
 function showMenu() {
   app.innerHTML = `
-    <div style="display:flex;flex-direction:column;gap:15px;">
-      <a href="add-third-party-product.html" class="btn btn-primary">Add Third Party Product</a>
+    <div class="menu-category-links">
+      ${ADMIN_MENU_ITEMS.map(item =>
+        `<a href="${item.href}" class="home-link">${item.label}</a>`
+      ).join('')}
     </div>
   `;
 }
