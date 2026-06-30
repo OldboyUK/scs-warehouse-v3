@@ -3,28 +3,32 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Picking</title>
+  <title>Picking — SCS Warehouse</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-
-<a href="index.html" class="home-btn" aria-label="Home">🏠</a>
-
-<div class="container">
-  <h1>Picking</h1>
-
-  <div id="app"></div>
-
-  <video
-    id="video"
-    playsinline
-    muted
-    style="width:300px;height:300px;border:1px solid #ccc;margin-top:12px;display:none;">
-  </video>
-
-</div>
-
-<script src="picking.js"></script>
-
+  <header class="app-header">
+    <div class="app-header-inner">
+      <a href="Index.html" class="brand">
+        <span class="brand-mark">SCS</span>
+        <span class="brand-sub">Warehouse Management</span>
+      </a>
+      <div class="page-heading">
+        <h1 class="page-title">Picking</h1>
+        <p class="page-sub">Pick customer orders</p>
+      </div>
+      <nav class="header-actions">
+        <a href="Index.html" class="icon-btn" aria-label="Home">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+        </a>
+      </nav>
+    </div>
+  </header>
+  <main class="container page-content">
+    <div id="app"></div>
+    <video id="video" playsinline muted hidden></video>
+  </main>
+  <script src="ui.js"></script>
+  <script src="Picking.js"></script>
 </body>
 </html>

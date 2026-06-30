@@ -107,7 +107,7 @@ function showEnterStep() {
     <p class="status">Tip: You can scan with the camera or type manually.</p>
 
     <div class="actions mt-4">
-      <button class="btn btn-primary" onclick="startScan()">📷 Use Camera</button>
+      ${UI.cameraButton('Use Camera', 'startScan()')}
     </div>
   `;
 
@@ -143,25 +143,15 @@ function showConfirmStep() {
   const configs = validPallets.get(palletId) || [];
 
   let displayHTML = configs.length
-    ? configs.map(line => `
-        <div style="white-space: pre-line; margin-bottom: 10px;">
-          ${line}
-        </div>
-      `).join('')
-    : `
-        <span style="color:#ff6b6b;">
-          ❌ Pallet not found in master list
-        </span>
-      `;
+    ? configs.map(line => `<div class="config-block">${line}</div>`).join('')
+    : `<span class="text-error">Pallet not found in master list</span>`;
 
   app.innerHTML = `
     <p><strong>Pallet ID:</strong> ${palletId}</p>
 
     <p><strong>Pallet Configuration:</strong></p>
 
-    <div style="margin-left: 12px; line-height: 1.6;">
-      ${displayHTML}
-    </div>
+    ${displayHTML}
 
     <div class="actions">
       <button class="btn btn-danger" onclick="showEnterStep()">
@@ -194,20 +184,19 @@ async function startScan() {
     });
 
     const video = document.createElement('video');
-
     video.srcObject = stream;
     video.setAttribute('playsinline', 'true');
-
     await video.play();
 
-    app.innerHTML = `
-      <p>📷 Scanning... Point camera at barcode.</p>
-    `;
+    app.innerHTML = UI.scanCard('');
+    const frame = app.querySelector('.scan-frame');
 
-    app.appendChild(video);
+    if (frame) frame.appendChild(video);
+    else app.appendChild(video);
 
-    video.style.width = '300px';
-    video.style.height = '300px';
+    video.style.width = '100%';
+    video.style.height = '100%';
+    video.style.objectFit = 'cover';
 
     const detector = new BarcodeDetector({
       formats: ['code_128', 'ean_13']
@@ -296,42 +285,28 @@ function submitDispatch() {
 
       if (data.result === 'ok' || data.result === 'success') {
 
-        app.innerHTML = `
-          <p>✅ Pallet <strong>${palletId}</strong> dispatched.</p>
-
-          <div class="actions">
-            <button class="btn btn-primary" onclick="showEnterStep()">
-              Dispatch Another
-            </button>
-          </div>
-        `;
+        app.innerHTML = UI.successScreen(
+          'Pallet dispatched',
+          `Pallet <strong>${palletId}</strong> has been dispatched.`,
+          `<button class="btn btn-primary" onclick="showEnterStep()">Dispatch Another</button>`
+        );
 
       } else {
 
-        app.innerHTML = `
-          <p>❌ Error: ${data.message || 'Unknown error'}</p>
-
-          <div class="actions">
-            <button class="btn btn-ghost" onclick="showEnterStep()">
-              Try Again
-            </button>
-          </div>
-        `;
+        app.innerHTML = UI.errorScreen(
+          escapeHTML(data.message || 'Unknown error'),
+          `<button class="btn btn-ghost" onclick="showEnterStep()">Try Again</button>`
+        );
       }
     })
     .catch(err => {
 
       console.error('Network error:', err);
 
-      app.innerHTML = `
-        <p>❌ Network error. Please try again.</p>
-
-        <div class="actions">
-          <button class="btn btn-ghost" onclick="showEnterStep()">
-            Back
-          </button>
-        </div>
-      `;
+      app.innerHTML = UI.errorScreen(
+        'Network error. Please try again.',
+        `<button class="btn btn-ghost" onclick="showEnterStep()">Back</button>`
+      );
     });
 }
 

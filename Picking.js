@@ -108,7 +108,7 @@ function showStep1() {
 
     <div class="actions">
 
-      <button onclick="confirmPallet()">
+      <button class="btn btn-primary" onclick="confirmPallet()">
         Confirm Pallet
       </button>
 
@@ -144,17 +144,17 @@ function showVerifyPallet() {
       <strong>${sourcePallet}</strong>
     </p>
 
-    <div style="white-space:pre-line;">
+    <div class="config-block">
       ${configs.join('<br><br>')}
     </div>
 
     <div class="actions">
 
-      <button onclick="showStep1()">
+      <button class="btn btn-ghost" onclick="showStep1()">
         Change Pallet
       </button>
 
-      <button onclick="showRunSelection()">
+      <button class="btn btn-primary" onclick="showRunSelection()">
         Confirm
       </button>
 
@@ -191,7 +191,7 @@ function showRunSelection() {
 
     <div class="actions">
 
-      <button onclick="confirmItem()">
+      <button class="btn btn-primary" onclick="confirmItem()">
         Next
       </button>
 
@@ -215,11 +215,11 @@ function confirmItem() {
 
     <div class="actions">
 
-      <button onclick="showRunSelection()">
+      <button class="btn btn-ghost" onclick="showRunSelection()">
         Back
       </button>
 
-      <button onclick="showQuantityStep()">
+      <button class="btn btn-primary" onclick="showQuantityStep()">
         Correct
       </button>
 
@@ -241,7 +241,7 @@ function showQuantityStep() {
 
     <div class="actions">
 
-      <button onclick="submitNegativeMovement()">
+      <button class="btn btn-success" onclick="submitNegativeMovement()">
         Confirm
       </button>
 
@@ -284,11 +284,11 @@ function showDestinationOptions() {
   app.innerHTML = `
     <div class="actions">
 
-      <button onclick="showDestinationStep()">
+      <button class="btn btn-primary" onclick="showDestinationStep()">
         Add To Another Pallet
       </button>
 
-      <button onclick="finish()">
+      <button class="btn btn-ghost" onclick="finish()">
         Add Later
       </button>
 
@@ -313,7 +313,7 @@ function showDestinationStep() {
 
     <div class="actions">
 
-      <button onclick="submitDestination()">
+      <button class="btn btn-success" onclick="submitDestination()">
         Confirm
       </button>
 
@@ -403,19 +403,11 @@ async function submitMovement(
 
 function finish() {
 
-  app.innerHTML = `
-    <p>
-      ✅ Picking completed successfully.
-    </p>
-
-    <div class="actions">
-
-      <button onclick="showStep1()">
-        Start Again
-      </button>
-
-    </div>
-  `;
+  app.innerHTML = UI.successScreen(
+    'Picking completed successfully',
+    '',
+    `<button class="btn btn-primary" onclick="showStep1()">Start Again</button>`
+  );
 }
 
 window.confirmPallet = confirmPallet;

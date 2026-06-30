@@ -8,7 +8,9 @@ function showMenu() {
   app.innerHTML = `
     <div class="menu-category-links">
       ${ADMIN_MENU_ITEMS.map(item =>
-        `<a href="${item.href}" class="home-link">${item.label}</a>`
+        `<a href="${item.href}" class="dash-card">
+          <span class="dash-card-title">${item.label}</span>
+        </a>`
       ).join('')}
     </div>
   `;

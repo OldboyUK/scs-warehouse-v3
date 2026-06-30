@@ -3,6 +3,7 @@ const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1V
 
 const statusEl = document.getElementById('status');
 const wrap = document.getElementById('tableWrap');
+const searchInput = document.getElementById('searchInput');
 
 fetch(CSV_URL)
   .then(r => {
@@ -19,11 +20,26 @@ fetch(CSV_URL)
     wrap.innerHTML = '';
     wrap.appendChild(table);
     statusEl.textContent = `Loaded ${rows.length - 1} rows.`;
+    setupSearchFilter(table);
   })
   .catch(err => {
     console.error(err);
     statusEl.textContent = 'Failed to load table.';
   });
+
+function setupSearchFilter(table) {
+  if (!searchInput || !table) return;
+  const tbody = table.querySelector('tbody');
+  if (!tbody) return;
+
+  searchInput.addEventListener('input', () => {
+    const q = (searchInput.value || '').trim().toLowerCase();
+    Array.from(tbody.rows).forEach(row => {
+      const text = row.textContent.toLowerCase();
+      row.style.display = !q || text.includes(q) ? '' : 'none';
+    });
+  });
+}
 
 function parseCSV(text) {
   const rows = [];
@@ -99,7 +115,7 @@ function buildTable(rows){
     rows[r].forEach(cell => {
       const td = document.createElement('td');
       td.textContent = cell;
-      td.style.whiteSpace = 'pre-line';
+      td.classList.add('pre-line');
       tr.appendChild(td);
     });
     tbody.appendChild(tr);

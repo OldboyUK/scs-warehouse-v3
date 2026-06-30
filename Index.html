@@ -3,50 +3,95 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>SCS Warehouse Management Beta</title>
+  <title>SCS Warehouse Management</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <header class="header" style="text-align:center;">
-    <h1 class="app-title">SCS Warehouse Management Beta</h1>
+  <header class="app-header">
+    <div class="app-header-inner">
+      <a href="Index.html" class="brand">
+        <span class="brand-mark">SCS</span>
+        <span class="brand-sub">Warehouse Management</span>
+      </a>
+      <div class="page-heading">
+        <h1 class="page-title">Dashboard</h1>
+        <p class="page-sub">Warehouse operations</p>
+      </div>
+      <nav class="header-actions"></nav>
+    </div>
   </header>
 
-  <main class="container home-menu-wrap">
-    <nav class="home-menu" aria-label="Main menu">
+  <main class="home-page fade-in">
+    <div class="home-welcome">
+      <h1>Welcome <span class="home-badge">BETA</span></h1>
+      <p>Select a module to get started.</p>
+    </div>
 
-      <section class="menu-category">
-        <h2 class="menu-category-title">Goods In</h2>
-        <div class="menu-category-links">
-          <a href="pallet-entry.html" class="home-link">Counts</a>
-          <a href="goods-in-3p.html" class="home-link">Goods In (3P)</a>
-        </div>
-      </section>
+    <section class="dash-section">
+      <h2 class="dash-section-title">Goods In</h2>
+      <div class="dash-grid">
+        <a href="pallet-entry.html" class="dash-card">
+          <span class="dash-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 16v-5"/><path d="M12 16v-8"/><path d="M17 16V7"/></svg></span>
+          <span class="dash-card-title">Counts</span>
+          <span class="dash-card-desc">Stock movements and pallet counts</span>
+        </a>
+        <a href="goods-in-3p.html" class="dash-card">
+          <span class="dash-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 9.4 7.55 4.24"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.29 7 12 12 20.71 7"/><line x1="12" x2="12" y1="22" y2="12"/></svg></span>
+          <span class="dash-card-title">Goods In (3P)</span>
+          <span class="dash-card-desc">Receive incoming third-party pallets</span>
+        </a>
+      </div>
+    </section>
 
-      <section class="menu-category">
-        <h2 class="menu-category-title">Warehouse</h2>
-        <div class="menu-category-links">
-          <a href="location-assignment.html" class="home-link">Put Away</a>
-          <a href="picking.html" class="home-link">Picking</a>
-          <a href="pallet-finder.html" class="home-link">Inquiry</a>
-        </div>
-      </section>
+    <section class="dash-section">
+      <h2 class="dash-section-title">Warehouse</h2>
+      <div class="dash-grid">
+        <a href="location-assignment.html" class="dash-card">
+          <span class="dash-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg></span>
+          <span class="dash-card-title">Put Away</span>
+          <span class="dash-card-desc">Assign warehouse locations</span>
+        </a>
+        <a href="Picking.html" class="dash-card">
+          <span class="dash-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/></svg></span>
+          <span class="dash-card-title">Picking</span>
+          <span class="dash-card-desc">Pick customer orders</span>
+        </a>
+        <a href="pallet-finder.html" class="dash-card">
+          <span class="dash-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></span>
+          <span class="dash-card-title">Inquiry</span>
+          <span class="dash-card-desc">Locate pallet information</span>
+        </a>
+      </div>
+    </section>
 
-      <section class="menu-category">
-        <h2 class="menu-category-title">Dispatch</h2>
-        <div class="menu-category-links">
-          <a href="collections.html" class="home-link">Collections</a>
-          <a href="pallet-dispatch.html" class="home-link">Pallet Dispatch</a>
-        </div>
-      </section>
+    <section class="dash-section">
+      <h2 class="dash-section-title">Dispatch</h2>
+      <div class="dash-grid">
+        <a href="collections.html" class="dash-card">
+          <span class="dash-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8Z"/><path d="M3.29 7 12 12l8.71-5"/><path d="M12 22V12"/></svg></span>
+          <span class="dash-card-title">Collections</span>
+          <span class="dash-card-desc">Fulfil customer collection requests</span>
+        </a>
+        <a href="pallet-dispatch.html" class="dash-card">
+          <span class="dash-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg></span>
+          <span class="dash-card-title">Pallet Dispatch</span>
+          <span class="dash-card-desc">Dispatch completed pallets</span>
+        </a>
+      </div>
+    </section>
 
-      <section class="menu-category">
-        <h2 class="menu-category-title">Admin</h2>
-        <div class="menu-category-links">
-          <a href="advanced-options.html" class="home-link">Advanced Options</a>
-        </div>
-      </section>
+    <section class="dash-section">
+      <h2 class="dash-section-title">Admin</h2>
+      <div class="dash-grid">
+        <a href="advanced-options.html" class="dash-card">
+          <span class="dash-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></span>
+          <span class="dash-card-title">Advanced Options</span>
+          <span class="dash-card-desc">Administrative tools and updates</span>
+        </a>
+      </div>
+    </section>
 
-    </nav>
+    <p class="home-footer">Secure &bull; Reliable &bull; Efficient</p>
   </main>
 </body>
 </html>

@@ -8,6 +8,8 @@ let runCode = '';
 let runCodes = [];
 let lastLoadout = null; // { runCode, product, format, units }
 
+const PROGRESS_STEPS = ['Scan', 'Run Code', 'Units', 'Submit'];
+
 // CSVs
 const RUN_CODES_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=1875380966&single=true&output=csv';
 const ORDER_LOG_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=792145998&single=true&output=csv';
@@ -75,20 +77,22 @@ function findRunCode(value) {
   return runCodes.find(c => c.toUpperCase() === v) || null;
 }
 function confirmationBlock({code, run, product, format, units}) {
-  return `
-    <div style="border:1px solid var(--card-border);border-radius:12px;padding:10px;background:rgba(255,255,255,0.05); margin-bottom:8px;">
-      <div>Code: <strong style="color:#fff">${escapeHTML(code)}</strong></div>
-      <div>Run Code: <strong style="color:#fff">${escapeHTML(run)}</strong></div>
-      <div>Product: <strong style="color:#fff">${escapeHTML(product || '-')}</strong></div>
-      <div>Format: <strong style="color:#fff">${escapeHTML(format  || '-')}</strong></div>
-      ${typeof units === 'number' ? `<div>Units: <strong style="color:#fff">${units}</strong></div>` : ''}
-    </div>
-  `;
+  const rows = [
+    { label: 'Code', value: escapeHTML(code) },
+    { label: 'Run Code', value: escapeHTML(run) },
+    { label: 'Product', value: escapeHTML(product || '-') },
+    { label: 'Format', value: escapeHTML(format || '-') }
+  ];
+  if (typeof units === 'number') {
+    rows.push({ label: 'Units', value: String(units) });
+  }
+  return UI.summaryCard(rows);
 }
 
 /* ---------- Step 1: enter/scan pallet ---------- */
 function showStep1() {
   app.innerHTML = `
+    ${UI.progressBar(PROGRESS_STEPS, 0)}
     <label>Enter 15-digit code:</label>
     <input id="codeInput" maxlength="15" />
     <div class="actions mt-3">
@@ -97,7 +101,7 @@ function showStep1() {
     <hr>
     <p class="status">Tip: You can also scan using your camera.</p>
     <div class="actions mt-5">
-      <button class="btn btn-primary" onclick="startBarcodeScan()">📷 Use Camera</button>
+      ${UI.cameraButton('Use Camera', 'startBarcodeScan()')}
     </div>
   `;
 
@@ -120,6 +124,7 @@ function confirmCode() {
 }
 function showConfirmCode() {
   app.innerHTML = `
+    ${UI.progressBar(PROGRESS_STEPS, 0)}
     <p>You entered: <strong>${palletCode}</strong></p>
     <div class="actions mt-3">
       <button class="btn btn-ghost" onclick="showStep1()">Back</button>
@@ -134,8 +139,12 @@ function startBarcodeScan() {
       const video = document.createElement('video');
       video.srcObject = stream; video.setAttribute('playsinline', 'true');
       await video.play();
-      app.innerHTML = `<p>📷 Scanning... Point camera at barcode.</p>`;
-      app.appendChild(video); video.style.width='300px'; video.style.height='300px';
+      app.innerHTML = UI.progressBar(PROGRESS_STEPS, 0) + UI.scanCard('');
+      const frame = app.querySelector('.scan-frame');
+      if (frame) frame.appendChild(video);
+      video.style.width = '100%';
+      video.style.height = '100%';
+      video.style.objectFit = 'cover';
       const detector = new BarcodeDetector({ formats: ['code_128','ean_13'] });
       const scan = async () => {
         try {
@@ -156,19 +165,16 @@ function startBarcodeScan() {
 /* ---------- Step 2: run code selection (with ORDER LOG details) ---------- */
 function showStep2() {
   app.innerHTML = `
+    ${UI.progressBar(PROGRESS_STEPS, 1)}
     <label>Select run code:</label>
 
-    <div id="runCombo" style="position:relative;">
-      <input id="runCodeInput" placeholder="Type to search…" autocomplete="off" style="width:100%; padding-right:42px;">
-      <button id="runCodeToggle" type="button" aria-label="Open suggestions"
-        style="position:absolute; right:6px; top:6px; height:34px; width:34px; border-radius:10px; border:1px solid var(--card-border); background:rgba(255,255,255,0.08); color:var(--text); cursor:pointer;">▾</button>
-      <div id="runCodeList" hidden
-        style="position:absolute; z-index:1000; left:0; right:0; margin-top:6px; max-height:240px; overflow:auto; border:1px solid var(--card-border); border-radius:12px; background:rgba(10,15,26,0.95); backdrop-filter: blur(6px); box-shadow: var(--shadow);">
-      </div>
+    <div id="runCodeInput-wrap" class="combo-wrap">
+      <input id="runCodeInput" placeholder="Type to search…" autocomplete="off">
+      <button id="runCodeInput-toggle" type="button" class="combo-toggle" aria-label="Open suggestions">▾</button>
+      <div id="runCodeInput-list" class="combo-list" hidden></div>
     </div>
 
-    <!-- White confirmation text (no heading) -->
-    <div id="runDetails" style="margin-top:12px; color:#ffffff;"></div>
+    <div id="runDetails" class="mt-3"></div>
 
     <div class="actions mt-3">
       <button class="btn btn-ghost" onclick="showConfirmCode()">Back</button>
@@ -179,18 +185,17 @@ function showStep2() {
 }
 function setupRunCodeCombo(){
   const input  = document.getElementById('runCodeInput');
-  const toggle = document.getElementById('runCodeToggle');
-  const list   = document.getElementById('runCodeList');
+  const toggle = document.getElementById('runCodeInput-toggle');
+  const list   = document.getElementById('runCodeInput-list');
   const details= document.getElementById('runDetails');
   let open=false, items=[], highlight=-1;
 
   function filter(q){ const query=(q||'').trim().toUpperCase(); items=runCodes.filter(c=>c.toUpperCase().startsWith(query)); render(); }
   function render(){
     list.innerHTML = items.map((code,i)=>`
-      <div class="combo-option" data-value="${escapeHTML(code)}"
-           style="padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.06); cursor:pointer; ${i===items.length-1?'border-bottom:none;':''} ${i===highlight?'background:rgba(255,255,255,0.08);':''}">
+      <div class="combo-option${i===highlight?' is-highlight':''}" data-value="${escapeHTML(code)}">
         ${escapeHTML(code)}
-      </div>`).join('') || `<div style="padding:10px 12px; color:var(--muted);">No matches</div>`;
+      </div>`).join('') || `<div class="status">No matches</div>`;
   }
   function openList(){ if(!open){ list.hidden=false; open=true; } }
   function closeList(){ if(open){ list.hidden=true; open=false; highlight=-1; } }
@@ -198,11 +203,10 @@ function setupRunCodeCombo(){
     const run = findRunCode(val); if (!run){ details.innerHTML=''; return; }
     const info = orderLog.get(run);
     if (info){
-      details.innerHTML = `
-        <div style="border:1px solid var(--card-border);border-radius:12px;padding:10px;background:rgba(255,255,255,0.05);">
-          <div>Product: <strong style="color:#fff">${escapeHTML(info.product || '-')}</strong></div>
-          <div>Format: <strong style="color:#fff">${escapeHTML(info.format  || '-')}</strong></div>
-        </div>`;
+      details.innerHTML = UI.summaryCard([
+        { label: 'Product', value: escapeHTML(info.product || '-') },
+        { label: 'Format', value: escapeHTML(info.format || '-') }
+      ]);
     } else { details.innerHTML=''; }
   }
   function selectValue(val){ input.value=val; closeList(); showDetails(val); }
@@ -217,8 +221,8 @@ function setupRunCodeCombo(){
     else if(e.key==='Escape'){ closeList(); }
   });
   toggle.addEventListener('click', ()=>{ if(open) closeList(); else { filter(input.value); openList(); } });
-  list.addEventListener('click', e=>{ const el=e.target.closest('.combo-option'); if(el) selectValue(el.dataset.value); });
-  document.addEventListener('click', e=>{ const combo=document.getElementById('runCombo'); if (combo && !combo.contains(e.target)) closeList(); }, {capture:true});
+  list.addEventListener('click', e=>{ const el=e.target.closest('.combo-option[data-value]'); if(el) selectValue(el.dataset.value); });
+  document.addEventListener('click', e=>{ const combo=document.getElementById('runCodeInput-wrap'); if (combo && !combo.contains(e.target)) closeList(); }, {capture:true});
   filter(''); closeList(); showDetails(input.value);
 }
 function confirmRunCode() {
@@ -229,6 +233,7 @@ function confirmRunCode() {
   const info = orderLog.get(runCode) || { product:'-', format:'-' };
   // Units page with confirmation block
   app.innerHTML = `
+    ${UI.progressBar(PROGRESS_STEPS, 2)}
     ${confirmationBlock({code:palletCode, run:runCode, product:info.product, format:info.format})}
     <label>Enter number of units:</label>
     <input id="unitInput" type="number" min="1" />
@@ -247,6 +252,7 @@ function confirmUnits() {
 
   const info = orderLog.get(runCode) || { product:'-', format:'-' };
   app.innerHTML = `
+    ${UI.progressBar(PROGRESS_STEPS, 3)}
     ${confirmationBlock({code:palletCode, run:runCode, product:info.product, format:info.format, units})}
     <div class="actions mt-3">
       <button class="btn btn-ghost" onclick="confirmRunCode()">Back</button>
@@ -280,30 +286,29 @@ function submitEntry(units, isSameLoadout = false) {
         lastLoadout = { runCode, product: info.product, format: info.format, units };
         showPostSubmitOptions();
       } else {
-        app.innerHTML = `<p>❌ Error: ${data.message || 'Unknown error'}</p>
-          <div class="actions mt-3">
-            <button class="btn btn-ghost" onclick="${isSameLoadout ? 'showSameLoadoutStep1()' : 'showStep1()'}">Back</button>
-          </div>`;
+        app.innerHTML = UI.errorScreen(
+          escapeHTML(data.message || 'Unknown error'),
+          `<button class="btn btn-ghost" onclick="${isSameLoadout ? 'showSameLoadoutStep1()' : 'showStep1()'}">Back</button>`
+        );
       }
     })
     .catch(err => {
       console.error('Fetch error:', err);
-      app.innerHTML = `<p>❌ Network error. Please try again.</p>
-        <div class="actions mt-3">
-          <button class="btn btn-ghost" onclick="${isSameLoadout ? 'showSameLoadoutStep1()' : 'showStep1()'}">Back</button>
-        </div>`;
+      app.innerHTML = UI.errorScreen(
+        'Network error. Please try again.',
+        `<button class="btn btn-ghost" onclick="${isSameLoadout ? 'showSameLoadoutStep1()' : 'showStep1()'}">Back</button>`
+      );
     });
 }
 
 /* ---------- Post-submit screen (two options) ---------- */
 function showPostSubmitOptions(){
-  app.innerHTML = `
-    <p>✅ Entry submitted successfully!</p>
-    <div class="actions mt-3">
-      <button class="btn btn-primary" onclick="showStep1()">Add Another</button>
-      <button class="btn btn-success" onclick="showSameLoadoutStep1()">Add Another – Same Loadout</button>
-    </div>
-  `;
+  app.innerHTML = UI.successScreen(
+    'Entry submitted successfully!',
+    '',
+    `<button class="btn btn-primary" onclick="showStep1()">Add Another</button>
+     <button class="btn btn-success" onclick="showSameLoadoutStep1()">Add Another – Same Loadout</button>`
+  );
 }
 
 /* ---------- Same Loadout mini-flow ---------- */
@@ -317,7 +322,7 @@ function showSameLoadoutStep1(){
     </div>
     <hr>
     <div class="actions">
-      <button class="btn btn-primary" onclick="startSameLoadoutScan()">📷 Scan Barcode</button>
+      ${UI.cameraButton('Scan Barcode', 'startSameLoadoutScan()')}
     </div>
     <p class="status">This will reuse the last Run Code and Units.</p>
   `;
@@ -334,8 +339,12 @@ function startSameLoadoutScan(){
     .then(async stream => {
       const video = document.createElement('video');
       video.srcObject = stream; video.setAttribute('playsinline','true'); await video.play();
-      app.innerHTML = `<p>📷 Scanning... Point camera at barcode.</p>`;
-      app.appendChild(video); video.style.width='300px'; video.style.height='300px';
+      app.innerHTML = UI.scanCard('');
+      const frame = app.querySelector('.scan-frame');
+      if (frame) frame.appendChild(video);
+      video.style.width = '100%';
+      video.style.height = '100%';
+      video.style.objectFit = 'cover';
       const detector = new BarcodeDetector({ formats:['code_128','ean_13'] });
       const scan = async () => {
         try{

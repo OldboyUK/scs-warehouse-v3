@@ -3,48 +3,35 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>pallet finder - SCS Warehouse Management Beta</title>
+  <title>Inquiry — SCS Warehouse</title>
   <link rel="stylesheet" href="style.css" />
-  <style>
-    /* Light table styling that matches your theme variables */
-    .table-wrap{
-      overflow:auto;
-      border:1px solid var(--card-border);
-      border-radius: var(--radius);
-      background: rgba(255,255,255,0.03);
-      box-shadow: var(--shadow);
-      margin-top: 16px;
-    }
-    table{
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 14px;
-    }
-    thead th{
-      position: sticky;
-      top: 0;
-      background: rgba(255,255,255,0.06);
-      color: var(--text);
-      text-align: left;
-    }
-    th, td{
-      padding: 10px 12px;
-      border-bottom: 1px solid var(--card-border);
-      white-space: nowrap;
-    }
-    tbody tr:hover{ background: rgba(255,255,255,0.04); }
-  </style>
 </head>
 <body>
-  <!-- Discreet corner Home button -->
-  <a href="index.html" class="home-btn" aria-label="Home">🏠</a>
-
-  <div class="container">
-    <h1>pallet finder</h1>
+  <header class="app-header">
+    <div class="app-header-inner">
+      <a href="Index.html" class="brand">
+        <span class="brand-mark">SCS</span>
+        <span class="brand-sub">Warehouse Management</span>
+      </a>
+      <div class="page-heading">
+        <h1 class="page-title">Inquiry</h1>
+        <p class="page-sub">Locate pallet information</p>
+      </div>
+      <nav class="header-actions">
+        <a href="Index.html" class="icon-btn" aria-label="Home">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+        </a>
+      </nav>
+    </div>
+  </header>
+  <main class="container page-content">
+    <div class="table-toolbar">
+      <input id="searchInput" type="search" placeholder="Search pallets, products, locations…" autocomplete="off" />
+    </div>
     <p class="status" id="status">Loading table…</p>
     <div class="table-wrap" id="tableWrap"></div>
-  </div>
-
+  </main>
+  <script src="ui.js"></script>
   <script src="pallet-finder.js"></script>
 </body>
 </html>

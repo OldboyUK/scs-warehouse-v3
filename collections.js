@@ -140,20 +140,20 @@ function tableHTML(collection) {
     <tr>
       <td>${p.dispatched ? 'Dispatched' : 'Pending'}</td>
       <td>${escapeHTML(p.palletId)}</td>
-      <td style="white-space:pre-line;">${escapeHTML(p.config || '-')}</td>
+      <td class="pre-line">${escapeHTML(p.config || '-')}</td>
       <td>${escapeHTML(p.location || '-')}</td>
     </tr>
   `).join('');
 
   return `
-    <div style="overflow-x:auto; margin-top:16px;">
-      <table style="width:100%; border-collapse:collapse; font-size:0.95em;">
+    <div class="table-wrap">
+      <table>
         <thead>
-          <tr style="border-bottom:1px solid var(--card-border); text-align:left;">
-            <th style="padding:10px 8px;">Status</th>
-            <th style="padding:10px 8px;">Pallet ID</th>
-            <th style="padding:10px 8px;">Pallet Configuration</th>
-            <th style="padding:10px 8px;">Location</th>
+          <tr>
+            <th>Status</th>
+            <th>Pallet ID</th>
+            <th>Pallet Configuration</th>
+            <th>Location</th>
           </tr>
         </thead>
         <tbody>
@@ -165,13 +165,11 @@ function tableHTML(collection) {
 }
 
 function summaryHTML(collection) {
-  return `
-    <div style="border:1px solid var(--card-border);border-radius:12px;padding:12px;background:rgba(255,255,255,0.05);">
-      <div><strong>Collection ID:</strong> ${escapeHTML(collection.id)}</div>
-      <div><strong>Customer:</strong> ${escapeHTML(collection.customer || '-')}</div>
-      <div><strong>Progress:</strong> ${escapeHTML(progressText(collection))}</div>
-    </div>
-  `;
+  return UI.summaryCard([
+    { label: 'Collection ID', value: escapeHTML(collection.id) },
+    { label: 'Customer', value: escapeHTML(collection.customer || '-') },
+    { label: 'Progress', value: escapeHTML(progressText(collection)) }
+  ]);
 }
 
 function showLoading(message) {
@@ -250,17 +248,17 @@ function startDispatch() {
 function showDispatchStep(message, isError) {
   if (!currentCollection) return;
 
-  const msgClass = isError ? 'color:#ff6b6b;' : 'color:var(--muted);';
+  const msgClass = isError ? 'text-error' : '';
 
   app.innerHTML = `
     ${summaryHTML(currentCollection)}
     ${tableHTML(currentCollection)}
-    <div id="dispatchMessage" class="status" style="${msgClass}">${message ? escapeHTML(message) : 'Scan or enter a pallet barcode.'}</div>
+    <div id="dispatchMessage" class="status ${msgClass}">${message ? escapeHTML(message) : 'Scan or enter a pallet barcode.'}</div>
     <label for="palletInput">Pallet Identifier (15-digit code):</label>
     <input id="palletInput" maxlength="15" placeholder="Scan or type 15 digits" />
     <div class="actions mt-3">
       <button class="btn btn-success" onclick="confirmScanPallet()">Confirm Pallet</button>
-      <button class="btn btn-primary" onclick="startCameraScan()">Use Camera</button>
+      ${UI.cameraButton('Use Camera', 'startCameraScan()')}
     </div>
     <div class="actions mt-3">
       <button class="btn btn-ghost" onclick="stopDispatch()">Back to Collection</button>
@@ -320,9 +318,11 @@ async function startCameraScan() {
 
     app.innerHTML = `
       ${summaryHTML(currentCollection)}
-      <p class="status">Scanning… Point camera at barcode.</p>
+      ${UI.scanCard('')}
     `;
-    app.appendChild(video);
+    const frame = app.querySelector('.scan-frame');
+    if (frame) frame.appendChild(video);
+    else app.appendChild(video);
     video.style.width = '100%';
     video.style.maxWidth = '320px';
 
@@ -403,17 +403,15 @@ function showCompleteScreen() {
 
   const total = currentCollection.pallets.length;
 
-  app.innerHTML = `
-    <div style="border:1px solid var(--card-border);border-radius:12px;padding:16px;background:rgba(255,255,255,0.05);">
-      <h2 style="margin:0 0 12px;">Collection Complete</h2>
-      <div><strong>Collection ID:</strong> ${escapeHTML(currentCollection.id)}</div>
-      <div><strong>Customer:</strong> ${escapeHTML(currentCollection.customer || '-')}</div>
-      <div><strong>Total pallets dispatched:</strong> ${total}</div>
-    </div>
-    <div class="actions mt-3">
-      <a href="Index.html" class="btn btn-primary">Return to Main Menu</a>
-    </div>
-  `;
+  app.innerHTML = UI.successScreen(
+    'Collection Complete',
+    UI.summaryCard([
+      { label: 'Collection ID', value: escapeHTML(currentCollection.id) },
+      { label: 'Customer', value: escapeHTML(currentCollection.customer || '-') },
+      { label: 'Total pallets dispatched', value: String(total) }
+    ]),
+    `<a href="Index.html" class="btn btn-primary">Return to Main Menu</a>`
+  );
 }
 
 function loadCollectionRows(text) {

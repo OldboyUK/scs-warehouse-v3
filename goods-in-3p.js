@@ -164,7 +164,9 @@ async function startScan(onValue){
   try{
     const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
     video.srcObject = stream; video.style.display='block'; await video.play();
-    app.insertAdjacentElement('beforeend', video);
+    const frame = app.querySelector('.scan-frame');
+    if (frame) frame.appendChild(video);
+    else app.insertAdjacentElement('beforeend', video);
     const detector = new BarcodeDetector({ formats: ['code_128','ean_13'] });
     const loop = async ()=>{
       try{
@@ -182,30 +184,26 @@ async function startScan(onValue){
 
 // --- UI helpers ---
 function confirmationBlock(){
-  return `
-    <div style="border:1px solid var(--card-border);border-radius:12px;padding:10px;background:rgba(255,255,255,0.05); margin-bottom:8px;">
-      <div>Pallet ID: <strong style="color:#fff">${escapeHTML(palletId)}</strong></div>
-      <div>Product: <strong style="color:#fff">${escapeHTML(listedItem || '-')}</strong></div>
-      <div>ABV: <strong style="color:#fff">${escapeHTML(abv || '-')}</strong></div>
-      <div>Packing Format: <strong style="color:#fff">${escapeHTML(format||'-')}</strong></div>
-      <div>Units on Pallet: <strong style="color:#fff">${escapeHTML(String(units||''))}</strong></div>
-      <div>Best Before: <strong style="color:#fff">${escapeHTML(bbeWithSlashes(bbe) || '-' )}</strong></div>
-      <div>Current Duty Status: <strong style="color:#fff">${escapeHTML(duty||'-')}</strong></div>
-    </div>
-  `;
+  return UI.summaryCard([
+    { label: 'Pallet ID', value: escapeHTML(palletId) },
+    { label: 'Product', value: escapeHTML(listedItem || '-') },
+    { label: 'ABV', value: escapeHTML(abv || '-') },
+    { label: 'Packing Format', value: escapeHTML(format || '-') },
+    { label: 'Units on Pallet', value: escapeHTML(String(units || '')) },
+    { label: 'Best Before', value: escapeHTML(bbeWithSlashes(bbe) || '-') },
+    { label: 'Current Duty Status', value: escapeHTML(duty || '-') }
+  ]);
 }
 function textInputRow(id, label, attrs=''){
   return `<label for="${id}">${label}</label><input id="${id}" ${attrs} />`;
 }
 function combo(id, placeholder, list){
   return `
-    <div id="${id}-wrap" style="position:relative;">
+    <div id="${id}-wrap" class="combo-wrap">
       <input id="${id}" placeholder="${placeholder}" autocomplete="off" autocapitalize="off" spellcheck="false" />
-      <button id="${id}-toggle" type="button" aria-label="Open suggestions"
-        style="position:absolute; right:6px; top:6px; height:34px; width:34px; border-radius:10px; border:1px solid var(--card-border); background:rgba(255,255,255,0.08); color:var(--text); cursor:pointer;">▾</button>
-      <div id="${id}-list" hidden
-        style="position:absolute; z-index:1000; left:0; right:0; margin-top:6px; max-height:240px; overflow:auto; border:1px solid var(--card-border); border-radius:12px; background:rgba(10,15,26,0.95); backdrop-filter: blur(6px); box-shadow: var(--shadow);">
-        ${list.map(v => `<div class="combo-option" data-value="${escapeHTML(v)}" style="padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.06); cursor:pointer;">${escapeHTML(v)}</div>`).join('')}
+      <button id="${id}-toggle" type="button" class="combo-toggle" aria-label="Open suggestions">▾</button>
+      <div id="${id}-list" class="combo-list" hidden>
+        ${list.map(v => `<div class="combo-option" data-value="${escapeHTML(v)}">${escapeHTML(v)}</div>`).join('')}
       </div>
     </div>
   `;
@@ -242,7 +240,7 @@ function showStep1(){
     <hr>
     <p class="status">Tip: You can also scan using your camera.</p>
     <div class="actions mt-4">
-      <button class="btn btn-primary" onclick="scanPallet()">📷 Use Camera</button>
+      ${UI.cameraButton('Use Camera', 'scanPallet()')}
     </div>
   `;
   const input = document.getElementById('palletInput');
@@ -256,7 +254,7 @@ function confirmPallet(){
   palletId = v; showPathChooser();
 }
 function scanPallet(){
-  app.innerHTML = `<p>📷 Scanning... Point camera at barcode.</p>`;
+  app.innerHTML = UI.scanCard('');
   startScan(raw=>{
     if (raw.length!==15 || isNaN(raw)){ alert('Scanned code is not a valid 15-digit number.'); showStep1(); return; }
     palletId = raw; showPathChooser();
@@ -422,23 +420,19 @@ duty=${escapeHTML(duty)}</pre>
       }
       // Success
       lastLoadout = { listedItem, abv, units, format, duty };
-      app.innerHTML = `
-        <p>✅ Entry submitted successfully.</p>
-        <div class="actions mt-3">
-          <button class="btn btn-primary" onclick="resetAll()">Add Another</button>
-          <button class="btn btn-success" onclick="sameLoadout()">Add Another – Same Loadout</button>
-        </div>
-        <details style="margin-top:12px;"><summary>Response details</summary><pre style="white-space:pre-wrap; opacity:.8;">${escapeHTML(text)}</pre></details>
-      `;
+      app.innerHTML = UI.successScreen(
+        'Entry submitted successfully.',
+        '',
+        `<button class="btn btn-primary" onclick="resetAll()">Add Another</button>
+         <button class="btn btn-success" onclick="sameLoadout()">Add Another – Same Loadout</button>`
+      ) + `<details style="margin-top:12px;"><summary>Response details</summary><pre style="white-space:pre-wrap; opacity:.8;">${escapeHTML(text)}</pre></details>`;
     })
     .catch(err => {
       console.error(err);
-      app.innerHTML = `
-        <p>❌ Submission failed.</p>
-        <p class="status">Details:</p>
-        <pre style="white-space:pre-wrap; opacity:.8;">${escapeHTML(String(err))}</pre>
-        <div class="actions mt-3"><button class="btn btn-ghost" onclick="showConfirm()">Back</button></div>
-      `;
+      app.innerHTML = UI.errorScreen(
+        escapeHTML(String(err)),
+        `<button class="btn btn-ghost" onclick="showConfirm()">Back</button>`
+      );
     });
 }
 
@@ -462,7 +456,7 @@ function sameLoadout(){
     </div>
     <hr>
     <div class="actions">
-      <button class="btn btn-primary" onclick="scanSame()">📷 Scan Barcode</button>
+      ${UI.cameraButton('Scan Barcode', 'scanSame()')}
     </div>
     <p class="status">This reuses the last product/ABV/format/units/duty.</p>
   `;
@@ -480,7 +474,7 @@ function confirmSamePallet(){
   palletId = v; showConfirm();
 }
 function scanSame(){
-  app.innerHTML = `<p>📷 Scanning... Point camera at barcode.</p>`;
+  app.innerHTML = UI.scanCard('');
   startScan(raw=>{
     if (raw.length!==15 || isNaN(raw)){ alert('Scanned code is not a valid 15-digit number.'); sameLoadout(); return; }
     palletId = raw; showConfirm();

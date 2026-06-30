@@ -86,7 +86,7 @@ function showPalletStep(){
     <hr>
     <p class="status">Tip: You can also scan using your camera.</p>
     <div class="actions mt-5">
-      <button class="btn btn-primary" onclick="startPalletScan()">📷 Use Camera</button>
+      ${UI.cameraButton('Use Camera', 'startPalletScan()')}
     </div>
   `;
   const input = document.getElementById('palletInput');
@@ -119,8 +119,10 @@ function showConfirmPallet(){
 }
 
 function startPalletScan(){
-  app.innerHTML = `<p>📷 Scanning pallet… Point camera at pallet barcode.</p>`;
-  app.appendChild(video);
+  app.innerHTML = UI.scanCard('');
+  const frame = app.querySelector('.scan-frame');
+  if (frame) frame.appendChild(video);
+  else app.appendChild(video);
   startCameraAndDetect(value => {
     if (value.length !== 15 || isNaN(value)) {
       alert('Scanned pallet is not a valid 15-digit number.');
@@ -146,7 +148,7 @@ function showLocationStep(){
       <button class="btn btn-secondary" id="confirmLocationBtn">Confirm Entry</button>
     </div>
 
-    <div id="bayChooser" class="mt-4" style="display:none">
+    <div id="bayChooser" class="mt-4 hidden">
       <p>This location ends with “-”. Choose a bay:</p>
       <!-- Grid ensures buttons fit the screen; tight together -->
       <div class="bay-grid">
@@ -158,7 +160,7 @@ function showLocationStep(){
 
     <hr>
     <div class="actions mt-4">
-      <button class="btn btn-primary" onclick="startLocationScan()">📷 Use Camera</button>
+      ${UI.cameraButton('Use Camera', 'startLocationScan()')}
     </div>
 
     <p class="status">Tip: If the location ends with “-”, you’ll be asked to choose 2 / 3 / 4.</p>
@@ -245,8 +247,10 @@ function ensureBayGridStyle(){
 }
 
 function startLocationScan(){
-  app.innerHTML = `<p>📷 Scanning location… Point camera at location barcode.</p>`;
-  app.appendChild(video);
+  app.innerHTML = UI.scanCard('');
+  const frame = app.querySelector('.scan-frame');
+  if (frame) frame.appendChild(video);
+  else app.appendChild(video);
   startCameraAndDetect(val => {
     processLocationInput(val);
   });
@@ -346,33 +350,27 @@ function submitAssignment(){
   .then(data => {
     console.log("Response from Netlify:", data);   // for debugging
     if (data.result === 'ok' || data.result === 'success') {
-      app.innerHTML = `
-        <p>✅ Location assigned.</p>
-        <p>Pallet: <strong>${palletId}</strong><br>Location: <strong>${locationCode}</strong></p>
-        <div class="actions">
-          <button class="btn btn-primary" onclick="showPalletStep()">Assign Another</button>
-        </div>
-      `;
+      app.innerHTML = UI.successScreen(
+        'Location assigned',
+        `Pallet: <strong>${palletId}</strong><br>Location: <strong>${locationCode}</strong>`,
+        `<button class="btn btn-primary" onclick="showPalletStep()">Assign Another</button>`
+      );
       palletId = '';
       locationCode = '';
       locationBase = '';
     } else {
-      app.innerHTML = `
-        <p>❌ Error: ${data.message || 'Unknown error'}</p>
-        <div class="actions">
-          <button class="btn btn-ghost" onclick="showConfirmLocation()">Back</button>
-        </div>
-      `;
+      app.innerHTML = UI.errorScreen(
+        escapeHTML(data.message || 'Unknown error'),
+        `<button class="btn btn-ghost" onclick="showConfirmLocation()">Back</button>`
+      );
     }
   })
   .catch(err => {
     console.error("Fetch error:", err);
-    app.innerHTML = `
-      <p>❌ Network error. Please try again.</p>
-      <div class="actions">
-        <button class="btn btn-ghost" onclick="showConfirmLocation()">Back</button>
-      </div>
-    `;
+    app.innerHTML = UI.errorScreen(
+      'Network error. Please try again.',
+      `<button class="btn btn-ghost" onclick="showConfirmLocation()">Back</button>`
+    );
   });
 }
 

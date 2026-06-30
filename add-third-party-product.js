@@ -47,13 +47,11 @@ function escapeHTML(s) {
 
 function combo(id, placeholder, list) {
   return `
-    <div id="${id}-wrap" style="position:relative;">
+    <div id="${id}-wrap" class="combo-wrap">
       <input id="${id}" placeholder="${placeholder}" autocomplete="off" autocapitalize="off" spellcheck="false" />
-      <button id="${id}-toggle" type="button" aria-label="Open suggestions"
-        style="position:absolute; right:6px; top:6px; height:34px; width:34px; border-radius:10px; border:1px solid var(--card-border); background:rgba(255,255,255,0.08); color:var(--text); cursor:pointer;">&#9662;</button>
-      <div id="${id}-list" hidden
-        style="position:absolute; z-index:1000; left:0; right:0; margin-top:6px; max-height:240px; overflow:auto; border:1px solid var(--card-border); border-radius:12px; background:rgba(10,15,26,0.95); backdrop-filter: blur(6px); box-shadow: var(--shadow);">
-        ${list.map(v => `<div class="combo-option" data-value="${escapeHTML(v)}" style="padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.06); cursor:pointer;">${escapeHTML(v)}</div>`).join('')}
+      <button id="${id}-toggle" type="button" class="combo-toggle" aria-label="Open suggestions">&#9662;</button>
+      <div id="${id}-list" class="combo-list" hidden>
+        ${list.map(v => `<div class="combo-option" data-value="${escapeHTML(v)}">${escapeHTML(v)}</div>`).join('')}
       </div>
     </div>
   `;
@@ -165,21 +163,19 @@ function submitForm() {
       if (!json || (json.result !== 'ok' && json.result !== 'success')) {
         throw new Error(json && json.message ? json.message : text);
       }
-      app.innerHTML = `
-        <p>Entry submitted successfully.</p>
-        <div class="actions mt-3">
-          <a href="add-third-party-product.html" class="btn btn-primary">Add Another</a>
-          <a href="advanced-options.html" class="btn btn-ghost">Back to Advanced Options</a>
-        </div>
-      `;
+      app.innerHTML = UI.successScreen(
+        'Entry submitted successfully',
+        '',
+        `<a href="add-third-party-product.html" class="btn btn-primary">Add Another</a>
+         <a href="advanced-options.html" class="btn btn-ghost">Back to Advanced Options</a>`
+      );
     })
     .catch(err => {
       console.error(err);
-      app.innerHTML = `
-        <p>Submission failed.</p>
-        <p class="status">${escapeHTML(String(err.message || err))}</p>
-        <div class="actions mt-3"><button class="btn btn-ghost" onclick="showForm()">Back</button></div>
-      `;
+      app.innerHTML = UI.errorScreen(
+        escapeHTML(String(err.message || err)),
+        `<button class="btn btn-ghost" onclick="showForm()">Back</button>`
+      );
     });
 }
 
