@@ -11,29 +11,71 @@ let dispatchedPalletIds = new Set();
 let currentCollection = null;
 let dispatchMode = false;
 
-function parseCSV(text) {
-  const lines = text.replace(/\r/g, '').split('\n').filter(Boolean);
+/* =========================
+   CSV parsing (multiline-safe)
+   Same approach as pallet-dispatch.js
+========================= */
+function splitCSVRows(text) {
   const rows = [];
-  for (const line of lines) {
-    const out = [];
-    let cur = '';
-    let q = false;
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-      if (q) {
-        if (ch === '"') {
-          if (line[i + 1] === '"') { cur += '"'; i++; } else { q = false; }
-        } else cur += ch;
-      } else {
-        if (ch === ',') { out.push(cur); cur = ''; }
-        else if (ch === '"') { q = true; }
-        else cur += ch;
-      }
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    const next = text[i + 1];
+
+    if (char === '"' && inQuotes && next === '"') {
+      current += '"';
+      i++;
+      continue;
     }
-    out.push(cur);
-    rows.push(out);
+
+    if (char === '"') {
+      inQuotes = !inQuotes;
+      continue;
+    }
+
+    if ((char === '\n' || char === '\r') && !inQuotes) {
+      if (char === '\r' && next === '\n') i++;
+      if (current.trim()) rows.push(current);
+      current = '';
+    } else {
+      current += char;
+    }
   }
+
+  if (current.trim()) rows.push(current);
   return rows;
+}
+
+function parseCSVRow(line) {
+  const out = [];
+  let cur = '';
+  let q = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (q) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') { cur += '"'; i++; } else { q = false; }
+      } else cur += ch;
+    } else {
+      if (ch === ',') { out.push(cur); cur = ''; }
+      else if (ch === '"') { q = true; }
+      else cur += ch;
+    }
+  }
+
+  out.push(cur);
+  return out;
+}
+
+function cleanCSVField(value) {
+  return String(value || '').trim().replace(/^"|"$/g, '');
+}
+
+function isHeaderRow(fields, headerLabel) {
+  return cleanCSVField(fields[0]).toUpperCase() === headerLabel;
 }
 
 function escapeHTML(s) {
@@ -375,34 +417,37 @@ function showCompleteScreen() {
 }
 
 function loadCollectionRows(text) {
-  const rows = parseCSV(text);
+  const rowStrings = splitCSVRows(text);
   allCollectionRows = [];
 
-  for (let i = 0; i < rows.length; i++) {
-    const r = rows[i];
-    const collectionId = (r[0] || '').trim();
-    const palletId = (r[1] || '').trim();
+  for (let i = 0; i < rowStrings.length; i++) {
+    const r = parseCSVRow(rowStrings[i]);
+    if (i === 0 && isHeaderRow(r, 'COLLECTION ID')) continue;
+
+    const collectionId = cleanCSVField(r[0]);
+    const palletId = cleanCSVField(r[1]);
     if (!collectionId || !palletId) continue;
-    if (i === 0 && collectionId.toUpperCase() === 'COLLECTION ID') continue;
 
     allCollectionRows.push({
       collectionId,
       palletId,
-      customer: (r[2] || '').trim(),
-      palletConfig: (r[3] || '').trim(),
-      location: (r[5] || '').trim()
+      customer: cleanCSVField(r[2]),
+      palletConfig: cleanCSVField(r[3]),
+      location: cleanCSVField(r[5])
     });
   }
 }
 
 function loadDispatchHistory(text) {
-  const rows = parseCSV(text);
+  const rowStrings = splitCSVRows(text);
   dispatchedPalletIds.clear();
 
-  for (let i = 0; i < rows.length; i++) {
-    const palletId = (rows[i][0] || '').trim();
+  for (let i = 0; i < rowStrings.length; i++) {
+    const r = parseCSVRow(rowStrings[i]);
+    if (i === 0 && isHeaderRow(r, 'PALLET ID')) continue;
+
+    const palletId = cleanCSVField(r[0]);
     if (!palletId) continue;
-    if (i === 0 && palletId.toUpperCase() === 'PALLET ID') continue;
     dispatchedPalletIds.add(palletId);
   }
 }
