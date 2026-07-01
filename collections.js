@@ -278,11 +278,20 @@ function showDispatchStep(message, isError) {
   `;
 
   const input = document.getElementById('palletInput');
-  input.focus();
-  if (input.select) input.select();
   input.addEventListener('keydown', e => {
     if (e.key === 'Enter') confirmScanPallet();
   });
+
+  function focusPalletInput() {
+    const el = document.getElementById('palletInput');
+    if (!el) return;
+    el.focus();
+    if (el.select) el.select();
+  }
+
+  /* Defer focus until presentation enhancements have moved the input */
+  setTimeout(focusPalletInput, 0);
+  setTimeout(focusPalletInput, 120);
 }
 
 function stopDispatch() {

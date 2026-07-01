@@ -182,6 +182,9 @@
 
         scanner.appendChild(scannerActions);
         app.appendChild(scanner);
+
+        input.focus();
+        if (input.select) input.select();
       }
 
       function enhanceOverviewActions() {
