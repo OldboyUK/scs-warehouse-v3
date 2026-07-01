@@ -5,8 +5,9 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Collections — SCS Warehouse</title>
   <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="collections.css" />
 </head>
-<body>
+<body class="page-collections">
   <header class="app-header">
     <div class="app-header-inner">
       <a href="Index.html" class="brand">
@@ -29,5 +30,209 @@
   </main>
   <script src="ui.js"></script>
   <script src="collections.js"></script>
+  <script>
+    /* Presentation-only enhancements — no business logic */
+    (function () {
+      'use strict';
+
+      var ICONS = {
+        clipboard: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg>',
+        user: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
+        package: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 9.4 7.55 4.24"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.29 7 12 12 20.71 7"/><line x1="12" x2="12" y1="22" y2="12"/></svg>',
+        check: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+        clock: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
+        arrowLeft: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>'
+      };
+
+      var app = document.getElementById('app');
+      if (!app) return;
+
+      function parseProgress(text) {
+        var match = String(text || '').match(/(\d+)\s*\/\s*(\d+)/);
+        if (!match) return 0;
+        var done = parseInt(match[1], 10);
+        var total = parseInt(match[2], 10);
+        if (!total) return 0;
+        return Math.round((done / total) * 100);
+      }
+
+      function enhanceSummary() {
+        var card = app.querySelector('.summary-card:not([data-collections-enhanced])');
+        if (!card) return;
+
+        var rows = card.querySelectorAll('.summary-row');
+        if (rows.length !== 3) return;
+
+        var icons = [ICONS.clipboard, ICONS.user, ICONS.package];
+        var grid = document.createElement('div');
+        grid.className = 'collections-summary';
+
+        rows.forEach(function (row, index) {
+          var label = row.querySelector('.summary-label');
+          var value = row.querySelector('.summary-value');
+          if (!label || !value) return;
+
+          var stat = document.createElement('div');
+          stat.className = 'collections-stat-card';
+
+          var iconWrap = document.createElement('div');
+          iconWrap.className = 'collections-stat-icon';
+          iconWrap.innerHTML = icons[index] || icons[0];
+          stat.appendChild(iconWrap);
+
+          var labelEl = document.createElement('span');
+          labelEl.className = 'collections-stat-label';
+          labelEl.textContent = label.textContent;
+          stat.appendChild(labelEl);
+
+          var valueEl = document.createElement('span');
+          valueEl.className = 'collections-stat-value';
+          if (index === 2) {
+            valueEl.classList.add('collections-stat-value--progress');
+            var ring = document.createElement('span');
+            ring.className = 'collections-progress-ring';
+            ring.style.setProperty('--progress', parseProgress(value.textContent) + '%');
+            ring.setAttribute('aria-hidden', 'true');
+            valueEl.appendChild(ring);
+          }
+          valueEl.appendChild(document.createTextNode(value.textContent));
+          stat.appendChild(valueEl);
+
+          grid.appendChild(stat);
+        });
+
+        card.replaceWith(grid);
+      }
+
+      function enhanceTable() {
+        app.querySelectorAll('.table-wrap tbody tr:not([data-collections-enhanced])').forEach(function (tr) {
+          var cell = tr.cells[0];
+          if (!cell) return;
+
+          var status = cell.textContent.trim();
+          if (status !== 'Dispatched' && status !== 'Pending') return;
+
+          tr.classList.add(status === 'Dispatched' ? 'row-dispatched' : 'row-pending');
+
+          var badgeClass = status === 'Dispatched' ? 'status-badge--dispatched' : 'status-badge--pending';
+          var icon = status === 'Dispatched' ? ICONS.check : ICONS.clock;
+          cell.innerHTML = '<span class="status-badge ' + badgeClass + '">' + icon + ' ' + status + '</span>';
+          tr.setAttribute('data-collections-enhanced', 'true');
+        });
+      }
+
+      function enhanceDispatchMessage() {
+        var msg = app.querySelector('#dispatchMessage:not([data-collections-enhanced])');
+        if (!msg) return;
+
+        msg.classList.add('collections-notice');
+
+        if (!msg.classList.contains('text-error')) {
+          var text = msg.textContent.trim();
+          if (/dispatched/i.test(text)) {
+            msg.classList.add('collections-notice--success');
+            msg.innerHTML = '<span class="collections-notice-icon">' + ICONS.check + '</span><span>' + text.replace(/\.$/, '') + ' successfully.</span>';
+          }
+        }
+
+        msg.setAttribute('data-collections-enhanced', 'true');
+      }
+
+      function enhanceScanner() {
+        var input = app.querySelector('#palletInput');
+        if (!input || input.closest('.collections-scanner')) return;
+
+        var label = app.querySelector('label[for="palletInput"]');
+        var scanner = document.createElement('div');
+        scanner.className = 'collections-scanner';
+
+        var card = document.createElement('div');
+        card.className = 'collections-scanner-card';
+        if (label) card.appendChild(label);
+        card.appendChild(input);
+        scanner.appendChild(card);
+
+        var scannerActions = document.createElement('div');
+        scannerActions.className = 'collections-scanner-actions actions mt-3';
+
+        app.querySelectorAll('.actions.mt-3').forEach(function (div) {
+          if (div.querySelector('[onclick*="confirmScanPallet"]') ||
+              div.querySelector('[onclick*="startCameraScan"]') ||
+              div.querySelector('[onclick*="stopDispatch"]')) {
+            while (div.firstChild) scannerActions.appendChild(div.firstChild);
+            div.remove();
+          }
+        });
+
+        var confirmBtn = scannerActions.querySelector('[onclick*="confirmScanPallet"]');
+        if (confirmBtn && !confirmBtn.querySelector('.btn-icon')) {
+          var confirmIcon = document.createElement('span');
+          confirmIcon.className = 'btn-icon';
+          confirmIcon.innerHTML = ICONS.check;
+          confirmBtn.insertBefore(confirmIcon, confirmBtn.firstChild);
+        }
+
+        var backBtn = scannerActions.querySelector('[onclick*="stopDispatch"]');
+        if (backBtn && !backBtn.querySelector('.btn-icon')) {
+          var backIcon = document.createElement('span');
+          backIcon.className = 'btn-icon';
+          backIcon.innerHTML = ICONS.arrowLeft;
+          backBtn.insertBefore(backIcon, backBtn.firstChild);
+        }
+
+        scanner.appendChild(scannerActions);
+        app.appendChild(scanner);
+      }
+
+      function enhanceOverviewActions() {
+        if (app.querySelector('#palletInput') || app.querySelector('.collections-overview-actions')) return;
+
+        var actionDiv = app.querySelector('.actions.mt-3');
+        if (!actionDiv || !actionDiv.querySelector('[onclick*="startDispatch"]')) return;
+
+        actionDiv.classList.add('collections-overview-actions');
+      }
+
+      function enhanceSelectStep() {
+        var select = app.querySelector('#collectionSelect:not([data-collections-enhanced])');
+        if (!select) return;
+
+        var label = app.querySelector('label[for="collectionSelect"]');
+        var actions = app.querySelector('.actions.mt-3');
+        var card = document.createElement('div');
+        card.className = 'collections-select-card';
+
+        if (label) card.appendChild(label);
+        card.appendChild(select);
+        if (actions) card.appendChild(actions);
+
+        app.innerHTML = '';
+        app.appendChild(card);
+        select.setAttribute('data-collections-enhanced', 'true');
+      }
+
+      function enhance() {
+        enhanceSummary();
+        enhanceTable();
+        enhanceDispatchMessage();
+        enhanceScanner();
+        enhanceOverviewActions();
+        enhanceSelectStep();
+      }
+
+      var scheduled = false;
+      function scheduleEnhance() {
+        if (scheduled) return;
+        scheduled = true;
+        requestAnimationFrame(function () {
+          scheduled = false;
+          enhance();
+        });
+      }
+
+      new MutationObserver(scheduleEnhance).observe(app, { childList: true, subtree: true });
+      scheduleEnhance();
+    })();
+  </script>
 </body>
 </html>
