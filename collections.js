@@ -99,6 +99,17 @@ function getUniqueCollectionIds() {
   return Array.from(ids).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 }
 
+function isMobileView() {
+  return window.matchMedia('(max-width: 768px)').matches;
+}
+
+function palletConfigForDisplay(pallet) {
+  const desktop = pallet.configDesktop || '';
+  const mobile = pallet.configMobile || '';
+  if (isMobileView()) return mobile || desktop;
+  return desktop || mobile;
+}
+
 function applyDispatchStatus(pallets) {
   for (const p of pallets) {
     p.dispatched = dispatchedPalletIds.has(p.palletId);
@@ -111,7 +122,8 @@ function buildCollection(collectionId) {
 
   const pallets = rows.map(r => ({
     palletId: r.palletId,
-    config: r.palletConfig,
+    configDesktop: r.configDesktop,
+    configMobile: r.configMobile,
     location: r.location,
     dispatched: false
   }));
@@ -140,7 +152,7 @@ function tableHTML(collection) {
     <tr>
       <td>${p.dispatched ? 'Dispatched' : 'Pending'}</td>
       <td>${escapeHTML(p.palletId)}</td>
-      <td class="pre-line">${escapeHTML(p.config || '-')}</td>
+      <td class="pre-line">${escapeHTML(palletConfigForDisplay(p) || '-')}</td>
       <td>${escapeHTML(p.location || '-')}</td>
     </tr>
   `).join('');
@@ -430,8 +442,10 @@ function loadCollectionRows(text) {
       collectionId,
       palletId,
       customer: cleanCSVField(r[2]),
-      palletConfig: cleanCSVField(r[3]),
-      location: cleanCSVField(r[5])
+      configDesktop: cleanCSVField(r[3]),
+      configMobile: cleanCSVField(r[4]),
+      dispatchStatus: cleanCSVField(r[5]),
+      location: cleanCSVField(r[6])
     });
   }
 }
