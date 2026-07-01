@@ -333,7 +333,25 @@
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  width: 100%;
   max-width: 520px;
+}
+
+@media (min-width: 769px) {
+  .page-collections #app:has(.collections-select-card) {
+    align-items: center;
+    width: 100%;
+  }
+
+  .page-collections .collections-select-card {
+    width: 100%;
+    max-width: none;
+    margin: 0 auto;
+  }
+
+  .page-collections .collections-select-card .actions .btn {
+    min-width: 220px;
+  }
 }
 
 .page-collections .collections-select-card label {
