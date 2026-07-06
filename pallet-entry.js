@@ -76,6 +76,36 @@ function findRunCode(value) {
   const v = (value || '').trim().toUpperCase();
   return runCodes.find(c => c.toUpperCase() === v) || null;
 }
+
+function normalizeRunCodeSearch(value) {
+  return String(value || '').toUpperCase().replace(/-/g, '');
+}
+
+function runCodeSearchRank(code, query) {
+  const normalizedCode = normalizeRunCodeSearch(code);
+  const normalizedQuery = normalizeRunCodeSearch(query);
+  if (!normalizedQuery) return 0;
+  if (normalizedCode === normalizedQuery) return 0;
+  if (normalizedCode.startsWith(normalizedQuery)) return 1;
+  if (normalizedCode.includes(normalizedQuery)) return 2;
+  return -1;
+}
+
+function filterRunCodes(query) {
+  const normalizedQuery = normalizeRunCodeSearch(query);
+  if (!normalizedQuery) {
+    return runCodes.slice().sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  }
+
+  return runCodes
+    .map(code => ({ code, rank: runCodeSearchRank(code, query) }))
+    .filter(item => item.rank >= 0)
+    .sort((a, b) => {
+      if (a.rank !== b.rank) return a.rank - b.rank;
+      return a.code.localeCompare(b.code, undefined, { numeric: true });
+    })
+    .map(item => item.code);
+}
 function confirmationBlock({code, run, product, format, units}) {
   const rows = [
     { label: 'Code', value: escapeHTML(code) },
@@ -190,7 +220,7 @@ function setupRunCodeCombo(){
   const details= document.getElementById('runDetails');
   let open=false, items=[], highlight=-1;
 
-  function filter(q){ const query=(q||'').trim().toUpperCase(); items=runCodes.filter(c=>c.toUpperCase().startsWith(query)); render(); }
+  function filter(q){ items = filterRunCodes(q); render(); }
   function render(){
     list.innerHTML = items.map((code,i)=>`
       <div class="combo-option${i===highlight?' is-highlight':''}" data-value="${escapeHTML(code)}">
