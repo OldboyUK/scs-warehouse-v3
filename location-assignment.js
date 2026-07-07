@@ -1,19 +1,26 @@
 // location-assignment.js
 // Flow: enter/scan pallet -> confirm pallet -> (enter OR scan) location
-// If location ends with "-", ask for bay (2/3/4) -> confirm location -> submit
+// Lower bays (10 chars, ends with 1) auto-continue; upper bays (ends with "-") show 2/3/4
 
 const app   = document.getElementById('app');
 const video = document.getElementById('video');
 
+const PALLET_CONTENTS_CSV =
+  'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=1165333250&single=true&output=csv';
+
 let palletId = '';
 let locationCode = '';
 let locationBase = ''; // used when code ends with "-"
+let palletContents = new Map();
 
 let stream = null;
 let scanning = false;
 
 /* Helpers */
 const pad = n => String(n).padStart(2, '0');
+function escapeHTML(s) {
+  return String(s).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+}
 function nowForSheets(){
   const d = new Date();
   return {
@@ -74,6 +81,102 @@ async function startCameraAndDetect(onDetected){
   }
 }
 
+/* CSV parsing (multiline-safe) */
+function splitCSVRows(text) {
+  const rows = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    const next = text[i + 1];
+
+    if (char === '"' && inQuotes && next === '"') {
+      current += '"';
+      i++;
+      continue;
+    }
+
+    if (char === '"') {
+      inQuotes = !inQuotes;
+      continue;
+    }
+
+    if ((char === '\n' || char === '\r') && !inQuotes) {
+      if (char === '\r' && next === '\n') i++;
+      if (current.trim()) rows.push(current);
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+
+  if (current.trim()) rows.push(current);
+  return rows;
+}
+
+function parseCSVRow(line) {
+  const out = [];
+  let cur = '';
+  let q = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (q) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') { cur += '"'; i++; } else { q = false; }
+      } else cur += ch;
+    } else {
+      if (ch === ',') { out.push(cur); cur = ''; }
+      else if (ch === '"') { q = true; }
+      else cur += ch;
+    }
+  }
+
+  out.push(cur);
+  return out;
+}
+
+function cleanCSVField(value) {
+  return String(value || '').trim().replace(/^"|"$/g, '');
+}
+
+async function loadPalletContents() {
+  try {
+    const response = await fetch(PALLET_CONTENTS_CSV);
+    const text = await response.text();
+    const rowStrings = splitCSVRows(text);
+
+    palletContents.clear();
+
+    for (let i = 0; i < rowStrings.length; i++) {
+      const r = parseCSVRow(rowStrings[i]);
+      if (i === 0 && cleanCSVField(r[0]).toUpperCase().includes('PALLET')) continue;
+
+      const id = cleanCSVField(r[0]);
+      if (!id) continue;
+
+      palletContents.set(id, cleanCSVField(r[2] || ''));
+    }
+  } catch (err) {
+    console.error('Failed to load pallet contents', err);
+  }
+}
+
+function isLowerBayLocation(code) {
+  const v = (code || '').trim();
+  return v.length === 10 && v.endsWith('1');
+}
+
+function isUpperBayBase(code) {
+  return (code || '').trim().endsWith('-');
+}
+
+function acceptLowerBay(code) {
+  locationCode = code.trim();
+  showConfirmLocation();
+}
+
 /* UI Steps */
 function showPalletStep(){
   stopCamera();
@@ -109,11 +212,20 @@ function confirmPallet(){
 
 function showConfirmPallet(){
   stopCamera();
+  const found = palletContents.has(palletId);
+  const contents = palletContents.get(palletId) || '';
+
+  const displayHTML = found
+    ? `<div class="config-block">${escapeHTML(contents)}</div>`
+    : `<span class="text-error">Pallet not found in master list</span>`;
+
   app.innerHTML = `
-    <p>Pallet ID: <strong>${palletId}</strong></p>
+    <p><strong>Pallet ID:</strong> ${escapeHTML(palletId)}</p>
+    <p><strong>Pallet contents:</strong></p>
+    ${displayHTML}
     <div class="actions">
       <button class="btn btn-danger" onclick="showPalletStep()">Change Pallet</button>
-      <button class="btn btn-success" onclick="showLocationStep()">Confirm Pallet ID</button>
+      ${found ? `<button class="btn btn-success" onclick="showLocationStep()">Confirm Pallet ID</button>` : ''}
     </div>
   `;
 }
@@ -134,23 +246,19 @@ function startPalletScan(){
   });
 }
 
-function showLocationStep(){
+function showLocationStep(prefill = ''){
   stopCamera();
   app.innerHTML = `
-    <p>Pallet ID: <strong>${palletId}</strong></p>
+    <p>Pallet ID: <strong>${escapeHTML(palletId)}</strong></p>
     <label for="locationInput">Enter Location Code:</label>
-    <!-- Start with inputmode='none' so keyboard DOES NOT pop, but keep focus so scanners can type -->
     <input id="locationInput" placeholder="Scan or type location" inputmode="none" autocomplete="off" />
 
     <div class="actions mt-3">
-      <!-- SWAPPED ORDER: Back first, then Confirm Entry -->
       <button class="btn btn-danger" onclick="showConfirmPallet()">Back</button>
-      <button class="btn btn-secondary" id="confirmLocationBtn">Confirm Entry</button>
     </div>
 
     <div id="bayChooser" class="mt-4 hidden">
       <p>This location ends with “-”. Choose a bay:</p>
-      <!-- Grid ensures buttons fit the screen; tight together -->
       <div class="bay-grid">
         <button class="btn btn-secondary" onclick="chooseBay(2)">2</button>
         <button class="btn btn-secondary" onclick="chooseBay(3)">3</button>
@@ -163,19 +271,15 @@ function showLocationStep(){
       ${UI.cameraButton('Use Camera', 'startLocationScan()')}
     </div>
 
-    <p class="status">Tip: If the location ends with “-”, you’ll be asked to choose 2 / 3 / 4.</p>
+    <p class="status">Tip: Lower bays are scanned automatically. Upper bays ending with “-” will show bay 2 / 3 / 4.</p>
   `;
 
   ensureBayGridStyle();
 
   const input = document.getElementById('locationInput');
-  const confirmBtn = document.getElementById('confirmLocationBtn');
 
-  // Keep the field focused so HID scanners can type immediately,
-  // but DON'T show the soft keyboard because inputmode="none".
   input.focus();
 
-  // When the user taps/clicks the field, enable the soft keyboard.
   const enableSoftKeyboard = () => {
     if (input.getAttribute('inputmode') !== 'text') {
       input.setAttribute('inputmode', 'text');
@@ -184,45 +288,37 @@ function showLocationStep(){
   };
   input.addEventListener('pointerdown', enableSoftKeyboard, { passive: true });
 
-  // Live status: turn Confirm Entry green when exactly 10 chars
-  const updateConfirmBtn = () => {
-    const len = (input.value || '').trim().length;
-    if (len === 10) {
-      confirmBtn.classList.add('btn-success');
-      confirmBtn.classList.remove('btn-secondary');
-    } else {
-      confirmBtn.classList.add('btn-secondary');
-      confirmBtn.classList.remove('btn-success');
+  function handleLocationValue(raw) {
+    const v = (raw || '').trim();
+    if (isLowerBayLocation(v)) {
+      acceptLowerBay(v);
+      return true;
     }
-  };
-  updateConfirmBtn();
-
-  // HID scanner / typing: as soon as trailing '-' appears, prompt for bay
-  input.addEventListener('input', () => {
-    const v = (input.value || '').trim();
-    updateConfirmBtn();
-    if (v.endsWith('-')) {
+    if (isUpperBayBase(v)) {
       locationBase = v;
       showBayPickerInline();
-    } else {
-      hideBayPickerInline();
+      return true;
     }
+    hideBayPickerInline();
+    locationBase = '';
+    return false;
+  }
+
+  input.addEventListener('input', () => {
+    handleLocationValue(input.value);
   });
 
-  // Enter/Tab submits (uses same logic as clicking Confirm Entry)
   input.addEventListener('keydown', e => {
     if (e.key === 'Enter' || e.key === 'Tab') {
       e.preventDefault();
-      confirmBtn.click();
+      handleLocationValue(input.value);
     }
   });
 
-  // Confirm Entry
-  confirmBtn.addEventListener('click', () => {
-    const val = (input.value || '').trim();
-    if (!val) { alert('Please enter a location code.'); input.focus(); return; }
-    processLocationInput(val);
-  });
+  if (prefill) {
+    input.value = prefill;
+    handleLocationValue(prefill);
+  }
 }
 
 function ensureBayGridStyle(){
@@ -259,45 +355,27 @@ function startLocationScan(){
 /* Decide whether we need a bay */
 function processLocationInput(val){
   const v = (val || '').trim();
-  if (v.endsWith('-')) {
-    locationBase = v; // keep the trailing "-" so we can append 2/3/4
-    showBayPicker();  // full-page picker flow
+  if (isLowerBayLocation(v)) {
+    acceptLowerBay(v);
     return;
   }
-  locationCode = v;
-  showConfirmLocation();
+  if (isUpperBayBase(v)) {
+    locationBase = v;
+    showLocationStep(v);
+    return;
+  }
+  alert('Unrecognised location code. Lower bays are 10 characters ending in 1. Upper bays end with “-”.');
+  showLocationStep();
 }
 
 /* Inline bay picker (on the same page) */
 function showBayPickerInline(){
   const chooser = document.getElementById('bayChooser');
-  if (chooser) chooser.style.display = '';
+  if (chooser) chooser.classList.remove('hidden');
 }
 function hideBayPickerInline(){
   const chooser = document.getElementById('bayChooser');
-  if (chooser) chooser.style.display = 'none';
-}
-
-/* Full-page bay picker (used after camera scan or manual confirm) */
-function showBayPicker(){
-  stopCamera();
-  app.innerHTML = `
-    <p>Pallet ID: <strong>${palletId}</strong></p>
-    <p>Location: <strong>${locationBase}</strong></p>
-    <p>Select bay to complete this location:</p>
-
-    <div class="bay-grid">
-      <button class="btn btn-primary" onclick="chooseBay(2)">2</button>
-      <button class="btn btn-primary" onclick="chooseBay(3)">3</button>
-      <button class="btn btn-primary" onclick="chooseBay(4)">4</button>
-    </div>
-
-    <div class="actions">
-      <button class="btn btn-danger" onclick="startLocationScan()">Re-scan Location</button>
-      <button class="btn btn-ghost" onclick="showLocationStep()">Back</button>
-    </div>
-  `;
-  ensureBayGridStyle();
+  if (chooser) chooser.classList.add('hidden');
 }
 
 function chooseBay(n){
@@ -321,8 +399,8 @@ function chooseBay(n){
 function showConfirmLocation(){
   stopCamera();
   app.innerHTML = `
-    <p>Pallet ID: <strong>${palletId}</strong></p>
-    <p>Location: <strong>${locationCode}</strong></p>
+    <p>Pallet ID: <strong>${escapeHTML(palletId)}</strong></p>
+    <p>Location: <strong>${escapeHTML(locationCode)}</strong></p>
     <p>Is this correct?</p>
     <div class="actions">
       <button class="btn btn-danger" onclick="showLocationStep()">Change Location</button>
@@ -384,4 +462,5 @@ window.showConfirmLocation = showConfirmLocation;
 window.submitAssignment = submitAssignment;
 window.chooseBay = chooseBay;
 
-showPalletStep();
+app.innerHTML = '<p class="status">Loading pallet data…</p>';
+loadPalletContents().finally(showPalletStep);
