@@ -1,16 +1,38 @@
-/** SCS AUTH - bcrypt PIN hash generation and login verification for the SCS AUTH sheet. */
+/** SCS AUTH - Web app, bcrypt PIN verification, and hash generation for the SCS AUTH sheet. */
+/** Deploy Auth.js + bcrypt.js as a separate Apps Script web app. Set AUTH_SCRIPT_URL in Netlify. */
 
-const SSID_AUTH = '1nB5_vSJUes7myggQLUBnBWpARbR31-5EMhdOY69MjfQ';
-const SHEET_SCS_AUTH = 'SCS AUTH';
+const API_TOKEN = 'J4PAN88';
+const SSID_AUTH = '1nB5_vSJUes7myggQLUBnBWpARbR31-5EMhdOY69MjfQ';const SHEET_SCS_AUTH = 'SCS AUTH';
 const COL_USER_NAME = 3; // C
 const COL_PIN_HASH = 4; // D
 const COL_PIN = 6;      // F
 const BCRYPT_ROUNDS = 12;
 
 /**
- * Adds the Authentication menu when the spreadsheet is opened.
+ * Web app entry point for login and user list (called via Netlify Functions).
  */
-function onOpen() {
+function doPost(e) {
+  try {
+    var p = (e && e.parameter) ? e.parameter : {};
+    var token = String(p.token || '').trim();
+
+    if (token !== API_TOKEN) {
+      return json({ result: 'error', message: 'Unauthorized' });
+    }
+
+    var action = String(p.action || '').trim().toLowerCase();
+    if (action === 'auth_login') return handleAuthLogin(p);
+    if (action === 'auth_get_users') return handleAuthGetUsers();
+
+    return json({ result: 'error', message: 'Unknown action: ' + action });
+  } catch (err) {
+    return json({ result: 'error', message: String(err) });
+  }
+}
+
+/**
+ * Adds the Authentication menu when the spreadsheet is opened.
+ */function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Authentication')
     .addItem('Generate PIN Hashes', 'generatePinHashes')
@@ -165,7 +187,11 @@ function handleAuthLogin(p) {
 /** @private */
 function getAuthSheet_() {
   var ss = SpreadsheetApp.openById(SSID_AUTH);
-  return ss.getSheetByName(SHEET_SCS_AUTH);
+  var sheet = ss.getSheetByName(SHEET_SCS_AUTH);
+  if (!sheet) {
+    sheet = ss.getSheetByName('SCS Auth');
+  }
+  return sheet;
 }
 
 /** @private */
@@ -191,4 +217,9 @@ function readAuthUsernames_(sheet) {
   });
 
   return users;
+}
+
+function json(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
 }

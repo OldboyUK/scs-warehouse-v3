@@ -14,24 +14,6 @@ const SHEET_LOCATION_ASSIGNMENT = 'LOCATION ASSIGNMENT';
 const SHEET_PRODUCT_DB_3PT      = 'PRODUCT DATABASE (3PT)';
 
 /** ====== MAIN ENTRY POINT ====== **/
-function doGet(e) {
-  try {
-    const p = (e && e.parameter) ? e.parameter : {};
-    const token = (p.token || '').trim();
-
-    if (token !== API_TOKEN) {
-      return json({ result: 'error', message: 'Unauthorized' });
-    }
-
-    const action = (p.action || '').trim().toLowerCase();
-    if (action === 'auth_get_users') return handleAuthGetUsers();
-
-    return json({ result: 'error', message: 'Unknown action: ' + action });
-  } catch (err) {
-    return json({ result: 'error', message: String(err) });
-  }
-}
-
 function doPost(e) {
   try {
     const p = (e && e.parameter) ? e.parameter : {};
@@ -43,11 +25,8 @@ function doPost(e) {
 
     const action = (p.action || '').trim().toLowerCase();
 
-    if (action === 'auth_login') return handleAuthLogin(p);
-
     // Priority order - be more specific
-    if (action === 'location_assignment')               return handleLocationAssignment(p);
-    if (action === 'add_third_party_product')            return handleAddThirdPartyProduct(p);
+    if (action === 'location_assignment')               return handleLocationAssignment(p);    if (action === 'add_third_party_product')            return handleAddThirdPartyProduct(p);
     if (action === 'goods_in_3p' || isGoods3P(p))       return handleGoods3P(p);
     if (action === 'dispatch'    || isDispatch(p))      return handleDispatch(p);
     if (action === 'pallet_entry'|| isPalletEntry(p))   return handlePalletEntry(p);

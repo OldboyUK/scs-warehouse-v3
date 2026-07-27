@@ -1,5 +1,5 @@
 (function () {
-  if (!SCSAuth.requireAuth('login.html')) {
+  if (!SCSAuth.requireAuth('/')) {
     return;
   }
 
@@ -14,7 +14,7 @@
 
   logoutBtn.addEventListener('click', function () {
     SCSAuth.clearSession();
-    window.location.href = 'login.html';
+    window.location.href = '/';
   });
 
   hrBtn.addEventListener('click', showComingSoon);

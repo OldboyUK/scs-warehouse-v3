@@ -1,5 +1,5 @@
 const fetch = require('node-fetch');
-const { getAppsScriptUrl, missingUrlMessage } = require('./scriptConfig');
+const { getAuthScriptUrl, missingAuthUrlMessage } = require('./scriptConfig');
 const SHARED_TOKEN = 'J4PAN88';
 
 exports.handler = async function (event) {
@@ -8,11 +8,11 @@ exports.handler = async function (event) {
       return { statusCode: 405, body: JSON.stringify({ result: 'failure' }) };
     }
 
-    const scriptURL = getAppsScriptUrl('AUTH_SCRIPT_URL');
+    const scriptURL = getAuthScriptUrl();
     if (!scriptURL) {
       return {
         statusCode: 500,
-        body: JSON.stringify({ result: 'failure', message: missingUrlMessage('AUTH_SCRIPT_URL') })
+        body: JSON.stringify({ result: 'failure', message: missingAuthUrlMessage() })
       };
     }
 

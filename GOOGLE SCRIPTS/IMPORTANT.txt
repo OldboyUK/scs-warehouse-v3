@@ -1,15 +1,30 @@
-Please note, all files within the GOOGLE SCRIPTS folder are not hosted on Netlify. These scripts are connected to the Google Sheets back end and are deployed manually in Google Apps Script.
+Please note, all files within the GOOGLE SCRIPTS folder are not hosted on Netlify.
+These scripts are connected to Google Sheets and are deployed manually in Google Apps Script.
 
-After deploying in Google Apps Script, set the web app /exec URL in Netlify environment variables:
-- APPS_SCRIPT_URL (recommended — one URL for all functions), or
-- Per-function keys: GOODS3P_SCRIPT_URL, PALLET_SCRIPT_URL, DISPATCH_SCRIPT_URL, LOCATION_SCRIPT_URL, ADD_3P_PRODUCT_SCRIPT_URL, AUTH_SCRIPT_URL
+There are TWO separate Apps Script projects:
 
-Auth deployment notes:
-- Include Auth.js and bcrypt.js in the Apps Script project alongside Google Script.js
-- Redeploy the web app after adding auth handlers (doGet + auth_login action)
-- APPS_SCRIPT_URL covers auth if set; AUTH_SCRIPT_URL is optional fallback
+1) WAREHOUSE (Google Script.js)
+   - Spreadsheet: main warehouse workbook
+   - Deploy Google Script.js as a web app
+   - Netlify env: APPS_SCRIPT_URL (or per-function legacy keys below)
 
-Do not commit the /exec URL to this repository — Netlify secrets scanning will block the build.
+2) SCS AUTH (Auth.js + bcrypt.js)
+   - Spreadsheet: 1nB5_vSJUes7myggQLUBnBWpARbR31-5EMhdOY69MjfQ
+   - Deploy Auth.js and bcrypt.js together as a web app
+   - Netlify env: AUTH_SCRIPT_URL (required for login)
 
-Current deployment ID (for reference in Apps Script):
+Netlify environment variables:
+- APPS_SCRIPT_URL — warehouse /exec URL
+- AUTH_SCRIPT_URL — SCS Auth /exec URL (separate deployment)
+- Legacy warehouse keys (optional): GOODS3P_SCRIPT_URL, PALLET_SCRIPT_URL,
+  DISPATCH_SCRIPT_URL, LOCATION_SCRIPT_URL, ADD_3P_PRODUCT_SCRIPT_URL
+
+SCS Auth web app:
+- Handles auth_login and auth_get_users via doPost in Auth.js
+- Uses bcrypt.js for PIN comparison (hashes never sent to the browser)
+- Redeploy after any change to Auth.js or bcrypt.js
+
+Do not commit /exec URLs to this repository — Netlify secrets scanning will block the build.
+
+Warehouse deployment ID (for reference in Apps Script):
 AKfycbwukVC-6QauPviaeCFOWAvw7cz7-FK7XgBCQdtQwbUtj01IRMDhTTzQh3cs1JxU0h0U

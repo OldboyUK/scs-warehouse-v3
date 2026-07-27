@@ -1,5 +1,5 @@
 // Apps Script URL must be set in Netlify env (never commit the /exec URL to the repo).
-// Preferred: APPS_SCRIPT_URL — legacy per-function keys still supported as fallback.
+// Warehouse and Auth are separate Apps Script deployments.
 function getAppsScriptUrl(legacyEnvKey) {
   return (
     process.env.APPS_SCRIPT_URL ||
@@ -8,8 +8,21 @@ function getAppsScriptUrl(legacyEnvKey) {
   );
 }
 
+function getAuthScriptUrl() {
+  return process.env.AUTH_SCRIPT_URL || '';
+}
+
 function missingUrlMessage(legacyEnvKey) {
   return `Missing Apps Script URL. Set APPS_SCRIPT_URL or ${legacyEnvKey} in Netlify env.`;
 }
 
-module.exports = { getAppsScriptUrl, missingUrlMessage };
+function missingAuthUrlMessage() {
+  return 'Missing AUTH_SCRIPT_URL in Netlify env (SCS Auth Apps Script /exec URL).';
+}
+
+module.exports = {
+  getAppsScriptUrl,
+  getAuthScriptUrl,
+  missingUrlMessage,
+  missingAuthUrlMessage
+};

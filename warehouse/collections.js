@@ -431,7 +431,7 @@ function showCompleteScreen() {
       { label: 'Customer', value: escapeHTML(currentCollection.customer || '-') },
       { label: 'Total pallets dispatched', value: String(total) }
     ]),
-    `<a href="Index.html" class="btn btn-primary">Return to Main Menu</a>`
+    `<a href="index.html" class="btn btn-primary">Return to Main Menu</a>`
   );
 }
 

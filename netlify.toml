@@ -1,4 +1,101 @@
+# Landing page: login at / (index.html). Logged-in users redirect to menu via login.js.
+
 [[redirects]]
-  from = "/"
-  to = "/login.html"
-  status = 302
+  from = "/login.html"
+  to = "/"
+  status = 301
+
+[[redirects]]
+  from = "/Index.html"
+  to = "/warehouse/"
+  status = 301
+
+[[redirects]]
+  from = "/pallet-entry"
+  to = "/warehouse/pallet-entry.html"
+  status = 301
+
+[[redirects]]
+  from = "/pallet-entry.html"
+  to = "/warehouse/pallet-entry.html"
+  status = 301
+
+[[redirects]]
+  from = "/goods-in-3p"
+  to = "/warehouse/goods-in-3p.html"
+  status = 301
+
+[[redirects]]
+  from = "/goods-in-3p.html"
+  to = "/warehouse/goods-in-3p.html"
+  status = 301
+
+[[redirects]]
+  from = "/location-assignment"
+  to = "/warehouse/location-assignment.html"
+  status = 301
+
+[[redirects]]
+  from = "/location-assignment.html"
+  to = "/warehouse/location-assignment.html"
+  status = 301
+
+[[redirects]]
+  from = "/Picking"
+  to = "/warehouse/Picking.html"
+  status = 301
+
+[[redirects]]
+  from = "/Picking.html"
+  to = "/warehouse/Picking.html"
+  status = 301
+
+[[redirects]]
+  from = "/pallet-finder"
+  to = "/warehouse/pallet-finder.html"
+  status = 301
+
+[[redirects]]
+  from = "/pallet-finder.html"
+  to = "/warehouse/pallet-finder.html"
+  status = 301
+
+[[redirects]]
+  from = "/collections"
+  to = "/warehouse/collections.html"
+  status = 301
+
+[[redirects]]
+  from = "/collections.html"
+  to = "/warehouse/collections.html"
+  status = 301
+
+[[redirects]]
+  from = "/pallet-dispatch"
+  to = "/warehouse/pallet-dispatch.html"
+  status = 301
+
+[[redirects]]
+  from = "/pallet-dispatch.html"
+  to = "/warehouse/pallet-dispatch.html"
+  status = 301
+
+[[redirects]]
+  from = "/advanced-options"
+  to = "/warehouse/advanced-options.html"
+  status = 301
+
+[[redirects]]
+  from = "/advanced-options.html"
+  to = "/warehouse/advanced-options.html"
+  status = 301
+
+[[redirects]]
+  from = "/add-third-party-product"
+  to = "/warehouse/add-third-party-product.html"
+  status = 301
+
+[[redirects]]
+  from = "/add-third-party-product.html"
+  to = "/warehouse/add-third-party-product.html"
+  status = 301

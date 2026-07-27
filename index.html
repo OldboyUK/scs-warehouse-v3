@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SCS App — Login</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="auth-session.js"></script>
+  <script>
+    if (SCSAuth.isAuthenticated()) {
+      window.location.replace('/menu.html');
+    }
+  </script>
+</head>
+<body class="auth-body">
+  <main class="auth-page fade-in">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <img
+          class="auth-logo"
+          src="assets/scs-logo.png"
+          alt="SCS logo"
+          width="72"
+          height="72"
+        />
+        <h1 class="auth-title">SCS App</h1>
+        <p class="auth-subtitle">Sign in to continue</p>
+      </div>
+
+      <form id="loginForm" class="auth-form" novalidate>
+        <div class="field">
+          <label for="username">User</label>
+          <select id="username" name="username" required disabled>
+            <option value="">Loading users…</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="pin">8-digit PIN</label>
+          <input
+            id="pin"
+            name="pin"
+            type="password"
+            inputmode="numeric"
+            pattern="[0-9]{8}"
+            maxlength="8"
+            autocomplete="one-time-code"
+            placeholder="••••••••"
+            required
+          />
+        </div>
+
+        <p id="loginError" class="auth-error" role="alert" hidden>Invalid PIN.</p>
+
+        <button type="submit" class="btn btn-primary btn-block" id="loginBtn" disabled>
+          Login
+        </button>
+      </form>
+    </div>
+  </main>
+
+  <script src="login.js"></script>
+</body>
+</html>

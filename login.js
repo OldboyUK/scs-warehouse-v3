@@ -9,7 +9,7 @@
   const loginError = document.getElementById('loginError');
 
   if (SCSAuth.isAuthenticated()) {
-    window.location.replace('menu.html');
+    window.location.replace('/menu.html');
     return;
   }
 
@@ -46,11 +46,11 @@
         body: JSON.stringify({ username, pin })
       });
 
-      const data = await response.json();
+      const data = JSON.parse(await response.text());
 
       if (data.result === 'success') {
         SCSAuth.setSession(username);
-        window.location.href = 'menu.html';
+        window.location.href = '/menu.html';
         return;
       }
 
@@ -69,7 +69,15 @@
   async function loadUsers() {
     try {
       const response = await fetch(AUTH_USERS_URL);
-      const data = await response.json();
+      const text = await response.text();
+      let data;
+
+      try {
+        data = JSON.parse(text);
+      } catch (_) {
+        throw new Error('Invalid response from server');
+      }
+
       const users = Array.isArray(data.users) ? data.users : [];
 
       usernameSelect.innerHTML = '';
