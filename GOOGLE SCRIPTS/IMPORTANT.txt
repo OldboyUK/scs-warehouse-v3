@@ -2,7 +2,12 @@ Please note, all files within the GOOGLE SCRIPTS folder are not hosted on Netlif
 
 After deploying in Google Apps Script, set the web app /exec URL in Netlify environment variables:
 - APPS_SCRIPT_URL (recommended — one URL for all functions), or
-- Per-function keys: GOODS3P_SCRIPT_URL, PALLET_SCRIPT_URL, DISPATCH_SCRIPT_URL, LOCATION_SCRIPT_URL, ADD_3P_PRODUCT_SCRIPT_URL
+- Per-function keys: GOODS3P_SCRIPT_URL, PALLET_SCRIPT_URL, DISPATCH_SCRIPT_URL, LOCATION_SCRIPT_URL, ADD_3P_PRODUCT_SCRIPT_URL, AUTH_SCRIPT_URL
+
+Auth deployment notes:
+- Include Auth.js and bcrypt.js in the Apps Script project alongside Google Script.js
+- Redeploy the web app after adding auth handlers (doGet + auth_login action)
+- APPS_SCRIPT_URL covers auth if set; AUTH_SCRIPT_URL is optional fallback
 
 Do not commit the /exec URL to this repository — Netlify secrets scanning will block the build.
 
