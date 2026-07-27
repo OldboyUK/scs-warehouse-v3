@@ -1023,6 +1023,10 @@ details pre {
   z-index: 2000;
 }
 
+.auth-overlay[hidden] {
+  display: none;
+}
+
 .auth-modal {
   width: 100%;
   max-width: 360px;
