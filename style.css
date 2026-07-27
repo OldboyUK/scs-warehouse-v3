@@ -962,13 +962,13 @@ details pre {
 }
 
 .module-card {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 18px;
+  justify-content: center;
   width: 100%;
   min-height: 88px;
   padding: 20px 22px;
-  text-align: left;
   text-decoration: none;
   color: inherit;
   background: var(--card);
@@ -976,6 +976,7 @@ details pre {
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   cursor: pointer;
+  font: inherit;
   transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
 }
 
@@ -990,6 +991,10 @@ details pre {
 }
 
 .module-icon {
+  position: absolute;
+  left: 22px;
+  top: 50%;
+  transform: translateY(-50%);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1001,6 +1006,10 @@ details pre {
   flex-shrink: 0;
 }
 
+.module-card:hover .module-icon {
+  transform: translateY(-50%);
+}
+
 .module-icon svg {
   width: 28px;
   height: 28px;
@@ -1010,6 +1019,9 @@ details pre {
   font-size: 1.25rem;
   font-weight: 700;
   color: var(--text);
+  text-align: center;
+  width: 100%;
+  padding: 0 60px;
 }
 
 .auth-overlay {
