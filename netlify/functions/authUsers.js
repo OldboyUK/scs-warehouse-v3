@@ -26,6 +26,18 @@ exports.handler = async function (event) {
     });
     const text = await response.text();
 
+    if (/Script function not found/i.test(text) || text.trim().startsWith('<!DOCTYPE')) {
+      return {
+        statusCode: 502,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          result: 'error',
+          users: [],
+          message: 'SCS Auth script is missing doPost. Copy the latest Auth.js into Apps Script and redeploy.'
+        })
+      };
+    }
+
     return {
       statusCode: response.status || 200,
       headers: { 'Content-Type': 'application/json' },

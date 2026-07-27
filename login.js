@@ -82,8 +82,16 @@
 
       usernameSelect.innerHTML = '';
 
+      if (data.result === 'error' && data.message) {
+        usernameSelect.innerHTML = '<option value="">' + data.message + '</option>';
+        usernameSelect.disabled = true;
+        loginBtn.disabled = true;
+        return;
+      }
+
       if (!users.length) {
-        usernameSelect.innerHTML = '<option value="">No users available</option>';
+        const emptyMsg = data.message ? String(data.message) : 'No users available';
+        usernameSelect.innerHTML = '<option value="">' + emptyMsg + '</option>';
         usernameSelect.disabled = true;
         loginBtn.disabled = true;
         return;
@@ -104,7 +112,7 @@
       usernameSelect.disabled = false;
       loginBtn.disabled = false;
     } catch (_) {
-      usernameSelect.innerHTML = '<option value="">Unable to load users</option>';
+      usernameSelect.innerHTML = '<option value="">Unable to load users — check Auth script deploy</option>';
       usernameSelect.disabled = true;
       loginBtn.disabled = true;
     }

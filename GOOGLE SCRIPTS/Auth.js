@@ -158,9 +158,9 @@ function handleAuthLogin(p) {
     return json({ result: 'failure' });
   }
 
-  var numRows = lastRow - 1;
-  var userValues = sheet.getRange(2, COL_USER_NAME, numRows, 1).getDisplayValues();
-  var hashValues = sheet.getRange(2, COL_PIN_HASH, numRows, 1).getDisplayValues();
+  var userValues = sheet.getRange('C2:C' + lastRow).getDisplayValues();
+  var hashValues = sheet.getRange('D2:D' + lastRow).getDisplayValues();
+  var numRows = userValues.length;
 
   for (var i = 0; i < numRows; i++) {
     var name = String(userValues[i][0] || '').trim();
@@ -201,8 +201,7 @@ function readAuthUsernames_(sheet) {
     return [];
   }
 
-  var numRows = lastRow - 1;
-  var userValues = sheet.getRange(2, COL_USER_NAME, numRows, 1).getDisplayValues();
+  var userValues = sheet.getRange('C2:C' + lastRow).getDisplayValues();
   var users = [];
 
   for (var i = 0; i < numRows; i++) {

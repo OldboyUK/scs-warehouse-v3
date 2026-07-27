@@ -24,6 +24,11 @@ SCS Auth web app:
 - Uses bcrypt.js for PIN comparison (hashes never sent to the browser)
 - Redeploy after any change to Auth.js or bcrypt.js
 
+Verify Auth.js contains function doPost(e) { ... } before deploying.
+After deploy, test in browser:
+  YOUR_AUTH_SCRIPT_URL?action=auth_get_users&token=J4PAN88
+You should see JSON with users — not "Script function not found: doPost".
+
 Do not commit /exec URLs to this repository — Netlify secrets scanning will block the build.
 
 Warehouse deployment ID (for reference in Apps Script):
