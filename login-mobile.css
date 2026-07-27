@@ -1,0 +1,96 @@
+/* Login page — mobile layout (loads only on screens ≤640px) */
+
+.auth-body {
+  align-items: stretch;
+  justify-content: flex-start;
+  padding:
+    max(24px, env(safe-area-inset-top))
+    max(16px, env(safe-area-inset-right))
+    max(24px, env(safe-area-inset-bottom))
+    max(16px, env(safe-area-inset-left));
+}
+
+.auth-page {
+  max-width: none;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 12px 0 24px;
+  min-height: calc(100vh - 48px);
+  min-height: calc(100dvh - 48px);
+}
+
+.auth-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 36px 24px 40px;
+  border-radius: 20px;
+  max-width: 520px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.auth-brand {
+  margin-bottom: 36px;
+}
+
+.auth-logo {
+  width: 112px;
+  height: 112px;
+  margin-bottom: 20px;
+}
+
+.auth-title {
+  font-size: 2.25rem;
+  margin-bottom: 8px;
+}
+
+.auth-subtitle {
+  font-size: 1.1rem;
+}
+
+.auth-form .field {
+  margin-bottom: 24px;
+}
+
+.auth-form label {
+  font-size: 1rem;
+  margin-bottom: 10px;
+}
+
+.auth-form select,
+.auth-form input {
+  min-height: 60px;
+  padding: 14px 16px;
+  font-size: 1.125rem;
+  border-radius: 12px;
+}
+
+.auth-form select {
+  background-position: right 16px center;
+  padding-right: 44px;
+}
+
+.auth-form input#pin {
+  font-size: 1.5rem;
+  letter-spacing: 0.35em;
+  text-align: center;
+  font-weight: 600;
+}
+
+.auth-error {
+  font-size: 1rem;
+  padding: 14px 16px;
+  margin-bottom: 20px;
+}
+
+.auth-form .btn-primary {
+  min-height: 60px;
+  font-size: 1.125rem;
+  border-radius: 12px;
+  margin-top: 8px;
+  touch-action: manipulation;
+}
