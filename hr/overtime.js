@@ -71,9 +71,7 @@ function renderForm() {
     '<p class="hr-welcome">Welcome <span>' + escapeHTML(username) + '</span></p>' +
     '<p class="hr-intro">Please use this page to record any overtime worked.</p>' +
     '<div class="hr-guidance">' +
-      '<p>Please enter your overtime worked or time to deduct.</p>' +
-      '<p>Please round down to the nearest 15 minutes.</p>' +
-      '<p>If you arrived late or left early, choose Deduction and enter the time as a positive value.</p>' +
+      '<p>Enter your overtime hours below. If you\'ve arrived late or left early without booking holiday, turn on the Deduction toggle before entering the number of hours to deduct.</p>' +
     '</div>' +
     '<form id="overtimeForm" class="hr-form-card" novalidate>' +
       '<section class="hr-form-section">' +
