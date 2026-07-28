@@ -5,7 +5,6 @@
 
   const welcomeUser = document.getElementById('welcomeUser');
   const logoutBtn = document.getElementById('logoutBtn');
-  const hrBtn = document.getElementById('hrBtn');
   const qualityBtn = document.getElementById('qualityBtn');
   const comingSoonOverlay = document.getElementById('comingSoonOverlay');
   const closeComingSoon = document.getElementById('closeComingSoon');
@@ -17,7 +16,6 @@
     window.location.href = '/';
   });
 
-  hrBtn.addEventListener('click', showComingSoon);
   qualityBtn.addEventListener('click', showComingSoon);
 
   closeComingSoon.addEventListener('click', hideComingSoon);

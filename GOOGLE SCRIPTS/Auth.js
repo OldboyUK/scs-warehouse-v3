@@ -2,7 +2,8 @@
 /** Deploy Auth.js + bcrypt.js as a separate Apps Script web app. Set AUTH_SCRIPT_URL in Netlify. */
 
 const API_TOKEN = 'J4PAN88';
-const SSID_AUTH = '1nB5_vSJUes7myggQLUBnBWpARbR31-5EMhdOY69MjfQ';const SHEET_SCS_AUTH = 'SCS AUTH';
+const SSID_AUTH = '1nB5_vSJUes7myggQLUBnBWpARbR31-5EMhdOY69MjfQ';
+const SHEET_SCS_AUTH = 'SCS AUTH';
 const COL_USER_NAME = 3; // C
 const COL_PIN_HASH = 4; // D
 const COL_PIN = 6;      // F
@@ -32,7 +33,8 @@ function doPost(e) {
 
 /**
  * Adds the Authentication menu when the spreadsheet is opened.
- */function onOpen() {
+ */
+function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Authentication')
     .addItem('Generate PIN Hashes', 'generatePinHashes')
@@ -204,7 +206,7 @@ function readAuthUsernames_(sheet) {
   var userValues = sheet.getRange('C2:C' + lastRow).getDisplayValues();
   var users = [];
 
-  for (var i = 0; i < numRows; i++) {
+  for (var i = 0; i < userValues.length; i++) {
     var name = String(userValues[i][0] || '').trim();
     if (name) {
       users.push(name);

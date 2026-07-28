@@ -99,3 +99,13 @@
   from = "/add-third-party-product.html"
   to = "/warehouse/add-third-party-product.html"
   status = 301
+
+[[redirects]]
+  from = "/hr"
+  to = "/hr/"
+  status = 301
+
+[[redirects]]
+  from = "/hr/overtime"
+  to = "/hr/overtime.html"
+  status = 301

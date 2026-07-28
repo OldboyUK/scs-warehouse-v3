@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SCS HR</title>
+  <link rel="stylesheet" href="../style.css" />
+  <link rel="stylesheet" href="hr.css" />
+  <script src="../auth-session.js"></script>
+  <script src="hr-guard.js"></script>
+</head>
+<body class="hr-theme">
+  <header class="app-header">
+    <div class="app-header-inner">
+      <a href="index.html" class="brand">
+        <span class="brand-mark">SCS</span>
+        <span class="brand-sub">Human Resources</span>
+      </a>
+      <div class="page-heading">
+        <h1 class="page-title">HR</h1>
+        <p class="page-sub">People &amp; hours</p>
+      </div>
+      <nav class="header-actions">
+        <a href="../menu.html" class="icon-btn" aria-label="Main menu">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg>
+        </a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="home-page fade-in">
+    <div class="home-welcome">
+      <h1>HR</h1>
+      <p>Select a module to get started.</p>
+    </div>
+
+    <section class="dash-section">
+      <h2 class="dash-section-title">Hours Worked</h2>
+      <div class="dash-grid">
+        <a href="overtime.html" class="dash-card">
+          <span class="dash-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>
+          <span class="dash-card-title">Overtime</span>
+          <span class="dash-card-desc">Record overtime worked or time deductions</span>
+        </a>
+        <button type="button" class="dash-card" id="recordHoursBtn">
+          <span class="dash-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/><path d="M8 18h.01"/><path d="M12 18h.01"/><path d="M16 18h.01"/></svg></span>
+          <span class="dash-card-title">Record Hours</span>
+          <span class="dash-card-desc">Log standard working hours</span>
+        </button>
+      </div>
+    </section>
+  </main>
+
+  <div class="auth-overlay" id="comingSoonOverlay" hidden>
+    <div class="auth-modal" role="dialog" aria-modal="true" aria-labelledby="comingSoonTitle">
+      <h2 id="comingSoonTitle">Coming Soon</h2>
+      <p>This feature is currently under development.</p>
+      <button type="button" class="btn btn-primary btn-block" id="closeComingSoon">OK</button>
+    </div>
+  </div>
+
+  <script src="index.js"></script>
+</body>
+</html>

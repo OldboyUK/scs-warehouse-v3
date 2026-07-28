@@ -1,7 +1,7 @@
 Please note, all files within the GOOGLE SCRIPTS folder are not hosted on Netlify.
 These scripts are connected to Google Sheets and are deployed manually in Google Apps Script.
 
-There are TWO separate Apps Script projects:
+There are THREE separate Apps Script projects:
 
 1) WAREHOUSE (Google Script.js)
    - Spreadsheet: main warehouse workbook
@@ -13,9 +13,19 @@ There are TWO separate Apps Script projects:
    - Deploy Auth.js and bcrypt.js together as a web app
    - Netlify env: AUTH_SCRIPT_URL (required for login)
 
+3) SCS HR (HR.js)
+   - Spreadsheet: 1cA-BHIu3cOora4XfDZuRlwXyRc-x7troiI7arnmM04Q
+   - Sheet: Overtime & Deductions
+   - Create a NEW Apps Script project (do not add to the Warehouse script)
+   - Copy HR.js into the project and deploy as a web app
+   - Netlify env: HR_SCRIPT_URL (required for overtime submissions)
+   - Execute as: Me
+   - Who has access: Anyone
+
 Netlify environment variables:
 - APPS_SCRIPT_URL — warehouse /exec URL
 - AUTH_SCRIPT_URL — SCS Auth /exec URL (separate deployment)
+- HR_SCRIPT_URL — SCS HR /exec URL (separate deployment)
 - Legacy warehouse keys (optional): GOODS3P_SCRIPT_URL, PALLET_SCRIPT_URL,
   DISPATCH_SCRIPT_URL, LOCATION_SCRIPT_URL, ADD_3P_PRODUCT_SCRIPT_URL
 
@@ -23,6 +33,16 @@ SCS Auth web app:
 - Handles auth_login and auth_get_users via doPost in Auth.js
 - Uses bcrypt.js for PIN comparison (hashes never sent to the browser)
 - Redeploy after any change to Auth.js or bcrypt.js
+
+SCS HR web app:
+- Handles overtime_submit via doPost in HR.js
+- Appends rows to the Overtime & Deductions sheet
+- Redeploy after any change to HR.js
+
+Verify HR.js contains function doPost(e) { ... } before deploying.
+After deploy, test in browser:
+  YOUR_HR_SCRIPT_URL?action=overtime_submit&token=J4PAN88
+You should see JSON (likely an error about missing fields) — not "Script function not found: doPost".
 
 Verify Auth.js contains function doPost(e) { ... } before deploying.
 After deploy, test in browser:
