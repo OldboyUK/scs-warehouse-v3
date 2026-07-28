@@ -6,6 +6,7 @@ const SCRIPT_URL = '/.netlify/functions/submitOvertime';
 const MINUTE_OPTIONS = [0, 15, 30, 45];
 
 let workedToday = true;
+let entryType = 'overtime';
 
 function escapeHTML(value) {
   return String(value).replace(/[&<>"']/g, function (match) {
@@ -28,12 +29,12 @@ function formatDisplayDate(isoDate) {
   return parts[2] + '/' + parts[1] + '/' + parts[0];
 }
 
-function formatHoursWorked(hours, minutes) {
-  const h = parseInt(hours, 10);
-  const m = parseInt(minutes, 10);
+function formatHoursWorked(hours, minutes, isDeduction) {
+  const h = Math.abs(parseInt(hours, 10));
+  const m = Math.abs(parseInt(minutes, 10));
   if (isNaN(h) || isNaN(m)) return '';
-  const sign = h < 0 ? '-' : '';
-  return sign + Math.abs(h) + ':' + String(Math.abs(m)).padStart(2, '0');
+  const prefix = isDeduction ? '-' : '';
+  return prefix + h + ':' + String(m).padStart(2, '0');
 }
 
 function getDeviceInfo() {
@@ -70,17 +71,22 @@ function renderForm() {
     '<p class="hr-welcome">Welcome <span>' + escapeHTML(username) + '</span></p>' +
     '<p class="hr-intro">Please use this page to record any overtime worked.</p>' +
     '<div class="hr-guidance">' +
-      '<p>Please enter your overtime worked.</p>' +
+      '<p>Please enter your overtime worked or time to deduct.</p>' +
       '<p>Please round down to the nearest 15 minutes.</p>' +
-      '<p>If you arrived late or left early, enter a minus value to deduct time.</p>' +
+      '<p>If you arrived late or left early, choose Deduction and enter the time as a positive value.</p>' +
     '</div>' +
     '<form id="overtimeForm" class="hr-form-card" novalidate>' +
       '<section class="hr-form-section">' +
         '<h2 class="hr-form-section-title">Hours Entry</h2>' +
+        '<label>Overtime or Deduction?</label>' +
+        '<div class="hr-choice-group">' +
+          '<button type="button" class="btn btn-ghost hr-choice-btn is-selected" id="entryTypeOvertime">Overtime</button>' +
+          '<button type="button" class="btn btn-ghost hr-choice-btn" id="entryTypeDeduction">Deduction</button>' +
+        '</div>' +
         '<div class="hr-hours-row">' +
           '<div>' +
             '<label for="hoursInput">Hours</label>' +
-            '<input id="hoursInput" type="number" step="1" inputmode="numeric" value="0" />' +
+            '<input id="hoursInput" type="number" min="0" step="1" inputmode="numeric" value="0" />' +
           '</div>' +
           '<div>' +
             '<label for="minutesInput">Minutes</label>' +
@@ -120,10 +126,32 @@ function renderForm() {
 
 function wireForm() {
   const form = document.getElementById('overtimeForm');
+  const entryTypeOvertime = document.getElementById('entryTypeOvertime');
+  const entryTypeDeduction = document.getElementById('entryTypeDeduction');
+  const hoursInput = document.getElementById('hoursInput');
   const workedTodayYes = document.getElementById('workedTodayYes');
   const workedTodayNo = document.getElementById('workedTodayNo');
   const dateFieldWrap = document.getElementById('dateFieldWrap');
   const dateInput = document.getElementById('dateInput');
+
+  entryTypeOvertime.addEventListener('click', function () {
+    entryType = 'overtime';
+    entryTypeOvertime.classList.add('is-selected');
+    entryTypeDeduction.classList.remove('is-selected');
+  });
+
+  entryTypeDeduction.addEventListener('click', function () {
+    entryType = 'deduction';
+    entryTypeDeduction.classList.add('is-selected');
+    entryTypeOvertime.classList.remove('is-selected');
+  });
+
+  hoursInput.addEventListener('input', function () {
+    const value = parseInt(hoursInput.value, 10);
+    if (!isNaN(value) && value < 0) {
+      hoursInput.value = '0';
+    }
+  });
 
   workedTodayYes.addEventListener('click', function () {
     workedToday = true;
@@ -164,9 +192,10 @@ function submitForm() {
 
   const hours = parseInt(hoursValue, 10);
   const minutes = parseInt(minutesValue, 10);
+  const isDeduction = entryType === 'deduction';
 
-  if (isNaN(hours)) {
-    alert('Please enter a valid number of hours.');
+  if (isNaN(hours) || hours < 0) {
+    alert('Please enter a valid number of hours (0 or greater).');
     return;
   }
 
@@ -176,7 +205,7 @@ function submitForm() {
   }
 
   if (hours === 0 && minutes === 0) {
-    alert('Please enter some time worked, or a deduction using a minus value.');
+    alert('Please enter some time to record.');
     return;
   }
 
@@ -189,7 +218,7 @@ function submitForm() {
     }
   }
 
-  const hoursWorked = formatHoursWorked(hours, minutes);
+  const hoursWorked = formatHoursWorked(hours, minutes, isDeduction);
   const deviceInfo = getDeviceInfo();
   const username = SCSAuth.getUsername() || '';
 
