@@ -1,30 +1,25 @@
-/* HR module — muted dark purple theme overrides */
+/* ===== HR Accent Theme ===== */
+/* Base colours (background, cards, text, borders, shadows) inherit from style.css.
+   Only accent tokens are overridden — purple replaces Warehouse amber everywhere
+   those tokens are used (icons, buttons, links, focus rings, hovers, selections). */
 body.hr-theme {
-  --bg: #1a1625;
-  --card: #2a2438;
-  --card-hover: #342d45;
-  --border: #4a4060;
-  --text: #F5F3FF;
-  --text-secondary: #DDD6F3;
-  --muted: #A89BB8;
-  --primary: #9B87C4;
-  --primary-hover: #8774B5;
-  --primary-soft: rgba(155, 135, 196, 0.18);
-  --success: #6EBF8B;
-  --success-hover: #5AAA78;
-  --success-soft: rgba(110, 191, 139, 0.18);
-  --secondary: #4E4563;
-  --secondary-hover: #5E5575;
+  --primary: #A78BFA;
+  --primary-hover: #C4B5FD;
+  --primary-soft: rgba(167, 139, 250, 0.15);
+  --primary-dark: #7C3AED;
 }
 
-body.hr-theme .auth-overlay {
-  background: rgba(26, 22, 37, 0.78);
-}
-
-body.hr-theme .home-badge {
-  background: var(--primary-soft);
+/* Icon backgrounds — subtle gradient using dark accent */
+body.hr-theme .dash-icon {
+  background: linear-gradient(
+    135deg,
+    rgba(124, 58, 237, 0.22),
+    var(--primary-soft)
+  );
   color: var(--primary);
 }
+
+/* ===== HR layout & form components (structure only — colours via design tokens) ===== */
 
 .hr-guidance {
   margin: 0 0 20px;
@@ -118,17 +113,17 @@ textarea.hr-comments {
   color: var(--text);
 }
 
-@media (max-width: 520px) {
-  .hr-hours-row,
-  .hr-choice-group {
-    grid-template-columns: 1fr;
-  }
-}
-
 button.dash-card {
   width: 100%;
   font: inherit;
   color: inherit;
   text-align: left;
   cursor: pointer;
+}
+
+@media (max-width: 520px) {
+  .hr-hours-row,
+  .hr-choice-group {
+    grid-template-columns: 1fr;
+  }
 }
