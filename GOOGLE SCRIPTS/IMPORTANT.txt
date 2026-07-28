@@ -37,6 +37,8 @@ SCS Auth web app:
 SCS HR web app:
 - Handles overtime_submit via doPost in HR.js
 - Appends rows to the Overtime & Deductions sheet
+- Handles hourly_submit via doPost in HR.js
+- Appends rows to the Hourly sheet (same spreadsheet)
 - Redeploy after any change to HR.js
 
 Verify HR.js contains function doPost(e) { ... } before deploying.

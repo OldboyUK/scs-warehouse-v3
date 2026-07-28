@@ -109,3 +109,8 @@
   from = "/hr/overtime"
   to = "/hr/overtime.html"
   status = 301
+
+[[redirects]]
+  from = "/hr/record-hours"
+  to = "/hr/record-hours.html"
+  status = 301
