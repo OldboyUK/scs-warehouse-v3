@@ -117,13 +117,17 @@
           if (!cell) return;
 
           var status = cell.textContent.trim();
-          if (status !== 'Dispatched' && status !== 'Pending') return;
+          var map = {
+            'Dispatched': { row: 'row-dispatched', badge: 'status-badge--dispatched', icon: ICONS.check },
+            'Pending': { row: 'row-pending', badge: 'status-badge--pending', icon: ICONS.clock },
+            'Staged': { row: 'row-staged', badge: 'status-badge--picked', icon: ICONS.package },
+            'Partially Picked': { row: 'row-partial', badge: 'status-badge--in-progress', icon: ICONS.package }
+          };
+          var meta = map[status];
+          if (!meta) return;
 
-          tr.classList.add(status === 'Dispatched' ? 'row-dispatched' : 'row-pending');
-
-          var badgeClass = status === 'Dispatched' ? 'status-badge--dispatched' : 'status-badge--pending';
-          var icon = status === 'Dispatched' ? ICONS.check : ICONS.clock;
-          cell.innerHTML = '<span class="status-badge ' + badgeClass + '">' + icon + ' ' + status + '</span>';
+          tr.classList.add(meta.row);
+          cell.innerHTML = '<span class="status-badge ' + meta.badge + '">' + meta.icon + ' ' + status + '</span>';
           tr.setAttribute('data-collections-enhanced', 'true');
         });
       }
@@ -136,9 +140,9 @@
 
         if (!msg.classList.contains('text-error')) {
           var text = msg.textContent.trim();
-          if (/dispatched/i.test(text)) {
+          if (/dispatched|staged|partially picked|continue scanning/i.test(text)) {
             msg.classList.add('collections-notice--success');
-            msg.innerHTML = '<span class="collections-notice-icon">' + ICONS.check + '</span><span>' + text.replace(/\.$/, '') + ' successfully.</span>';
+            msg.innerHTML = '<span class="collections-notice-icon">' + ICONS.check + '</span><span>' + text.replace(/\.$/, '') + '</span>';
           }
         }
 
@@ -164,14 +168,16 @@
 
         app.querySelectorAll('.actions.mt-3').forEach(function (div) {
           if (div.querySelector('[onclick*="confirmScanPallet"]') ||
+              div.querySelector('[onclick*="confirmNewPalletScan"]') ||
               div.querySelector('[onclick*="startCameraScan"]') ||
-              div.querySelector('[onclick*="stopDispatch"]')) {
+              div.querySelector('[onclick*="startNewPalletCameraScan"]') ||
+              div.querySelector('[onclick*="stopPick"]')) {
             while (div.firstChild) scannerActions.appendChild(div.firstChild);
             div.remove();
           }
         });
 
-        var confirmBtn = scannerActions.querySelector('[onclick*="confirmScanPallet"]');
+        var confirmBtn = scannerActions.querySelector('[onclick*="confirmScanPallet"], [onclick*="confirmNewPalletScan"]');
         if (confirmBtn && !confirmBtn.querySelector('.btn-icon')) {
           var confirmIcon = document.createElement('span');
           confirmIcon.className = 'btn-icon';
@@ -179,7 +185,7 @@
           confirmBtn.insertBefore(confirmIcon, confirmBtn.firstChild);
         }
 
-        var backBtn = scannerActions.querySelector('[onclick*="stopDispatch"]');
+        var backBtn = scannerActions.querySelector('[onclick*="stopPick"]');
         if (backBtn && !backBtn.querySelector('.btn-icon')) {
           var backIcon = document.createElement('span');
           backIcon.className = 'btn-icon';
@@ -198,7 +204,7 @@
         if (app.querySelector('#palletInput') || app.querySelector('.collections-overview-actions')) return;
 
         var actionDiv = app.querySelector('.actions.mt-3');
-        if (!actionDiv || !actionDiv.querySelector('[onclick*="startDispatch"]')) return;
+        if (!actionDiv || !actionDiv.querySelector('[onclick*="startPick"]')) return;
 
         actionDiv.classList.add('collections-overview-actions');
       }

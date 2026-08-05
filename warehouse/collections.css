@@ -186,6 +186,14 @@
   color: #fff;
 }
 
+.page-collections .row-staged td {
+  opacity: 0.92;
+}
+
+.page-collections .row-partial td {
+  opacity: 0.95;
+}
+
 /* ===== Notifications ===== */
 .page-collections .collections-notice {
   margin: 0;

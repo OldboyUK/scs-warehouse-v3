@@ -11,6 +11,7 @@ const SSID_DISPATCH = '1nlXghFbza3hblt80Oegu81hpWGv2C4Ax3iPVA43XsrA';
 const SHEET_PALLET_ENTRY        = 'PALLET ENTRY';
 const SHEET_DISPATCH            = 'PALLET DISPATCH';
 const SHEET_LOCATION_ASSIGNMENT = 'LOCATION ASSIGNMENT';
+const SHEET_STAGING             = 'STAGING';
 const SHEET_PRODUCT_DB_3PT      = 'PRODUCT DATABASE (3PT)';
 
 /** ====== MAIN ENTRY POINT ====== **/
@@ -26,7 +27,9 @@ function doPost(e) {
     const action = (p.action || '').trim().toLowerCase();
 
     // Priority order - be more specific
-    if (action === 'location_assignment')               return handleLocationAssignment(p);    if (action === 'add_third_party_product')            return handleAddThirdPartyProduct(p);
+    if (action === 'location_assignment')               return handleLocationAssignment(p);
+    if (action === 'add_third_party_product')            return handleAddThirdPartyProduct(p);
+    if (action === 'staging')                            return handleStaging(p);
     if (action === 'goods_in_3p' || isGoods3P(p))       return handleGoods3P(p);
     if (action === 'dispatch'    || isDispatch(p))      return handleDispatch(p);
     if (action === 'pallet_entry'|| isPalletEntry(p))   return handlePalletEntry(p);
@@ -127,6 +130,38 @@ function handleDispatch(p) {
   if (!sh) return json({ result: 'error', message: 'Dispatch sheet not found' });
 
   sh.appendRow([pallet, date, time]);
+  return json({ result: 'success' });
+}
+
+// STAGING — write columns A–G only (H is a sheet formula / VLOOKUP)
+function handleStaging(p) {
+  const collectionId = (p.collectionId || '').trim();
+  const pallet       = (p.pallet       || '').trim();
+  const run          = (p.run          || '').trim();
+  const company      = (p.company      || '').trim();
+  const product      = (p.product      || '').trim();
+  const format       = (p.format       || '').trim();
+  const qty          = (p.qty          || '').trim();
+
+  if (!collectionId || !pallet || !run || !qty) {
+    return json({ result: 'error', message: 'Missing staging fields' });
+  }
+
+  const ss = openSpreadsheet(SSID_MAIN);
+  const sh = ss.getSheetByName(SHEET_STAGING);
+  if (!sh) return json({ result: 'error', message: 'STAGING sheet not found' });
+
+  const nextRow = findNextDataRow(sh);
+  sh.getRange(nextRow, 1, 1, 7).setValues([[
+    collectionId,
+    pallet,
+    run,
+    company,
+    product,
+    format,
+    Number(qty)
+  ]]);
+
   return json({ result: 'success' });
 }
 

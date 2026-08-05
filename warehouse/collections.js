@@ -1,19 +1,25 @@
 const app = document.getElementById('app');
 
 const COLLECTIONS_CSV =
-  'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=1420200114&single=true&output=csv';
+  'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=810040978&single=true&output=csv';
 const DISPATCH_HISTORY_CSV =
   'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=848481035&single=true&output=csv';
+
 const DISPATCH_URL = `${window.location.origin}/.netlify/functions/dispatch`;
+const PALLET_ENTRY_URL = `${window.location.origin}/.netlify/functions/submit`;
+const LOCATION_URL = `${window.location.origin}/.netlify/functions/assignLocation`;
+const STAGING_URL = `${window.location.origin}/.netlify/functions/staging`;
 
 let allCollectionRows = [];
 let dispatchedPalletIds = new Set();
 let currentCollection = null;
-let dispatchMode = false;
+let pickMode = false;
+
+/** Active pick session for the currently scanned collection line */
+let activePick = null;
 
 /* =========================
    CSV parsing (multiline-safe)
-   Same approach as pallet-dispatch.js
 ========================= */
 function splitCSVRows(text) {
   const rows = [];
@@ -75,7 +81,7 @@ function cleanCSVField(value) {
 }
 
 function isHeaderRow(fields, headerLabel) {
-  return cleanCSVField(fields[0]).toUpperCase() === headerLabel;
+  return cleanCSVField(fields[0]).toUpperCase().replace(/\s+/g, ' ').includes(headerLabel);
 }
 
 function escapeHTML(s) {
@@ -91,6 +97,11 @@ function formatDateTimeForSheets() {
   };
 }
 
+function parseUnits(value) {
+  const n = parseInt(String(value || '').replace(/,/g, ''), 10);
+  return Number.isFinite(n) ? n : 0;
+}
+
 function getUniqueCollectionIds() {
   const ids = new Set();
   for (const row of allCollectionRows) {
@@ -99,20 +110,24 @@ function getUniqueCollectionIds() {
   return Array.from(ids).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 }
 
-function isMobileView() {
-  return window.matchMedia('(max-width: 768px)').matches;
+function statusLabel(status) {
+  switch (status) {
+    case 'dispatched': return 'Dispatched';
+    case 'staged': return 'Staged';
+    case 'partial': return 'Partially Picked';
+    default: return 'Pending';
+  }
 }
 
-function palletConfigForDisplay(pallet) {
-  const desktop = pallet.configDesktop || '';
-  const mobile = pallet.configMobile || '';
-  if (isMobileView()) return mobile || desktop;
-  return desktop || mobile;
+function isPalletDone(pallet) {
+  return pallet.status === 'dispatched' || pallet.status === 'staged' || pallet.status === 'partial';
 }
 
-function applyDispatchStatus(pallets) {
+function applyHistoryStatus(pallets) {
   for (const p of pallets) {
-    p.dispatched = dispatchedPalletIds.has(p.palletId);
+    if (dispatchedPalletIds.has(p.palletId)) {
+      p.status = 'dispatched';
+    }
   }
 }
 
@@ -121,38 +136,50 @@ function buildCollection(collectionId) {
   if (!rows.length) return null;
 
   const pallets = rows.map(r => ({
+    key: `${r.collectionId}|${r.palletId}|${r.runCode}`,
     palletId: r.palletId,
-    configDesktop: r.configDesktop,
-    configMobile: r.configMobile,
+    runCode: r.runCode,
+    company: r.company,
+    product: r.product,
+    format: r.format,
+    availableUnits: r.availableUnits,
+    unitsRequired: r.unitsRequired,
     location: r.location,
-    dispatched: false
+    status: 'pending',
+    pickedQty: 0,
+    pickedPalletId: ''
   }));
 
-  applyDispatchStatus(pallets);
+  applyHistoryStatus(pallets);
 
   return {
     id: collectionId,
-    customer: rows[0].customer || '',
+    company: rows[0].company || '',
     pallets
   };
 }
 
 function progressText(collection) {
   const total = collection.pallets.length;
-  const done = collection.pallets.filter(p => p.dispatched).length;
-  return `${done} / ${total} dispatched`;
+  const done = collection.pallets.filter(isPalletDone).length;
+  return `${done} / ${total} picked`;
 }
 
 function isCollectionComplete(collection) {
-  return collection.pallets.length > 0 && collection.pallets.every(p => p.dispatched);
+  return collection.pallets.length > 0 && collection.pallets.every(isPalletDone);
+}
+
+function palletConfigForDisplay(pallet) {
+  const parts = [pallet.product, pallet.format].filter(Boolean);
+  return parts.join(' — ') || pallet.runCode || '-';
 }
 
 function tableHTML(collection) {
   const rows = collection.pallets.map(p => `
     <tr>
-      <td>${p.dispatched ? 'Dispatched' : 'Pending'}</td>
+      <td>${escapeHTML(statusLabel(p.status))}</td>
       <td>${escapeHTML(p.palletId)}</td>
-      <td class="pre-line">${escapeHTML(palletConfigForDisplay(p) || '-')}</td>
+      <td class="pre-line">${escapeHTML(palletConfigForDisplay(p))}</td>
       <td>${escapeHTML(p.location || '-')}</td>
     </tr>
   `).join('');
@@ -179,7 +206,7 @@ function tableHTML(collection) {
 function summaryHTML(collection) {
   return UI.summaryCard([
     { label: 'Collection ID', value: escapeHTML(collection.id) },
-    { label: 'Customer', value: escapeHTML(collection.customer || '-') },
+    { label: 'Customer', value: escapeHTML(collection.company || '-') },
     { label: 'Progress', value: escapeHTML(progressText(collection)) }
   ]);
 }
@@ -189,8 +216,9 @@ function showLoading(message) {
 }
 
 function showSelectStep() {
-  dispatchMode = false;
+  pickMode = false;
   currentCollection = null;
+  activePick = null;
 
   const ids = getUniqueCollectionIds();
   if (!ids.length) {
@@ -231,7 +259,8 @@ function openCollection(collectionId) {
     return;
   }
 
-  dispatchMode = false;
+  pickMode = false;
+  activePick = null;
   showOverviewStep();
 }
 
@@ -243,21 +272,22 @@ function showOverviewStep() {
     ${tableHTML(currentCollection)}
     <div class="actions mt-3">
       <button class="btn btn-ghost" onclick="showSelectStep()">Change Collection</button>
-      <button class="btn btn-success" onclick="startDispatch()">Start Dispatch</button>
+      <button class="btn btn-success" onclick="startPick()">Pick Items</button>
     </div>
   `;
 }
 
-function startDispatch() {
+function startPick() {
   if (!currentCollection || isCollectionComplete(currentCollection)) {
     showCompleteScreen();
     return;
   }
-  dispatchMode = true;
-  showDispatchStep();
+  pickMode = true;
+  activePick = null;
+  showPickStep();
 }
 
-function showDispatchStep(message, isError) {
+function showPickStep(message, isError) {
   if (!currentCollection) return;
 
   const msgClass = isError ? 'text-error' : '';
@@ -273,7 +303,7 @@ function showDispatchStep(message, isError) {
       ${UI.cameraButton('Use Camera', 'startCameraScan()')}
     </div>
     <div class="actions mt-3">
-      <button class="btn btn-ghost" onclick="stopDispatch()">Back to Collection</button>
+      <button class="btn btn-ghost" onclick="stopPick()">Back to Collection</button>
     </div>
   `;
 
@@ -289,20 +319,20 @@ function showDispatchStep(message, isError) {
     if (el.select) el.select();
   }
 
-  /* Defer focus until presentation enhancements have moved the input */
   setTimeout(focusPalletInput, 0);
   setTimeout(focusPalletInput, 120);
 }
 
-function stopDispatch() {
-  dispatchMode = false;
+function stopPick() {
+  pickMode = false;
+  activePick = null;
   showOverviewStep();
 }
 
 function confirmScanPallet() {
   const val = (document.getElementById('palletInput').value || '').trim();
   if (val.length !== 15 || isNaN(val)) {
-    showDispatchStep('Please enter a valid 15-digit number.', true);
+    showPickStep('Please enter a valid 15-digit number.', true);
     return;
   }
   processPalletScan(val);
@@ -311,20 +341,577 @@ function confirmScanPallet() {
 function processPalletScan(palletId) {
   if (!currentCollection) return;
 
-  const pallet = currentCollection.pallets.find(p => p.palletId === palletId);
-  if (!pallet) {
-    showDispatchStep('This pallet is not part of this Collection.', true);
-    return;
-  }
-  if (pallet.dispatched) {
-    showDispatchStep('This pallet has already been dispatched.', true);
+  const matches = currentCollection.pallets.filter(p => p.palletId === palletId);
+  if (!matches.length) {
+    showPickStep('This pallet is not part of this Collection.', true);
     return;
   }
 
-  submitDispatch(palletId);
+  const pending = matches.filter(p => !isPalletDone(p));
+  if (!pending.length) {
+    showPickStep('This pallet has already been completed.', true);
+    return;
+  }
+
+  if (pending.length === 1) {
+    beginQuantityStep(pending[0]);
+    return;
+  }
+
+  showLineSelectStep(pending);
 }
 
+function showLineSelectStep(lines) {
+  app.innerHTML = `
+    ${summaryHTML(currentCollection)}
+    <p class="status">Multiple items on this pallet. Select the line to pick:</p>
+    <label for="lineSelect">Item</label>
+    <select id="lineSelect">
+      ${lines.map((p, i) => `
+        <option value="${i}">
+          ${escapeHTML(p.runCode)} — ${escapeHTML(p.product)} (${escapeHTML(String(p.unitsRequired))} req / ${escapeHTML(String(p.availableUnits))} avail)
+        </option>
+      `).join('')}
+    </select>
+    <div class="actions mt-3">
+      <button class="btn btn-ghost" onclick="showPickStep()">Back</button>
+      <button class="btn btn-primary" onclick="confirmLineSelect()">Next</button>
+    </div>
+  `;
+  window._lineSelectOptions = lines;
+}
+
+function confirmLineSelect() {
+  const lines = window._lineSelectOptions || [];
+  const idx = parseInt(document.getElementById('lineSelect').value, 10);
+  const line = lines[idx];
+  if (!line) {
+    alert('Please select an item.');
+    return;
+  }
+  beginQuantityStep(line);
+}
+
+function beginQuantityStep(pallet) {
+  activePick = {
+    line: pallet,
+    originalPalletId: pallet.palletId,
+    pickedQty: pallet.unitsRequired,
+    remainingQty: 0,
+    needsSplit: false,
+    splitWritten: false,
+    originalKeeps: null, // 'picked' | 'remaining'
+    newPalletId: '',
+    pickedPalletId: pallet.palletId,
+    locationBase: ''
+  };
+  showQuantityStep();
+}
+
+function showQuantityStep(message, isError) {
+  const line = activePick.line;
+  const msgClass = isError ? 'text-error' : '';
+  const defaultQty = Math.min(line.unitsRequired, line.availableUnits);
+
+  app.innerHTML = `
+    ${summaryHTML(currentCollection)}
+    ${UI.summaryCard([
+      { label: 'Pallet ID', value: escapeHTML(line.palletId) },
+      { label: 'Run Code', value: escapeHTML(line.runCode || '-') },
+      { label: 'Product', value: escapeHTML(line.product || '-') },
+      { label: 'Format', value: escapeHTML(line.format || '-') },
+      { label: 'Required Units', value: String(line.unitsRequired) },
+      { label: 'Available Units', value: String(line.availableUnits) }
+    ])}
+    <div id="dispatchMessage" class="status ${msgClass}">${message ? escapeHTML(message) : 'Enter pick quantity (defaults to required).'}</div>
+    <label for="pickQty">Pick Quantity</label>
+    <input id="pickQty" type="number" min="1" max="${line.availableUnits}" value="${defaultQty}" />
+    <div class="actions mt-3">
+      <button class="btn btn-ghost" onclick="showPickStep()">Back</button>
+      <button class="btn btn-success" onclick="confirmPickQuantity()">Confirm Quantity</button>
+    </div>
+  `;
+
+  const input = document.getElementById('pickQty');
+  input.focus();
+  if (input.select) input.select();
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') confirmPickQuantity();
+  });
+}
+
+function confirmPickQuantity() {
+  const line = activePick.line;
+  const qty = parseInt(document.getElementById('pickQty').value, 10);
+
+  if (!qty || qty < 1) {
+    showQuantityStep('Enter a valid pick quantity.', true);
+    return;
+  }
+  if (qty > line.availableUnits) {
+    showQuantityStep('Cannot exceed Available Units.', true);
+    return;
+  }
+
+  activePick.pickedQty = qty;
+  activePick.remainingQty = line.availableUnits - qty;
+  activePick.needsSplit = qty < line.availableUnits;
+  activePick.pickedPalletId = line.palletId;
+  activePick.newPalletId = '';
+  activePick.originalKeeps = null;
+
+  if (!activePick.needsSplit) {
+    showStageOrDispatchStep();
+    return;
+  }
+
+  showSplitChoiceStep();
+}
+
+function showSplitChoiceStep(message, isError) {
+  const msgClass = isError ? 'text-error' : '';
+  app.innerHTML = `
+    ${summaryHTML(currentCollection)}
+    <p class="status">A split is required. Picked stock and remaining stock must be split across the original pallet ID and a new pallet ID.</p>
+    ${UI.summaryCard([
+      { label: 'Original Pallet', value: escapeHTML(activePick.originalPalletId) },
+      { label: 'Picked Quantity', value: String(activePick.pickedQty) },
+      { label: 'Remaining Quantity', value: String(activePick.remainingQty) }
+    ])}
+    <div id="dispatchMessage" class="status ${msgClass}">${message ? escapeHTML(message) : 'Which stock keeps the ORIGINAL pallet ID?'}</div>
+    <div class="actions mt-3">
+      <button class="btn btn-primary" onclick="chooseOriginalKeeps('picked')">Picked Stock</button>
+      <button class="btn btn-secondary" onclick="chooseOriginalKeeps('remaining')">Remaining Stock</button>
+    </div>
+    <div class="actions mt-3">
+      <button class="btn btn-ghost" onclick="showQuantityStep()">Back</button>
+    </div>
+  `;
+}
+
+function chooseOriginalKeeps(which) {
+  activePick.originalKeeps = which;
+  activePick.pickedPalletId = which === 'picked'
+    ? activePick.originalPalletId
+    : '';
+  showNewPalletScanStep();
+}
+
+function showNewPalletScanStep(message, isError) {
+  const movingLabel = activePick.originalKeeps === 'picked' ? 'remaining' : 'picked';
+  const movingQty = activePick.originalKeeps === 'picked'
+    ? activePick.remainingQty
+    : activePick.pickedQty;
+  const msgClass = isError ? 'text-error' : '';
+
+  app.innerHTML = `
+    ${summaryHTML(currentCollection)}
+    <p class="status">Scan a new pallet ID for the <strong>${escapeHTML(movingLabel)}</strong> stock (${movingQty} units).</p>
+    <div id="dispatchMessage" class="status ${msgClass}">${message ? escapeHTML(message) : 'Scan or enter the new 15-digit pallet ID.'}</div>
+    <label for="palletInput">New Pallet Identifier:</label>
+    <input id="palletInput" maxlength="15" placeholder="Scan or type 15 digits" />
+    <div class="actions mt-3">
+      <button class="btn btn-success" onclick="confirmNewPalletScan()">Confirm New Pallet</button>
+      ${UI.cameraButton('Use Camera', 'startNewPalletCameraScan()')}
+    </div>
+    <div class="actions mt-3">
+      <button class="btn btn-ghost" onclick="showSplitChoiceStep()">Back</button>
+    </div>
+  `;
+
+  const input = document.getElementById('palletInput');
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') confirmNewPalletScan();
+  });
+  setTimeout(() => { input.focus(); if (input.select) input.select(); }, 0);
+}
+
+function confirmNewPalletScan() {
+  const val = (document.getElementById('palletInput').value || '').trim();
+  if (val.length !== 15 || isNaN(val)) {
+    showNewPalletScanStep('Please enter a valid 15-digit number.', true);
+    return;
+  }
+  processNewPalletScan(val);
+}
+
+function processNewPalletScan(palletId) {
+  if (palletId === activePick.originalPalletId) {
+    showNewPalletScanStep('New pallet ID must be different from the original.', true);
+    return;
+  }
+
+  activePick.newPalletId = palletId;
+  activePick.pickedPalletId = activePick.originalKeeps === 'picked'
+    ? activePick.originalPalletId
+    : activePick.newPalletId;
+
+  showStageOrDispatchStep();
+}
+
+function showStageOrDispatchStep(message, isError) {
+  const msgClass = isError ? 'text-error' : '';
+  app.innerHTML = `
+    ${summaryHTML(currentCollection)}
+    ${UI.summaryCard([
+      { label: 'Picked Pallet ID', value: escapeHTML(activePick.pickedPalletId || activePick.originalPalletId) },
+      { label: 'Picked Quantity', value: String(activePick.pickedQty) },
+      { label: 'Split Required', value: activePick.needsSplit ? 'Yes' : 'No' }
+    ])}
+    <div id="dispatchMessage" class="status ${msgClass}">${message ? escapeHTML(message) : 'Send the picked stock to Stage or Dispatch?'}</div>
+    <div class="actions mt-3">
+      <button class="btn btn-primary" onclick="chooseDestination('stage')">Stage</button>
+      <button class="btn btn-success" onclick="chooseDestination('dispatch')">Dispatch</button>
+    </div>
+    ${activePick.splitWritten ? '' : `
+    <div class="actions mt-3">
+      <button class="btn btn-ghost" onclick="${activePick.needsSplit ? 'showNewPalletScanStep()' : 'showQuantityStep()'}">Back</button>
+    </div>`}
+  `;
+}
+
+async function chooseDestination(destination) {
+  try {
+    showLoading(activePick.needsSplit && !activePick.splitWritten ? 'Writing pallet split…' : 'Preparing…');
+
+    if (activePick.needsSplit && !activePick.splitWritten) {
+      await writeSplitPalletEntries();
+      activePick.splitWritten = true;
+    }
+
+    if (destination === 'dispatch') {
+      await submitDispatch(activePick.pickedPalletId);
+      finalizePick('dispatched');
+      return;
+    }
+
+    showStageLocationStep();
+  } catch (err) {
+    console.error(err);
+    showStageOrDispatchStep(err.message || 'Failed to continue. Please try again.', true);
+  }
+}
+
+async function writeSplitPalletEntries() {
+  const run = activePick.line.runCode;
+  const removedQty = activePick.originalKeeps === 'picked'
+    ? activePick.remainingQty
+    : activePick.pickedQty;
+
+  // Row 1: original pallet negative movement for stock removed
+  await submitPalletEntry(activePick.originalPalletId, run, -removedQty);
+  // Row 2: new pallet positive movement for transferred quantity
+  await submitPalletEntry(activePick.newPalletId, run, removedQty);
+}
+
+async function submitPalletEntry(code, run, units) {
+  const { date, time } = formatDateTimeForSheets();
+  const body = new URLSearchParams();
+  body.append('code', code);
+  body.append('run', run);
+  body.append('units', String(units));
+  body.append('date', date);
+  body.append('time', time);
+
+  const res = await fetch(PALLET_ENTRY_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body
+  });
+  const data = await res.json();
+  if (data.result !== 'ok' && data.result !== 'success') {
+    throw new Error(data.message || 'Pallet entry failed.');
+  }
+}
+
+async function submitDispatch(palletId) {
+  const { date, time } = formatDateTimeForSheets();
+  const body = new URLSearchParams();
+  body.append('pallet', palletId);
+  body.append('date', date);
+  body.append('time', time);
+
+  const res = await fetch(DISPATCH_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body
+  });
+  const data = await res.json();
+  if (data.result !== 'ok' && data.result !== 'success') {
+    throw new Error(data.message || 'Dispatch failed.');
+  }
+
+  dispatchedPalletIds.add(palletId);
+}
+
+async function submitStaging(location) {
+  const line = activePick.line;
+  const body = new URLSearchParams();
+  body.append('collectionId', currentCollection.id);
+  body.append('pallet', activePick.pickedPalletId);
+  body.append('run', line.runCode);
+  body.append('company', line.company);
+  body.append('product', line.product);
+  body.append('format', line.format);
+  body.append('qty', String(activePick.pickedQty));
+  if (location) body.append('location', location);
+
+  const res = await fetch(STAGING_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body
+  });
+  const data = await res.json();
+  if (data.result !== 'ok' && data.result !== 'success') {
+    throw new Error(data.message || 'Staging write failed.');
+  }
+}
+
+async function submitLocationAssignment(palletId, location) {
+  const { date, time } = formatDateTimeForSheets();
+  const body = new URLSearchParams();
+  body.append('pallet', palletId);
+  body.append('location', location);
+  body.append('date', date);
+  body.append('time', time);
+
+  const res = await fetch(LOCATION_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body
+  });
+  const data = await res.json();
+  if (data.result !== 'ok' && data.result !== 'success') {
+    throw new Error(data.message || 'Location assignment failed.');
+  }
+}
+
+/* ===== Stage / Location Assignment (reuse Put Away rules) ===== */
+function isLowerBayLocation(code) {
+  const v = (code || '').trim();
+  return v.length === 10 && v.endsWith('1');
+}
+
+function isUpperBayBase(code) {
+  return (code || '').trim().endsWith('-');
+}
+
+function showStageLocationStep(message, isError) {
+  const msgClass = isError ? 'text-error' : '';
+  app.innerHTML = `
+    ${summaryHTML(currentCollection)}
+    <p class="status">Assign a staging location for picked pallet <strong>${escapeHTML(activePick.pickedPalletId)}</strong>, or skip.</p>
+    <div id="dispatchMessage" class="status ${msgClass}">${message ? escapeHTML(message) : 'Scan or enter a location code.'}</div>
+    <label for="locationInput">Location Code:</label>
+    <input id="locationInput" placeholder="Scan or type location" autocomplete="off" />
+    <div id="bayChooser" class="mt-4 hidden">
+      <p>This location ends with “-”. Choose a bay:</p>
+      <div class="bay-grid">
+        <button class="btn btn-secondary" onclick="chooseBay(2)">2</button>
+        <button class="btn btn-secondary" onclick="chooseBay(3)">3</button>
+        <button class="btn btn-secondary" onclick="chooseBay(4)">4</button>
+      </div>
+    </div>
+    <div class="actions mt-3">
+      <button class="btn btn-success" onclick="confirmStageLocation()">Confirm Location</button>
+      ${UI.cameraButton('Use Camera', 'startLocationCameraScan()')}
+    </div>
+    <div class="actions mt-3">
+      <button class="btn btn-ghost" onclick="skipStageLocation()">Skip Location</button>
+      <button class="btn btn-ghost" onclick="showStageOrDispatchStep()">Back</button>
+    </div>
+  `;
+
+  ensureBayGridStyle();
+
+  const input = document.getElementById('locationInput');
+  input.focus();
+  input.addEventListener('input', () => handleLocationLive(input.value));
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      confirmStageLocation();
+    }
+  });
+}
+
+function ensureBayGridStyle() {
+  if (document.getElementById('bay-grid-style')) return;
+  const style = document.createElement('style');
+  style.id = 'bay-grid-style';
+  style.textContent = `
+    .bay-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      width: 100%;
+    }
+    .bay-grid .btn {
+      width: 100%;
+      min-width: 0;
+      padding-left: 0.5rem;
+      padding-right: 0.5rem;
+    }
+    .hidden { display: none !important; }
+  `;
+  document.head.appendChild(style);
+}
+
+function handleLocationLive(raw) {
+  const v = (raw || '').trim();
+  const chooser = document.getElementById('bayChooser');
+  if (!chooser) return;
+  if (isUpperBayBase(v)) {
+    activePick.locationBase = v;
+    chooser.classList.remove('hidden');
+  } else {
+    activePick.locationBase = '';
+    chooser.classList.add('hidden');
+  }
+}
+
+function chooseBay(n) {
+  const base = activePick.locationBase || (document.getElementById('locationInput')?.value || '').trim();
+  if (!base.endsWith('-')) {
+    alert('No base location found. Please scan or type the location ending with “-” again.');
+    return;
+  }
+  const code = `${base}${n}`;
+  const input = document.getElementById('locationInput');
+  if (input) input.value = code;
+  activePick.locationBase = '';
+  const chooser = document.getElementById('bayChooser');
+  if (chooser) chooser.classList.add('hidden');
+  completeStage(code);
+}
+
+function confirmStageLocation() {
+  const v = (document.getElementById('locationInput')?.value || '').trim();
+  if (!v) {
+    showStageLocationStep('Enter a location or tap Skip Location.', true);
+    return;
+  }
+  if (isUpperBayBase(v)) {
+    activePick.locationBase = v;
+    handleLocationLive(v);
+    showStageLocationStep('Choose bay 2, 3, or 4 for this upper location.', true);
+    return;
+  }
+  if (!isLowerBayLocation(v) && !/^.+\d$/.test(v)) {
+    // Allow confirmed codes that already include bay digit (e.g. W2-A-3-B-2)
+    // while still guiding lower/upper bay patterns used by Put Away.
+  }
+  completeStage(v);
+}
+
+function skipStageLocation() {
+  completeStage('');
+}
+
+async function completeStage(location) {
+  try {
+    showLoading('Writing staging record…');
+    if (location) {
+      await submitLocationAssignment(activePick.pickedPalletId, location);
+    }
+    await submitStaging(location);
+    finalizePick(activePick.pickedQty < activePick.line.unitsRequired ? 'partial' : 'staged');
+  } catch (err) {
+    console.error(err);
+    showStageLocationStep(err.message || 'Staging failed. Please try again.', true);
+  }
+}
+
+function finalizePick(status) {
+  const line = activePick.line;
+  const isPartialQty = activePick.pickedQty < line.unitsRequired;
+
+  if (isPartialQty) {
+    line.status = 'partial';
+  } else if (status === 'dispatched') {
+    line.status = 'dispatched';
+  } else {
+    line.status = 'staged';
+  }
+
+  line.pickedQty = activePick.pickedQty;
+  line.pickedPalletId = activePick.pickedPalletId;
+  if (status === 'dispatched') {
+    dispatchedPalletIds.add(activePick.pickedPalletId);
+  }
+
+  const doneLabel = statusLabel(line.status);
+  activePick = null;
+
+  if (isCollectionComplete(currentCollection)) {
+    showCompleteScreen();
+    return;
+  }
+
+  showPickStep(`${doneLabel} — continue scanning the next pallet.`, false);
+}
+
+function showCompleteScreen() {
+  if (!currentCollection) return;
+  pickMode = false;
+  activePick = null;
+
+  const total = currentCollection.pallets.length;
+  const partial = currentCollection.pallets.filter(p => p.status === 'partial').length;
+
+  app.innerHTML = UI.successScreen(
+    'Collection Complete',
+    UI.summaryCard([
+      { label: 'Collection ID', value: escapeHTML(currentCollection.id) },
+      { label: 'Customer', value: escapeHTML(currentCollection.company || '-') },
+      { label: 'Total lines completed', value: String(total) },
+      ...(partial ? [{ label: 'Partially picked', value: String(partial) }] : [])
+    ]),
+    `<a href="index.html" class="btn btn-primary">Return to Main Menu</a>`
+  );
+}
+
+/* ===== Camera scanning ===== */
 async function startCameraScan() {
+  await runPalletCameraScan(raw => {
+    if (raw.length !== 15 || isNaN(raw)) {
+      showPickStep('Scanned code is not a valid 15-digit number.', true);
+      return;
+    }
+    processPalletScan(raw);
+  }, () => showPickStep('Barcode detection failed.', true));
+}
+
+async function startNewPalletCameraScan() {
+  await runPalletCameraScan(raw => {
+    if (raw.length !== 15 || isNaN(raw)) {
+      showNewPalletScanStep('Scanned code is not a valid 15-digit number.', true);
+      return;
+    }
+    processNewPalletScan(raw);
+  }, () => showNewPalletScanStep('Barcode detection failed.', true));
+}
+
+async function startLocationCameraScan() {
+  await runPalletCameraScan(raw => {
+    if (isUpperBayBase(raw)) {
+      showStageLocationStep();
+      const input = document.getElementById('locationInput');
+      if (input) {
+        input.value = raw;
+        handleLocationLive(raw);
+      }
+      return;
+    }
+    if (raw) {
+      completeStage(raw);
+      return;
+    }
+    showStageLocationStep('Unrecognised location code.', true);
+  }, () => showStageLocationStep('Barcode detection failed.', true));
+}
+
+async function runPalletCameraScan(onSuccess, onFail) {
   if (typeof BarcodeDetector === 'undefined') {
     alert('Barcode scanning is not supported in this browser.');
     return;
@@ -338,7 +925,7 @@ async function startCameraScan() {
     await video.play();
 
     app.innerHTML = `
-      ${summaryHTML(currentCollection)}
+      ${currentCollection ? summaryHTML(currentCollection) : ''}
       ${UI.scanCard('')}
     `;
     const frame = app.querySelector('.scan-frame');
@@ -354,19 +941,14 @@ async function startCameraScan() {
         const barcodes = await detector.detect(video);
         if (barcodes.length > 0) {
           stream.getTracks().forEach(t => t.stop());
-          const raw = (barcodes[0].rawValue || '').trim();
-          if (raw.length !== 15 || isNaN(raw)) {
-            showDispatchStep('Scanned code is not a valid 15-digit number.', true);
-            return;
-          }
-          processPalletScan(raw);
+          onSuccess((barcodes[0].rawValue || '').trim());
           return;
         }
         requestAnimationFrame(scan);
       } catch (err) {
         console.error(err);
         stream.getTracks().forEach(t => t.stop());
-        showDispatchStep('Barcode detection failed.', true);
+        onFail();
       }
     };
 
@@ -376,72 +958,14 @@ async function startCameraScan() {
   }
 }
 
-function submitDispatch(palletId) {
-  const { date, time } = formatDateTimeForSheets();
-  const body = new URLSearchParams();
-  body.append('pallet', palletId);
-  body.append('date', date);
-  body.append('time', time);
-
-  app.innerHTML = `
-    ${summaryHTML(currentCollection)}
-    ${tableHTML(currentCollection)}
-    <p class="status">Submitting dispatch for ${escapeHTML(palletId)}…</p>
-  `;
-
-  fetch(DISPATCH_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body
-  })
-    .then(r => r.json())
-    .then(data => {
-      if (data.result !== 'ok' && data.result !== 'success') {
-        showDispatchStep(data.message || 'Dispatch failed.', true);
-        return;
-      }
-
-      dispatchedPalletIds.add(palletId);
-      const pallet = currentCollection.pallets.find(p => p.palletId === palletId);
-      if (pallet) pallet.dispatched = true;
-
-      if (isCollectionComplete(currentCollection)) {
-        showCompleteScreen();
-        return;
-      }
-
-      showDispatchStep(`Pallet ${palletId} dispatched.`, false);
-    })
-    .catch(err => {
-      console.error(err);
-      showDispatchStep('Network error. Please try again.', true);
-    });
-}
-
-function showCompleteScreen() {
-  if (!currentCollection) return;
-  dispatchMode = false;
-
-  const total = currentCollection.pallets.length;
-
-  app.innerHTML = UI.successScreen(
-    'Collection Complete',
-    UI.summaryCard([
-      { label: 'Collection ID', value: escapeHTML(currentCollection.id) },
-      { label: 'Customer', value: escapeHTML(currentCollection.customer || '-') },
-      { label: 'Total pallets dispatched', value: String(total) }
-    ]),
-    `<a href="index.html" class="btn btn-primary">Return to Main Menu</a>`
-  );
-}
-
+/* ===== Data load ===== */
 function loadCollectionRows(text) {
   const rowStrings = splitCSVRows(text);
   allCollectionRows = [];
 
   for (let i = 0; i < rowStrings.length; i++) {
     const r = parseCSVRow(rowStrings[i]);
-    if (i === 0 && isHeaderRow(r, 'COLLECTION ID')) continue;
+    if (i === 0 && isHeaderRow(r, 'COLLECTION')) continue;
 
     const collectionId = cleanCSVField(r[0]);
     const palletId = cleanCSVField(r[1]);
@@ -450,11 +974,13 @@ function loadCollectionRows(text) {
     allCollectionRows.push({
       collectionId,
       palletId,
-      customer: cleanCSVField(r[2]),
-      configDesktop: cleanCSVField(r[3]),
-      configMobile: cleanCSVField(r[4]),
-      dispatchStatus: cleanCSVField(r[5]),
-      location: cleanCSVField(r[6])
+      runCode: cleanCSVField(r[2]),
+      company: cleanCSVField(r[3]),
+      product: cleanCSVField(r[4]),
+      format: cleanCSVField(r[5]),
+      availableUnits: parseUnits(r[6]),
+      unitsRequired: parseUnits(r[7]),
+      location: cleanCSVField(r[8])
     });
   }
 }
@@ -465,7 +991,7 @@ function loadDispatchHistory(text) {
 
   for (let i = 0; i < rowStrings.length; i++) {
     const r = parseCSVRow(rowStrings[i]);
-    if (i === 0 && isHeaderRow(r, 'PALLET ID')) continue;
+    if (i === 0 && isHeaderRow(r, 'PALLET')) continue;
 
     const palletId = cleanCSVField(r[0]);
     if (!palletId) continue;
@@ -500,10 +1026,26 @@ async function init() {
 }
 
 window.openSelectedCollection = openSelectedCollection;
-window.startDispatch = startDispatch;
-window.stopDispatch = stopDispatch;
+window.startPick = startPick;
+window.stopPick = stopPick;
 window.confirmScanPallet = confirmScanPallet;
 window.startCameraScan = startCameraScan;
 window.showSelectStep = showSelectStep;
+window.confirmLineSelect = confirmLineSelect;
+window.confirmPickQuantity = confirmPickQuantity;
+window.chooseOriginalKeeps = chooseOriginalKeeps;
+window.confirmNewPalletScan = confirmNewPalletScan;
+window.startNewPalletCameraScan = startNewPalletCameraScan;
+window.chooseDestination = chooseDestination;
+window.showQuantityStep = showQuantityStep;
+window.showSplitChoiceStep = showSplitChoiceStep;
+window.showNewPalletScanStep = showNewPalletScanStep;
+window.showStageOrDispatchStep = showStageOrDispatchStep;
+window.showPickStep = showPickStep;
+window.showStageLocationStep = showStageLocationStep;
+window.confirmStageLocation = confirmStageLocation;
+window.skipStageLocation = skipStageLocation;
+window.chooseBay = chooseBay;
+window.startLocationCameraScan = startLocationCameraScan;
 
 init();
