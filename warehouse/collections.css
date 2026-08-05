@@ -135,7 +135,8 @@
 }
 
 .page-collections .table-wrap tbody td:nth-child(2),
-.page-collections .table-wrap tbody td:nth-child(4) {
+.page-collections .table-wrap tbody td:nth-child(4),
+.page-collections .table-wrap tbody td:nth-child(5) {
   color: var(--text);
   font-weight: 500;
 }
@@ -650,6 +651,26 @@
   }
 
   .page-collections .table-wrap tbody td:nth-child(4) {
+    margin-bottom: 14px;
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.35;
+    letter-spacing: 0.02em;
+  }
+
+  .page-collections .table-wrap tbody td:nth-child(4)::before {
+    content: 'Pick';
+    display: block;
+    margin-bottom: 6px;
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: var(--muted);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .page-collections .table-wrap tbody td:nth-child(5) {
     font-size: 1rem;
     font-weight: 600;
     color: var(--text);
@@ -657,7 +678,7 @@
     word-break: break-word;
   }
 
-  .page-collections .table-wrap tbody td:nth-child(4)::before {
+  .page-collections .table-wrap tbody td:nth-child(5)::before {
     content: 'Location';
     display: block;
     margin-bottom: 6px;

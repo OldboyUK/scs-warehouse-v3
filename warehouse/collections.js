@@ -174,12 +174,17 @@ function palletConfigForDisplay(pallet) {
   return parts.join(' — ') || pallet.runCode || '-';
 }
 
+function pickQtyForDisplay(pallet) {
+  return `${pallet.unitsRequired}/${pallet.availableUnits}`;
+}
+
 function tableHTML(collection) {
   const rows = collection.pallets.map(p => `
     <tr>
       <td>${escapeHTML(statusLabel(p.status))}</td>
       <td>${escapeHTML(p.palletId)}</td>
       <td class="pre-line">${escapeHTML(palletConfigForDisplay(p))}</td>
+      <td class="pick-qty">${escapeHTML(pickQtyForDisplay(p))}</td>
       <td>${escapeHTML(p.location || '-')}</td>
     </tr>
   `).join('');
@@ -192,6 +197,7 @@ function tableHTML(collection) {
             <th>Status</th>
             <th>Pallet ID</th>
             <th>Pallet Configuration</th>
+            <th>Pick</th>
             <th>Location</th>
           </tr>
         </thead>
