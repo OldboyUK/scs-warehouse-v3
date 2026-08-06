@@ -405,7 +405,8 @@ function beginQuantityStep(pallet) {
     remainingQty: 0,
     needsSplit: false,
     splitWritten: false,
-    originalKeeps: null, // 'picked' | 'remaining'
+    originalKeeps: null, // 'picked' | 'remaining' — which stock keeps the original pallet ID
+    splitScanTarget: 'picked', // 'picked' | 'remaining' — which stock the current scan is for
     newPalletId: '',
     pickedPalletId: pallet.palletId,
     locationBase: ''
@@ -464,93 +465,135 @@ function confirmPickQuantity() {
   activePick.pickedPalletId = line.palletId;
   activePick.newPalletId = '';
   activePick.originalKeeps = null;
+  activePick.splitScanTarget = 'picked';
 
   if (!activePick.needsSplit) {
     proceedToStaging();
     return;
   }
 
-  showSplitChoiceStep();
+  showPickedPalletScanStep();
 }
 
-function showSplitChoiceStep(message, isError) {
+function showPickedPalletScanStep(message, isError) {
+  activePick.splitScanTarget = 'picked';
   const msgClass = isError ? 'text-error' : '';
+
   app.innerHTML = `
     ${summaryHTML(currentCollection)}
-    <p class="status">A split is required. Picked stock and remaining stock must be split across the original pallet ID and a new pallet ID.</p>
+    <p class="status">A split is required. Scan or enter the pallet ID for the <strong>picked</strong> stock (${activePick.pickedQty} units).</p>
     ${UI.summaryCard([
       { label: 'Original Pallet', value: escapeHTML(activePick.originalPalletId) },
       { label: 'Picked Quantity', value: String(activePick.pickedQty) },
       { label: 'Remaining Quantity', value: String(activePick.remainingQty) }
     ])}
-    <div id="dispatchMessage" class="status ${msgClass}">${message ? escapeHTML(message) : 'Which stock keeps the ORIGINAL pallet ID?'}</div>
+    <div id="dispatchMessage" class="status ${msgClass}">${message ? escapeHTML(message) : 'Scan or enter the pallet ID for the picked stock.'}</div>
+    <label for="palletInput">Pallet Identifier (15-digit code):</label>
+    <input id="palletInput" maxlength="15" placeholder="Scan or type 15 digits" />
     <div class="actions mt-3">
-      <button class="btn btn-primary" onclick="chooseOriginalKeeps('picked')">Picked Stock</button>
-      <button class="btn btn-secondary" onclick="chooseOriginalKeeps('remaining')">Remaining Stock</button>
+      <button class="btn btn-success" onclick="confirmSplitPalletScan()">Confirm Pallet</button>
+      ${UI.cameraButton('Use Camera', 'startSplitPalletCameraScan()')}
     </div>
     <div class="actions mt-3">
       <button class="btn btn-ghost" onclick="showQuantityStep()">Back</button>
     </div>
   `;
+
+  const input = document.getElementById('palletInput');
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') confirmSplitPalletScan();
+  });
+  setTimeout(() => { input.focus(); if (input.select) input.select(); }, 0);
 }
 
-function chooseOriginalKeeps(which) {
-  activePick.originalKeeps = which;
-  activePick.pickedPalletId = which === 'picked'
-    ? activePick.originalPalletId
-    : '';
-  showNewPalletScanStep();
+function showSamePalletConfirmStep() {
+  app.innerHTML = `
+    ${summaryHTML(currentCollection)}
+    ${UI.summaryCard([
+      { label: 'Original Pallet', value: escapeHTML(activePick.originalPalletId) },
+      { label: 'Picked Quantity', value: String(activePick.pickedQty) },
+      { label: 'Remaining Quantity', value: String(activePick.remainingQty) }
+    ])}
+    <div id="dispatchMessage" class="status">It appears that the scanned pallet ID is the same as the original pallet ID. Would you like to assign a new pallet ID to the remaining stock instead?</div>
+    <div class="actions mt-3">
+      <button class="btn btn-success" onclick="confirmAssignRemainingNewPallet()">Yes</button>
+      <button class="btn btn-ghost" onclick="showPickedPalletScanStep()">No</button>
+    </div>
+  `;
 }
 
-function showNewPalletScanStep(message, isError) {
-  const movingLabel = activePick.originalKeeps === 'picked' ? 'remaining' : 'picked';
-  const movingQty = activePick.originalKeeps === 'picked'
-    ? activePick.remainingQty
-    : activePick.pickedQty;
+function confirmAssignRemainingNewPallet() {
+  showRemainingPalletScanStep();
+}
+
+function showRemainingPalletScanStep(message, isError) {
+  activePick.splitScanTarget = 'remaining';
   const msgClass = isError ? 'text-error' : '';
 
   app.innerHTML = `
     ${summaryHTML(currentCollection)}
-    <p class="status">Scan a new pallet ID for the <strong>${escapeHTML(movingLabel)}</strong> stock (${movingQty} units).</p>
-    <div id="dispatchMessage" class="status ${msgClass}">${message ? escapeHTML(message) : 'Scan or enter the new 15-digit pallet ID.'}</div>
-    <label for="palletInput">New Pallet Identifier:</label>
+    <p class="status">Scan or enter the pallet ID for the <strong>remaining</strong> stock (${activePick.remainingQty} units).</p>
+    ${UI.summaryCard([
+      { label: 'Original Pallet', value: escapeHTML(activePick.originalPalletId) },
+      { label: 'Picked Quantity', value: String(activePick.pickedQty) },
+      { label: 'Remaining Quantity', value: String(activePick.remainingQty) }
+    ])}
+    <div id="dispatchMessage" class="status ${msgClass}">${message ? escapeHTML(message) : 'Scan or enter a new pallet ID for the remaining stock.'}</div>
+    <label for="palletInput">Pallet Identifier (15-digit code):</label>
     <input id="palletInput" maxlength="15" placeholder="Scan or type 15 digits" />
     <div class="actions mt-3">
-      <button class="btn btn-success" onclick="confirmNewPalletScan()">Confirm New Pallet</button>
-      ${UI.cameraButton('Use Camera', 'startNewPalletCameraScan()')}
+      <button class="btn btn-success" onclick="confirmSplitPalletScan()">Confirm Pallet</button>
+      ${UI.cameraButton('Use Camera', 'startSplitPalletCameraScan()')}
     </div>
     <div class="actions mt-3">
-      <button class="btn btn-ghost" onclick="showSplitChoiceStep()">Back</button>
+      <button class="btn btn-ghost" onclick="showPickedPalletScanStep()">Back</button>
     </div>
   `;
 
   const input = document.getElementById('palletInput');
   input.addEventListener('keydown', e => {
-    if (e.key === 'Enter') confirmNewPalletScan();
+    if (e.key === 'Enter') confirmSplitPalletScan();
   });
   setTimeout(() => { input.focus(); if (input.select) input.select(); }, 0);
 }
 
-function confirmNewPalletScan() {
+function confirmSplitPalletScan() {
   const val = (document.getElementById('palletInput').value || '').trim();
   if (val.length !== 15 || isNaN(val)) {
-    showNewPalletScanStep('Please enter a valid 15-digit number.', true);
+    const show = activePick.splitScanTarget === 'remaining'
+      ? showRemainingPalletScanStep
+      : showPickedPalletScanStep;
+    show('Please enter a valid 15-digit number.', true);
     return;
   }
-  processNewPalletScan(val);
+  processSplitPalletScan(val);
 }
 
-function processNewPalletScan(palletId) {
-  if (palletId === activePick.originalPalletId) {
-    showNewPalletScanStep('New pallet ID must be different from the original.', true);
+function processSplitPalletScan(palletId) {
+  if (activePick.splitScanTarget === 'remaining') {
+    if (palletId === activePick.originalPalletId) {
+      showRemainingPalletScanStep('New pallet ID must be different from the original.', true);
+      return;
+    }
+
+    // Remaining stock gets the new pallet ID; picked keeps original
+    activePick.originalKeeps = 'picked';
+    activePick.newPalletId = palletId;
+    activePick.pickedPalletId = activePick.originalPalletId;
+    proceedToStaging();
     return;
   }
 
-  activePick.newPalletId = palletId;
-  activePick.pickedPalletId = activePick.originalKeeps === 'picked'
-    ? activePick.originalPalletId
-    : activePick.newPalletId;
+  // Scanning for picked stock
+  if (palletId === activePick.originalPalletId) {
+    showSamePalletConfirmStep();
+    return;
+  }
 
+  // Picked stock receives the new pallet ID; remaining keeps original
+  activePick.originalKeeps = 'remaining';
+  activePick.newPalletId = palletId;
+  activePick.pickedPalletId = palletId;
   proceedToStaging();
 }
 
@@ -566,7 +609,11 @@ async function proceedToStaging() {
     showStageLocationStep();
   } catch (err) {
     console.error(err);
-    const backFn = activePick.needsSplit ? showNewPalletScanStep : showQuantityStep;
+    const backFn = !activePick.needsSplit
+      ? showQuantityStep
+      : activePick.splitScanTarget === 'remaining'
+        ? showRemainingPalletScanStep
+        : showPickedPalletScanStep;
     backFn(err.message || 'Failed to continue. Please try again.', true);
   }
 }
@@ -659,7 +706,7 @@ function showStageLocationStep(message, isError) {
   const msgClass = isError ? 'text-error' : '';
   const backAction = activePick.splitWritten
     ? ''
-    : `<button class="btn btn-ghost" onclick="${activePick.needsSplit ? 'showNewPalletScanStep()' : 'showQuantityStep()'}">Back</button>`;
+    : `<button class="btn btn-ghost" onclick="${activePick.needsSplit ? (activePick.splitScanTarget === 'remaining' ? 'showRemainingPalletScanStep()' : 'showPickedPalletScanStep()') : 'showQuantityStep()'}">Back</button>`;
 
   app.innerHTML = `
     ${summaryHTML(currentCollection)}
@@ -835,14 +882,18 @@ async function startCameraScan() {
   }, () => showPickStep('Barcode detection failed.', true));
 }
 
-async function startNewPalletCameraScan() {
+async function startSplitPalletCameraScan() {
+  const showCurrent = () => activePick.splitScanTarget === 'remaining'
+    ? showRemainingPalletScanStep
+    : showPickedPalletScanStep;
+
   await runPalletCameraScan(raw => {
     if (raw.length !== 15 || isNaN(raw)) {
-      showNewPalletScanStep('Scanned code is not a valid 15-digit number.', true);
+      showCurrent()('Scanned code is not a valid 15-digit number.', true);
       return;
     }
-    processNewPalletScan(raw);
-  }, () => showNewPalletScanStep('Barcode detection failed.', true));
+    processSplitPalletScan(raw);
+  }, () => showCurrent()('Barcode detection failed.', true));
 }
 
 async function startLocationCameraScan() {
@@ -986,12 +1037,12 @@ window.startCameraScan = startCameraScan;
 window.showSelectStep = showSelectStep;
 window.confirmLineSelect = confirmLineSelect;
 window.confirmPickQuantity = confirmPickQuantity;
-window.chooseOriginalKeeps = chooseOriginalKeeps;
-window.confirmNewPalletScan = confirmNewPalletScan;
-window.startNewPalletCameraScan = startNewPalletCameraScan;
+window.confirmSplitPalletScan = confirmSplitPalletScan;
+window.startSplitPalletCameraScan = startSplitPalletCameraScan;
+window.confirmAssignRemainingNewPallet = confirmAssignRemainingNewPallet;
 window.showQuantityStep = showQuantityStep;
-window.showSplitChoiceStep = showSplitChoiceStep;
-window.showNewPalletScanStep = showNewPalletScanStep;
+window.showPickedPalletScanStep = showPickedPalletScanStep;
+window.showRemainingPalletScanStep = showRemainingPalletScanStep;
 window.showPickStep = showPickStep;
 window.showStageLocationStep = showStageLocationStep;
 window.confirmStageLocation = confirmStageLocation;

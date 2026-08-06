@@ -168,16 +168,16 @@
 
         app.querySelectorAll('.actions.mt-3').forEach(function (div) {
           if (div.querySelector('[onclick*="confirmScanPallet"]') ||
-              div.querySelector('[onclick*="confirmNewPalletScan"]') ||
+              div.querySelector('[onclick*="confirmSplitPalletScan"]') ||
               div.querySelector('[onclick*="startCameraScan"]') ||
-              div.querySelector('[onclick*="startNewPalletCameraScan"]') ||
+              div.querySelector('[onclick*="startSplitPalletCameraScan"]') ||
               div.querySelector('[onclick*="stopPick"]')) {
             while (div.firstChild) scannerActions.appendChild(div.firstChild);
             div.remove();
           }
         });
 
-        var confirmBtn = scannerActions.querySelector('[onclick*="confirmScanPallet"], [onclick*="confirmNewPalletScan"]');
+        var confirmBtn = scannerActions.querySelector('[onclick*="confirmScanPallet"], [onclick*="confirmSplitPalletScan"]');
         if (confirmBtn && !confirmBtn.querySelector('.btn-icon')) {
           var confirmIcon = document.createElement('span');
           confirmIcon.className = 'btn-icon';
