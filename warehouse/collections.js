@@ -5,7 +5,6 @@ const COLLECTIONS_CSV =
 const DISPATCH_HISTORY_CSV =
   'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=848481035&single=true&output=csv';
 
-const DISPATCH_URL = `${window.location.origin}/.netlify/functions/dispatch`;
 const PALLET_ENTRY_URL = `${window.location.origin}/.netlify/functions/submit`;
 const LOCATION_URL = `${window.location.origin}/.netlify/functions/assignLocation`;
 const STAGING_URL = `${window.location.origin}/.netlify/functions/staging`;
@@ -467,7 +466,7 @@ function confirmPickQuantity() {
   activePick.originalKeeps = null;
 
   if (!activePick.needsSplit) {
-    showStageOrDispatchStep();
+    proceedToStaging();
     return;
   }
 
@@ -552,31 +551,10 @@ function processNewPalletScan(palletId) {
     ? activePick.originalPalletId
     : activePick.newPalletId;
 
-  showStageOrDispatchStep();
+  proceedToStaging();
 }
 
-function showStageOrDispatchStep(message, isError) {
-  const msgClass = isError ? 'text-error' : '';
-  app.innerHTML = `
-    ${summaryHTML(currentCollection)}
-    ${UI.summaryCard([
-      { label: 'Picked Pallet ID', value: escapeHTML(activePick.pickedPalletId || activePick.originalPalletId) },
-      { label: 'Picked Quantity', value: String(activePick.pickedQty) },
-      { label: 'Split Required', value: activePick.needsSplit ? 'Yes' : 'No' }
-    ])}
-    <div id="dispatchMessage" class="status ${msgClass}">${message ? escapeHTML(message) : 'Send the picked stock to Stage or Dispatch?'}</div>
-    <div class="actions mt-3">
-      <button class="btn btn-primary" onclick="chooseDestination('stage')">Stage</button>
-      <button class="btn btn-success" onclick="chooseDestination('dispatch')">Dispatch</button>
-    </div>
-    ${activePick.splitWritten ? '' : `
-    <div class="actions mt-3">
-      <button class="btn btn-ghost" onclick="${activePick.needsSplit ? 'showNewPalletScanStep()' : 'showQuantityStep()'}">Back</button>
-    </div>`}
-  `;
-}
-
-async function chooseDestination(destination) {
+async function proceedToStaging() {
   try {
     showLoading(activePick.needsSplit && !activePick.splitWritten ? 'Writing pallet split…' : 'Preparing…');
 
@@ -585,16 +563,11 @@ async function chooseDestination(destination) {
       activePick.splitWritten = true;
     }
 
-    if (destination === 'dispatch') {
-      await submitDispatch(activePick.pickedPalletId);
-      finalizePick('dispatched');
-      return;
-    }
-
     showStageLocationStep();
   } catch (err) {
     console.error(err);
-    showStageOrDispatchStep(err.message || 'Failed to continue. Please try again.', true);
+    const backFn = activePick.needsSplit ? showNewPalletScanStep : showQuantityStep;
+    backFn(err.message || 'Failed to continue. Please try again.', true);
   }
 }
 
@@ -628,26 +601,6 @@ async function submitPalletEntry(code, run, units) {
   if (data.result !== 'ok' && data.result !== 'success') {
     throw new Error(data.message || 'Pallet entry failed.');
   }
-}
-
-async function submitDispatch(palletId) {
-  const { date, time } = formatDateTimeForSheets();
-  const body = new URLSearchParams();
-  body.append('pallet', palletId);
-  body.append('date', date);
-  body.append('time', time);
-
-  const res = await fetch(DISPATCH_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body
-  });
-  const data = await res.json();
-  if (data.result !== 'ok' && data.result !== 'success') {
-    throw new Error(data.message || 'Dispatch failed.');
-  }
-
-  dispatchedPalletIds.add(palletId);
 }
 
 async function submitStaging(location) {
@@ -704,6 +657,10 @@ function isUpperBayBase(code) {
 
 function showStageLocationStep(message, isError) {
   const msgClass = isError ? 'text-error' : '';
+  const backAction = activePick.splitWritten
+    ? ''
+    : `<button class="btn btn-ghost" onclick="${activePick.needsSplit ? 'showNewPalletScanStep()' : 'showQuantityStep()'}">Back</button>`;
+
   app.innerHTML = `
     ${summaryHTML(currentCollection)}
     <p class="status">Assign a staging location for picked pallet <strong>${escapeHTML(activePick.pickedPalletId)}</strong>, or skip.</p>
@@ -724,7 +681,7 @@ function showStageLocationStep(message, isError) {
     </div>
     <div class="actions mt-3">
       <button class="btn btn-ghost" onclick="skipStageLocation()">Skip Location</button>
-      <button class="btn btn-ghost" onclick="showStageOrDispatchStep()">Back</button>
+      ${backAction}
     </div>
   `;
 
@@ -821,30 +778,20 @@ async function completeStage(location) {
       await submitLocationAssignment(activePick.pickedPalletId, location);
     }
     await submitStaging(location);
-    finalizePick(activePick.pickedQty < activePick.line.unitsRequired ? 'partial' : 'staged');
+    finalizePick();
   } catch (err) {
     console.error(err);
     showStageLocationStep(err.message || 'Staging failed. Please try again.', true);
   }
 }
 
-function finalizePick(status) {
+function finalizePick() {
   const line = activePick.line;
   const isPartialQty = activePick.pickedQty < line.unitsRequired;
 
-  if (isPartialQty) {
-    line.status = 'partial';
-  } else if (status === 'dispatched') {
-    line.status = 'dispatched';
-  } else {
-    line.status = 'staged';
-  }
-
+  line.status = isPartialQty ? 'partial' : 'staged';
   line.pickedQty = activePick.pickedQty;
   line.pickedPalletId = activePick.pickedPalletId;
-  if (status === 'dispatched') {
-    dispatchedPalletIds.add(activePick.pickedPalletId);
-  }
 
   const doneLabel = statusLabel(line.status);
   activePick = null;
@@ -1042,11 +989,9 @@ window.confirmPickQuantity = confirmPickQuantity;
 window.chooseOriginalKeeps = chooseOriginalKeeps;
 window.confirmNewPalletScan = confirmNewPalletScan;
 window.startNewPalletCameraScan = startNewPalletCameraScan;
-window.chooseDestination = chooseDestination;
 window.showQuantityStep = showQuantityStep;
 window.showSplitChoiceStep = showSplitChoiceStep;
 window.showNewPalletScanStep = showNewPalletScanStep;
-window.showStageOrDispatchStep = showStageOrDispatchStep;
 window.showPickStep = showPickStep;
 window.showStageLocationStep = showStageLocationStep;
 window.confirmStageLocation = confirmStageLocation;
