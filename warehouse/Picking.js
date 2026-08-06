@@ -404,7 +404,7 @@ async function submitMovement(
 function finish() {
 
   app.innerHTML = UI.successScreen(
-    'Picking completed successfully',
+    'Transfer completed successfully',
     '',
     `<button class="btn btn-primary" onclick="showStep1()">Start Again</button>`
   );
