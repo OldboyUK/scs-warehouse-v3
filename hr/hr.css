@@ -170,6 +170,33 @@ button.dash-card {
   color: #FBBF24;
 }
 
+.hr-overtime-summary {
+  margin-top: 16px;
+}
+
+.hr-summary-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+}
+
+.hr-summary-row + .hr-summary-row {
+  border-top: 1px solid var(--border);
+}
+
+.hr-summary-label {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.hr-summary-value {
+  color: var(--text);
+  font-weight: 700;
+  text-align: right;
+}
+
 @media (max-width: 700px) {
   .hr-approval-table table,
   .hr-approval-table thead,

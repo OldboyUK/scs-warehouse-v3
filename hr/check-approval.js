@@ -95,6 +95,42 @@ function showOvertimeStatus() {
     });
 }
 
+function parseHoursToMinutes(value) {
+  const v = String(value || '').trim();
+  if (!v) return 0;
+
+  if (v.includes(':')) {
+    const parts = v.split(':');
+    const hours = parseInt(parts[0], 10) || 0;
+    const minutes = parseInt(parts[1], 10) || 0;
+    return (hours * 60) + minutes;
+  }
+
+  const asNumber = parseFloat(v);
+  return Number.isFinite(asNumber) ? Math.round(asNumber * 60) : 0;
+}
+
+function formatHoursTotal(minutes) {
+  const hours = Math.round((minutes / 60) * 100) / 100;
+  return `${hours} hours`;
+}
+
+function summariseOvertime(rows) {
+  let approvedMinutes = 0;
+  let awaitingMinutes = 0;
+
+  for (const row of rows) {
+    const minutes = parseHoursToMinutes(row.overtimeHours);
+    if (row.approvalStatus === 'Approved') approvedMinutes += minutes;
+    else awaitingMinutes += minutes;
+  }
+
+  return {
+    approved: formatHoursTotal(approvedMinutes),
+    awaiting: formatHoursTotal(awaitingMinutes)
+  };
+}
+
 function renderOvertimeTable(username, rows) {
   if (!rows.length) {
     app.innerHTML = `
@@ -108,6 +144,8 @@ function renderOvertimeTable(username, rows) {
     `;
     return;
   }
+
+  const summary = summariseOvertime(rows);
 
   const bodyRows = rows.map(row => {
     const status = row.approvalStatus === 'Approved' ? 'Approved' : 'Awaiting Approval';
@@ -139,6 +177,17 @@ function renderOvertimeTable(username, rows) {
           ${bodyRows}
         </tbody>
       </table>
+    </div>
+    <div class="hr-form-card hr-overtime-summary">
+      <h2 class="hr-form-section-title">Overtime Summary</h2>
+      <div class="hr-summary-row">
+        <span class="hr-summary-label">Approved</span>
+        <span class="hr-summary-value">${escapeHTML(summary.approved)}</span>
+      </div>
+      <div class="hr-summary-row">
+        <span class="hr-summary-label">Awaiting Approval</span>
+        <span class="hr-summary-value">${escapeHTML(summary.awaiting)}</span>
+      </div>
     </div>
     <div class="actions mt-3">
       <button type="button" class="btn btn-ghost" onclick="showChoice()">Back</button>
