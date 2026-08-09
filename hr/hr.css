@@ -197,43 +197,69 @@ button.dash-card {
   text-align: right;
 }
 
+/* Keep View Overtime as a real table on phones (no card conversion). */
 @media (max-width: 700px) {
-  .hr-approval-table table,
-  .hr-approval-table thead,
-  .hr-approval-table tbody,
-  .hr-approval-table th,
-  .hr-approval-table td,
-  .hr-approval-table tr {
-    display: block;
+  .hr-approval-table {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .hr-approval-table table {
+    display: table;
     width: 100%;
+    min-width: 480px;
+    border-collapse: collapse;
   }
 
   .hr-approval-table thead {
-    display: none;
+    display: table-header-group;
   }
 
-  .hr-approval-table tbody tr {
-    margin: 0 0 12px;
-    padding: 14px 16px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--card);
-    box-shadow: var(--shadow);
+  .hr-approval-table tbody {
+    display: table-row-group;
   }
 
-  .hr-approval-table tbody td {
-    padding: 8px 0;
+  .hr-approval-table tr {
+    display: table-row;
+  }
+
+  .hr-approval-table th,
+  .hr-approval-table td {
+    display: table-cell;
+    width: auto;
+    padding: 12px 14px;
     border: none;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    vertical-align: middle;
+    white-space: nowrap;
+  }
+
+  .hr-approval-table th {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--muted);
+    letter-spacing: 0.02em;
   }
 
   .hr-approval-table tbody td::before {
-    content: attr(data-label);
-    display: block;
-    margin-bottom: 4px;
-    font-size: 0.72rem;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--muted);
+    content: none;
+  }
+
+  .hr-approval-table tbody tr {
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .hr-overtime-summary {
+    margin-top: 16px;
+  }
+
+  .hr-summary-row {
+    flex-wrap: nowrap;
   }
 }
