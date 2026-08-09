@@ -143,3 +143,70 @@ button.dash-card {
     grid-template-columns: 1fr;
   }
 }
+
+/* ===== Approval status table ===== */
+.hr-approval-table {
+  margin-top: 8px;
+}
+
+.hr-status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.hr-status-badge--approved {
+  background: rgba(22, 163, 74, 0.18);
+  color: #4ADE80;
+}
+
+.hr-status-badge--pending {
+  background: rgba(217, 119, 6, 0.18);
+  color: #FBBF24;
+}
+
+@media (max-width: 700px) {
+  .hr-approval-table table,
+  .hr-approval-table thead,
+  .hr-approval-table tbody,
+  .hr-approval-table th,
+  .hr-approval-table td,
+  .hr-approval-table tr {
+    display: block;
+    width: 100%;
+  }
+
+  .hr-approval-table thead {
+    display: none;
+  }
+
+  .hr-approval-table tbody tr {
+    margin: 0 0 12px;
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--card);
+    box-shadow: var(--shadow);
+  }
+
+  .hr-approval-table tbody td {
+    padding: 8px 0;
+    border: none;
+  }
+
+  .hr-approval-table tbody td::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 4px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+}
