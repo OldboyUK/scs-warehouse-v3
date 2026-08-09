@@ -229,7 +229,6 @@ button.dash-card {
   .hr-approval-table th,
   .hr-approval-table td {
     display: table-cell;
-    width: 33.333%;
     padding: 11px 7px;
     border: none;
     border-bottom: 1px solid var(--border);
@@ -239,6 +238,18 @@ button.dash-card {
     line-height: 1.3;
     word-break: normal;
     overflow-wrap: break-word;
+  }
+
+  .hr-approval-table th:nth-child(1),
+  .hr-approval-table td:nth-child(1) {
+    width: 28%;
+  }
+
+  .hr-approval-table th:nth-child(2),
+  .hr-approval-table td:nth-child(2),
+  .hr-approval-table th:nth-child(3),
+  .hr-approval-table td:nth-child(3) {
+    width: 36%;
   }
 
   .hr-approval-table th {
