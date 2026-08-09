@@ -117,7 +117,7 @@ function renderOvertimeTable(username, rows) {
     return `
       <tr>
         <td data-label="Overtime Hours">${escapeHTML(row.overtimeHours || '-')}</td>
-        <td data-label="Comments">${escapeHTML(row.comments || '-')}</td>
+        <td data-label="Date">${escapeHTML(row.date || '-')}</td>
         <td data-label="Approval Status"><span class="${badgeClass}">${escapeHTML(status)}</span></td>
       </tr>
     `;
@@ -131,7 +131,7 @@ function renderOvertimeTable(username, rows) {
         <thead>
           <tr>
             <th>Overtime Hours</th>
-            <th>Comments</th>
+            <th>Date</th>
             <th>Approval Status</th>
           </tr>
         </thead>

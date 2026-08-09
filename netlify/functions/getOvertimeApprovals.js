@@ -1,6 +1,6 @@
 // /.netlify/functions/getOvertimeApprovals.js
 // Fetches the published overtime CSV server-side and returns only the
-// signed-in user's rows (columns C, D, K). Full sheet never reaches the browser.
+// signed-in user's rows (columns C, B, K). Full sheet never reaches the browser.
 const fetch = require('node-fetch');
 const { getAuthScriptUrl } = require('./scriptConfig');
 
@@ -119,7 +119,7 @@ exports.handler = async function (event) {
 
       rows.push({
         overtimeHours: clean(r[2]),
-        comments: clean(r[3]),
+        date: clean(r[1]),
         approvalStatus: formatApprovalStatus(r[10])
       });
     }
