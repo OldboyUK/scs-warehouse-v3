@@ -8,7 +8,7 @@ const PALLETS_CSV =
 const STOCK_CSV =
   'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=1879287780&single=true&output=csv';
 const RUN_CODES_CSV =
-  'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=1875380966&single=true&output=csv';
+  'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=1199565865&single=true&output=csv';
 const ORDER_LOG_CSV =
   'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=792145998&single=true&output=csv';
 const SCRIPT_URL = `${window.location.origin}/.netlify/functions/submit`;
@@ -167,7 +167,9 @@ async function loadData() {
 
   stockData = parseCSV(stockText);
 
-  runCodes = runText.trim().split('\n').map(x => x.trim()).filter(Boolean);
+  // A2:A — skip header row, take column A only
+  const runRows = parseCSV(runText);
+  runCodes = runRows.slice(1).map(row => String(row[0] || '').trim()).filter(Boolean);
   runCodes = Array.from(new Set(runCodes))
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
