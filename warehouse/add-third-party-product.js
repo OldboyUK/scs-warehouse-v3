@@ -1,6 +1,6 @@
 const app = document.getElementById('app');
 
-const CUSTOMERS_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=2137345148&single=true&output=csv';
+const CUSTOMERS_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=1199565865&single=true&output=csv';
 const SCRIPT_URL = '/.netlify/functions/addThirdPartyProduct';
 
 const LIQUID_TYPE_OPTIONS = [
@@ -87,8 +87,9 @@ function loadCustomers() {
   fetch(CUSTOMERS_CSV)
     .then(r => r.text())
     .then(t => {
+      // B2:B — skip header row, take column B only
       const rows = parseCSV(t);
-      customersList = Array.from(new Set(rows.map(r => (r[0] || '').trim()).filter(Boolean)))
+      customersList = Array.from(new Set(rows.slice(1).map(r => (r[1] || '').trim()).filter(Boolean)))
         .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
       showForm();
     })
