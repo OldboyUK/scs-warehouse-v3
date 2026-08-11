@@ -267,6 +267,7 @@ function submitDispatch() {
 
   const body = new URLSearchParams();
 
+  body.append('reference', 'No Reference');
   body.append('pallet', palletId);
   body.append('date', date);
   body.append('time', time);

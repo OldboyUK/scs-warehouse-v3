@@ -24,14 +24,16 @@ exports.handler = async function (event) {
     if (/^\d+$/.test(pallet) && pallet.length > 0 && pallet.length < 15) {
       pallet = pallet.padStart(15, '0');
     }
-    const date   = params.get('date');
-    const time   = params.get('time');
+    const date = params.get('date');
+    const time = params.get('time');
+    const reference = (params.get('reference') || params.get('collectionId') || 'No Reference').trim() || 'No Reference';
 
     if (!pallet || !date || !time) {
       return { statusCode: 400, body: JSON.stringify({ result: 'error', message: 'Missing parameters' }) };
     }
 
     const body = new URLSearchParams();
+    body.append('reference', reference);
     body.append('pallet', pallet);
     body.append('date', date);
     body.append('time', time);

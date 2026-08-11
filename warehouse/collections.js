@@ -995,15 +995,28 @@ function loadCollectionRows(text) {
   }
 }
 
+function extractDispatchPalletId(fields) {
+  const colA = cleanCSVField(fields[0]);
+  const colB = cleanCSVField(fields[1]);
+
+  // New format: A=reference, B=pallet ID
+  if (/^\d+$/.test(colB)) return normalizePalletId(colB);
+
+  // Legacy format: A=pallet ID
+  if (/^\d+$/.test(colA)) return normalizePalletId(colA);
+
+  return '';
+}
+
 function loadDispatchHistory(text) {
   const rowStrings = splitCSVRows(text);
   dispatchedPalletIds.clear();
 
   for (let i = 0; i < rowStrings.length; i++) {
     const r = parseCSVRow(rowStrings[i]);
-    if (i === 0 && isHeaderRow(r, 'PALLET')) continue;
+    if (i === 0 && (isHeaderRow(r, 'PALLET') || isHeaderRow(r, 'REFERENCE') || isHeaderRow(r, 'COLLECTION'))) continue;
 
-    const palletId = cleanCSVField(r[0]);
+    const palletId = extractDispatchPalletId(r);
     if (!palletId) continue;
     dispatchedPalletIds.add(palletId);
   }

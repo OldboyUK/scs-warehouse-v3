@@ -117,11 +117,12 @@ function handleAddThirdPartyProduct(p) {
   return json({ result: 'success', row: row });
 }
 
-// DISPATCH
+// DISPATCH — A=reference, B=pallet, C=time, D=date
 function handleDispatch(p) {
-  const pallet = normalizePalletId(p.pallet || '');
-  const date   = (p.date   || '').trim();
-  const time   = (p.time   || '').trim();
+  const reference = (p.reference || p.collectionId || 'No Reference').trim() || 'No Reference';
+  const pallet    = normalizePalletId(p.pallet || '');
+  const date      = (p.date || '').trim();
+  const time      = (p.time || '').trim();
 
   if (!pallet || !date || !time) return json({ result: 'error', message: 'Missing fields' });
 
@@ -131,12 +132,15 @@ function handleDispatch(p) {
 
   const nextRow = sh.getLastRow() + 1;
 
+  sh.getRange(nextRow, 1).setValue(reference);
+
   // Must format as text BEFORE setValue — setValues/appendRow coerce to number and drop leading zeros
-  const palletCell = sh.getRange(nextRow, 1);
+  const palletCell = sh.getRange(nextRow, 2);
   palletCell.setNumberFormat('@');
   palletCell.setValue(String(pallet));
-  sh.getRange(nextRow, 2).setValue(date);
+
   sh.getRange(nextRow, 3).setValue(time);
+  sh.getRange(nextRow, 4).setValue(date);
 
   return json({ result: 'success' });
 }

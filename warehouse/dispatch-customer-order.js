@@ -410,6 +410,7 @@ async function submitDispatch(pallet, scannedId) {
   const palletId = normalizePalletId(scannedId || pallet.palletId);
   const { date, time } = formatDateTimeForSheets();
   const body = new URLSearchParams();
+  body.append('reference', currentCollection.id);
   body.append('pallet', palletId);
   body.append('date', date);
   body.append('time', time);
@@ -554,15 +555,28 @@ function loadStagingRows(text) {
   }
 }
 
+function extractDispatchPalletId(fields) {
+  const colA = cleanCSVField(fields[0]);
+  const colB = cleanCSVField(fields[1]);
+
+  // New format: A=reference, B=pallet ID
+  if (/^\d+$/.test(colB)) return normalizePalletId(colB);
+
+  // Legacy format: A=pallet ID
+  if (/^\d+$/.test(colA)) return normalizePalletId(colA);
+
+  return '';
+}
+
 function loadDispatchHistory(text) {
   const rowStrings = splitCSVRows(text);
   dispatchedPalletIds.clear();
 
   for (let i = 0; i < rowStrings.length; i++) {
     const r = parseCSVRow(rowStrings[i]);
-    if (i === 0 && isHeaderRow(r, 'PALLET')) continue;
+    if (i === 0 && (isHeaderRow(r, 'PALLET') || isHeaderRow(r, 'REFERENCE') || isHeaderRow(r, 'COLLECTION'))) continue;
 
-    const palletId = normalizePalletId(cleanCSVField(r[0]));
+    const palletId = extractDispatchPalletId(r);
     if (!palletId) continue;
     dispatchedPalletIds.add(palletId);
   }
