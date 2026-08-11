@@ -2,8 +2,8 @@ const app   = document.getElementById('app');
 const video = document.getElementById('video');
 
 
-// PRODUCTS (3P): column A = liquid code (e.g. LIB-TE1(T))
-const PRODUCTS_3P_CSV    = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=60083586&single=true&output=csv';
+// PRODUCTS (3P): column C = liquid code (e.g. LIB-TE1(T)), from row 2
+const PRODUCTS_3P_CSV    = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=1199565865&single=true&output=csv';
 // PRODUCT DATABASE (3P): column A liquid code, column K ABV — products ending (X)
 const PRODUCT_DB_3P_CSV  = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=134597692&single=true&output=csv';
 // PRODUCT DATABASE (3PT): column A liquid code, column K ABV — products ending (T)
@@ -149,8 +149,9 @@ function scannerReadyFocus(input){
 function loadLookups(){
   if (PRODUCTS_3P_CSV && PRODUCTS_3P_CSV.startsWith('http')){
     fetch(PRODUCTS_3P_CSV).then(r=>r.text()).then(t=>{
+      // C2:C — skip header row, take column C only
       const rows = parseCSV(t);
-      productsList = Array.from(new Set(rows.map(r => (r[0]||'').trim()).filter(Boolean)))
+      productsList = Array.from(new Set(rows.slice(1).map(r => (r[2]||'').trim()).filter(Boolean)))
         .sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
     }).catch(console.error);
   }
