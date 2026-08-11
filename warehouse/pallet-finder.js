@@ -343,7 +343,11 @@ function renderStockLine(line, q) {
     : '';
 
   item.innerHTML =
-    `<span class="inquiry-stock-main">${company} · ${product} · ${format} · ${units} units</span>${run}`;
+    `<span class="inquiry-stock-main">` +
+      `<span class="inquiry-stock-pair">${company} · ${product}</span>` +
+      `<span class="inquiry-stock-sep" aria-hidden="true"> · </span>` +
+      `<span class="inquiry-stock-pair">${format} · ${units} units</span>` +
+    `</span>${run}`;
   return item;
 }
 
@@ -354,7 +358,7 @@ function renderPallet(pallet, q) {
 
   const heading = document.createElement('h3');
   heading.className = 'inquiry-pallet-id';
-  heading.textContent = `PALLET ${pallet.id}`;
+  heading.textContent = pallet.id;
   card.appendChild(heading);
 
   if (!pallet.stock.length) {

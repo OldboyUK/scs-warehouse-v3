@@ -870,11 +870,42 @@ td.pre-line { white-space: pre-line; }
   word-break: break-word;
 }
 
+.inquiry-stock-pair {
+  display: inline;
+}
+
+.inquiry-stock-sep {
+  display: inline;
+}
+
 .inquiry-stock-run {
   font-size: 0.78rem;
   font-weight: 600;
   color: var(--muted);
   letter-spacing: 0.03em;
+}
+
+@media (max-width: 768px) {
+  .inquiry-stock-line {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+  }
+
+  .inquiry-stock-main {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 0 0 auto;
+  }
+
+  .inquiry-stock-sep {
+    display: none;
+  }
+
+  .inquiry-stock-run {
+    margin-top: 2px;
+  }
 }
 
 @media (max-width: 480px) {
