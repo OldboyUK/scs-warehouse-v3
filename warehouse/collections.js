@@ -650,11 +650,17 @@ async function submitPalletEntry(code, run, units) {
   }
 }
 
+function normalizePalletId(id) {
+  const s = String(id || '').trim();
+  if (/^\d{14}$/.test(s)) return '0' + s;
+  return s;
+}
+
 async function submitStaging(location) {
   const line = activePick.line;
   const body = new URLSearchParams();
   body.append('collectionId', currentCollection.id);
-  body.append('pallet', activePick.pickedPalletId);
+  body.append('pallet', normalizePalletId(activePick.pickedPalletId));
   body.append('run', line.runCode);
   body.append('company', line.company);
   body.append('product', line.product);

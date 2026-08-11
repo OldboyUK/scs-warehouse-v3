@@ -136,7 +136,7 @@ function handleDispatch(p) {
 // STAGING — write columns A–G only (H is a sheet formula / VLOOKUP)
 function handleStaging(p) {
   const collectionId = (p.collectionId || '').trim();
-  const pallet       = (p.pallet       || '').trim();
+  const pallet       = normalizePalletId(p.pallet || '');
   const run          = (p.run          || '').trim();
   const company      = (p.company      || '').trim();
   const product      = (p.product      || '').trim();
@@ -161,6 +161,8 @@ function handleStaging(p) {
     format,
     Number(qty)
   ]]);
+  // Keep leading zeros — Sheets otherwise coerces 15-digit IDs to numbers
+  sh.getRange(nextRow, 2).setNumberFormat('@').setValue(pallet);
 
   return json({ result: 'success' });
 }
@@ -222,6 +224,13 @@ function handleLocationAssignment(p) {
 }
 
 /** ====== HELPERS ====== **/
+// Pallet IDs are always 15 digits; pad a leading zero if Sheets dropped it
+function normalizePalletId(id) {
+  const s = String(id || '').trim();
+  if (/^\d{14}$/.test(s)) return '0' + s;
+  return s;
+}
+
 function findNextDataRow(sh) {
   const columnAValues = sh.getRange('A:A').getValues();
   let lastRow = 0;

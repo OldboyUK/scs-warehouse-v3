@@ -20,7 +20,9 @@ exports.handler = async function (event) {
 
     const params = new URLSearchParams(event.body || '');
     const collectionId = params.get('collectionId');
-    const pallet = params.get('pallet');
+    let pallet = (params.get('pallet') || '').trim();
+    // Pallet IDs are always 15 digits; restore a leading zero if it was dropped
+    if (/^\d{14}$/.test(pallet)) pallet = '0' + pallet;
     const run = params.get('run');
     const company = params.get('company');
     const product = params.get('product');
