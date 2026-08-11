@@ -20,8 +20,10 @@ exports.handler = async function (event) {
 
     const params = new URLSearchParams(event.body || '');
     let pallet = (params.get('pallet') || '').trim();
-    // Pallet IDs are always 15 digits; restore a leading zero if it was dropped
-    if (/^\d{14}$/.test(pallet)) pallet = '0' + pallet;
+    // Pallet IDs are always 15 digits; restore leading zeros if Sheets dropped them
+    if (/^\d+$/.test(pallet) && pallet.length > 0 && pallet.length < 15) {
+      pallet = pallet.padStart(15, '0');
+    }
     const date   = params.get('date');
     const time   = params.get('time');
 

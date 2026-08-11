@@ -130,9 +130,14 @@ function handleDispatch(p) {
   if (!sh) return json({ result: 'error', message: 'Dispatch sheet not found' });
 
   const nextRow = sh.getLastRow() + 1;
-  sh.getRange(nextRow, 1, nextRow, 3).setValues([[pallet, date, time]]);
-  // Keep leading zeros — Sheets otherwise coerces 15-digit IDs to numbers
-  sh.getRange(nextRow, 1).setNumberFormat('@').setValue(pallet);
+
+  // Must format as text BEFORE setValue — setValues/appendRow coerce to number and drop leading zeros
+  const palletCell = sh.getRange(nextRow, 1);
+  palletCell.setNumberFormat('@');
+  palletCell.setValue(String(pallet));
+  sh.getRange(nextRow, 2).setValue(date);
+  sh.getRange(nextRow, 3).setValue(time);
+
   return json({ result: 'success' });
 }
 
@@ -155,17 +160,19 @@ function handleStaging(p) {
   if (!sh) return json({ result: 'error', message: 'STAGING sheet not found' });
 
   const nextRow = findNextDataRow(sh);
-  sh.getRange(nextRow, 1, 1, 7).setValues([[
-    collectionId,
-    pallet,
+
+  // Write pallet as text first so Sheets does not drop a leading zero
+  sh.getRange(nextRow, 1).setValue(collectionId);
+  const palletCell = sh.getRange(nextRow, 2);
+  palletCell.setNumberFormat('@');
+  palletCell.setValue(String(pallet));
+  sh.getRange(nextRow, 3, nextRow, 7).setValues([[
     run,
     company,
     product,
     format,
     Number(qty)
   ]]);
-  // Keep leading zeros — Sheets otherwise coerces 15-digit IDs to numbers
-  sh.getRange(nextRow, 2).setNumberFormat('@').setValue(pallet);
 
   return json({ result: 'success' });
 }
@@ -227,10 +234,10 @@ function handleLocationAssignment(p) {
 }
 
 /** ====== HELPERS ====== **/
-// Pallet IDs are always 15 digits; pad a leading zero if Sheets dropped it
+// Pallet IDs are always 15 digits; pad leading zeros if Sheets dropped them
 function normalizePalletId(id) {
   const s = String(id || '').trim();
-  if (/^\d{14}$/.test(s)) return '0' + s;
+  if (/^\d+$/.test(s) && s.length > 0 && s.length < 15) return s.padStart(15, '0');
   return s;
 }
 

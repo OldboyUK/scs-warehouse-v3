@@ -376,39 +376,41 @@ function confirmScanPallet() {
   processPalletScan(val);
 }
 
+function normalizePalletId(id) {
+  const s = String(id || '').trim();
+  if (/^\d+$/.test(s) && s.length > 0 && s.length < 15) return s.padStart(15, '0');
+  return s;
+}
+
 function processPalletScan(palletId) {
   if (!currentCollection || isSubmitting) return;
 
-  const match = currentCollection.pallets.find(p => p.palletId === palletId);
+  const scannedId = normalizePalletId(palletId);
+  const match = currentCollection.pallets.find(p => normalizePalletId(p.palletId) === scannedId);
   if (!match) {
     showDispatchStep('This pallet is not part of this collection.', true);
     return;
   }
 
-  if (isPalletDispatched(match) || dispatchedPalletIds.has(palletId)) {
+  if (isPalletDispatched(match) || dispatchedPalletIds.has(scannedId) || dispatchedPalletIds.has(match.palletId)) {
     match.status = 'dispatched';
     showDispatchStep('This pallet has already been dispatched.', true);
     return;
   }
 
-  submitDispatch(match);
+  submitDispatch(match, scannedId);
 }
 
-function normalizePalletId(id) {
-  const s = String(id || '').trim();
-  if (/^\d{14}$/.test(s)) return '0' + s;
-  return s;
-}
-
-async function submitDispatch(pallet) {
+async function submitDispatch(pallet, scannedId) {
   if (isSubmitting) return;
   isSubmitting = true;
 
   showDispatchStep('Dispatching…', false);
 
+  const palletId = normalizePalletId(scannedId || pallet.palletId);
   const { date, time } = formatDateTimeForSheets();
   const body = new URLSearchParams();
-  body.append('pallet', normalizePalletId(pallet.palletId));
+  body.append('pallet', palletId);
   body.append('date', date);
   body.append('time', time);
 
@@ -425,7 +427,8 @@ async function submitDispatch(pallet) {
     }
 
     pallet.status = 'dispatched';
-    dispatchedPalletIds.add(pallet.palletId);
+    pallet.palletId = palletId;
+    dispatchedPalletIds.add(palletId);
     isSubmitting = false;
 
     if (isCollectionComplete(currentCollection)) {
@@ -433,7 +436,7 @@ async function submitDispatch(pallet) {
       return;
     }
 
-    showDispatchStep(`Pallet ${pallet.palletId} dispatched — continue scanning.`, false);
+    showDispatchStep(`Pallet ${palletId} dispatched — continue scanning.`, false);
   } catch (err) {
     console.error(err);
     isSubmitting = false;
@@ -540,7 +543,7 @@ function loadStagingRows(text) {
 
     allStagingRows.push({
       collectionId,
-      palletId,
+      palletId: normalizePalletId(palletId),
       runCode: cleanCSVField(r[2]),
       company: cleanCSVField(r[3]),
       product: cleanCSVField(r[4]),
@@ -559,7 +562,7 @@ function loadDispatchHistory(text) {
     const r = parseCSVRow(rowStrings[i]);
     if (i === 0 && isHeaderRow(r, 'PALLET')) continue;
 
-    const palletId = cleanCSVField(r[0]);
+    const palletId = normalizePalletId(cleanCSVField(r[0]));
     if (!palletId) continue;
     dispatchedPalletIds.add(palletId);
   }
