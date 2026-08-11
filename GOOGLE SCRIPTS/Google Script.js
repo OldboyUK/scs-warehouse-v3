@@ -119,7 +119,7 @@ function handleAddThirdPartyProduct(p) {
 
 // DISPATCH
 function handleDispatch(p) {
-  const pallet = (p.pallet || '').trim();
+  const pallet = normalizePalletId(p.pallet || '');
   const date   = (p.date   || '').trim();
   const time   = (p.time   || '').trim();
 
@@ -129,7 +129,10 @@ function handleDispatch(p) {
   const sh = ss.getSheetByName(SHEET_DISPATCH);
   if (!sh) return json({ result: 'error', message: 'Dispatch sheet not found' });
 
-  sh.appendRow([pallet, date, time]);
+  const nextRow = sh.getLastRow() + 1;
+  sh.getRange(nextRow, 1, nextRow, 3).setValues([[pallet, date, time]]);
+  // Keep leading zeros — Sheets otherwise coerces 15-digit IDs to numbers
+  sh.getRange(nextRow, 1).setNumberFormat('@').setValue(pallet);
   return json({ result: 'success' });
 }
 

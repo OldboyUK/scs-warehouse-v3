@@ -394,6 +394,12 @@ function processPalletScan(palletId) {
   submitDispatch(match);
 }
 
+function normalizePalletId(id) {
+  const s = String(id || '').trim();
+  if (/^\d{14}$/.test(s)) return '0' + s;
+  return s;
+}
+
 async function submitDispatch(pallet) {
   if (isSubmitting) return;
   isSubmitting = true;
@@ -402,7 +408,7 @@ async function submitDispatch(pallet) {
 
   const { date, time } = formatDateTimeForSheets();
   const body = new URLSearchParams();
-  body.append('pallet', pallet.palletId);
+  body.append('pallet', normalizePalletId(pallet.palletId));
   body.append('date', date);
   body.append('time', time);
 
