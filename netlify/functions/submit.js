@@ -21,6 +21,13 @@ exports.handler = async function (event) {
     body.append('units', params.get('units'));
     body.append('date', params.get('date'));
     body.append('time', params.get('time'));
+    // Optional Edit Pallet / re-configuration fields (leave unset for normal pallet entry)
+    if (params.has('comment')) {
+      body.append('comment', params.get('comment') ?? '');
+    }
+    if (params.has('reconfiguration')) {
+      body.append('reconfiguration', params.get('reconfiguration') ?? '');
+    }
     body.append('token', SHARED_TOKEN);
     body.append('action', 'pallet_entry');
 

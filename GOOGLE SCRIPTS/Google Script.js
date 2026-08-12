@@ -208,7 +208,17 @@ function handlePalletEntry(p) {
   }
   const nextRow = lastRow + 1;
 
+  // Always write A:E. Do not touch F:K or M (lookups / existing sheet behaviour).
   sh.getRange(nextRow, 1, 1, 5).setValues([[code, run, units, date, time]]);
+
+  // Edit Pallet re-configuration only: L = comment, N = boolean TRUE
+  const reconfigRaw = String(p.reconfiguration == null ? '' : p.reconfiguration).trim().toLowerCase();
+  const isReconfiguration = reconfigRaw === 'true' || reconfigRaw === '1' || reconfigRaw === 'yes';
+  if (isReconfiguration) {
+    const comment = p.comment == null ? '' : String(p.comment);
+    sh.getRange(nextRow, 12).setValue(comment); // column L
+    sh.getRange(nextRow, 14).setValue(true);    // column N
+  }
 
   return json({ result: 'success' });
 }

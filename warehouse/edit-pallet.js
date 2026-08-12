@@ -25,7 +25,9 @@ let palletCode = '';
 let palletLines = [];
 let selectedLine = null;
 let removeQty = 0;
+let removeComment = '';
 let addRunCode = '';
+let addComment = '';
 
 /* ---------- Helpers (aligned with Goods In / Picking) ---------- */
 function parseCSV(text) {
@@ -128,7 +130,7 @@ function confirmationBlock({ code, run, product, format, units, company }) {
   return UI.summaryCard(rows);
 }
 
-async function submitPalletEntry(code, run, units) {
+async function submitPalletEntry(code, run, units, comment, isReconfiguration) {
   const { date, time } = formatDateTimeForSheets();
   const body = new URLSearchParams();
   body.append('code', code);
@@ -136,6 +138,10 @@ async function submitPalletEntry(code, run, units) {
   body.append('units', String(units));
   body.append('date', date);
   body.append('time', time);
+  if (isReconfiguration) {
+    body.append('comment', comment == null ? '' : String(comment));
+    body.append('reconfiguration', 'true');
+  }
 
   const res = await fetch(SCRIPT_URL, {
     method: 'POST',
@@ -257,7 +263,9 @@ function processPalletScan(palletId) {
   palletLines = lines;
   selectedLine = null;
   removeQty = 0;
+  removeComment = '';
   addRunCode = '';
+  addComment = '';
   showSelectProductStep();
 }
 
@@ -358,6 +366,7 @@ function confirmProductSelect() {
   }
   selectedLine = line;
   removeQty = line.quantity;
+  removeComment = '';
   showRemoveQtyStep();
 }
 
@@ -376,6 +385,8 @@ function showRemoveQtyStep(message, isError) {
     })}
     <label for="removeQty">How many units would you like to remove?</label>
     <input id="removeQty" type="number" min="1" max="${selectedLine.quantity}" value="${removeQty || selectedLine.quantity}" />
+    <label for="removeCommentInput">Comments</label>
+    <textarea id="removeCommentInput" rows="3" placeholder="Optional">${escapeHTML(removeComment)}</textarea>
     <div class="status ${msgClass}">${message ? escapeHTML(message) : ''}</div>
     <div class="actions mt-3">
       <button class="btn btn-ghost" onclick="showSelectProductStep()">Back</button>
@@ -392,6 +403,8 @@ function showRemoveQtyStep(message, isError) {
 
 function confirmRemoveQty() {
   const qty = parseInt(document.getElementById('removeQty').value, 10);
+  const commentEl = document.getElementById('removeCommentInput');
+  removeComment = commentEl ? commentEl.value : '';
   if (!qty || qty < 1) {
     showRemoveQtyStep('Enter a quantity greater than zero.', true);
     return;
@@ -416,7 +429,8 @@ function showReplaceChoiceStep() {
       format: selectedLine.format,
       units: removeQty
     })}
-    <p class="status">Would you like to add another product to this pallet?</p>
+    <p class="status"><strong>Would you like to add a different product to this pallet?</strong></p>
+    <p class="status">You might want to do this if, for example, you're adjusting this pallet because the wrong lot code was assigned to this pallet.</p>
     <div class="actions mt-3">
       <button class="btn btn-success" onclick="chooseAddProduct(true)">Yes</button>
       <button class="btn btn-ghost" onclick="chooseAddProduct(false)">No</button>
@@ -430,13 +444,14 @@ function showReplaceChoiceStep() {
 async function chooseAddProduct(addAnother) {
   try {
     app.innerHTML = `<p class="status">Writing stock removal…</p>`;
-    await submitPalletEntry(palletCode, selectedLine.runCode, -removeQty);
+    await submitPalletEntry(palletCode, selectedLine.runCode, -removeQty, removeComment, true);
 
     if (!addAnother) {
       showFinishedScreen('Product removed from pallet.');
       return;
     }
 
+    addComment = '';
     showAddRunCodeStep();
   } catch (err) {
     console.error(err);
@@ -595,17 +610,27 @@ function showAddConfirmStep(units) {
       format: info.format,
       units
     })}
+    <label for="addCommentInput">Comments</label>
+    <textarea id="addCommentInput" rows="3" placeholder="Optional">${escapeHTML(addComment)}</textarea>
     <div class="actions mt-3">
-      <button class="btn btn-ghost" onclick="showAddUnitsStep()">Back</button>
+      <button class="btn btn-ghost" onclick="backFromAddConfirm(${units})">Back</button>
       <button class="btn btn-success" onclick="submitAddProduct(${units})">Confirm & Submit</button>
     </div>
   `;
 }
 
+function backFromAddConfirm(units) {
+  const commentEl = document.getElementById('addCommentInput');
+  addComment = commentEl ? commentEl.value : '';
+  showAddUnitsStep();
+}
+
 async function submitAddProduct(units) {
+  const commentEl = document.getElementById('addCommentInput');
+  addComment = commentEl ? commentEl.value : '';
   try {
     app.innerHTML = `<p class="status">Writing stock addition…</p>`;
-    await submitPalletEntry(palletCode, addRunCode, units);
+    await submitPalletEntry(palletCode, addRunCode, units, addComment, true);
     showFinishedScreen('Product removed and replacement added.');
   } catch (err) {
     console.error(err);
@@ -634,7 +659,9 @@ function resetModule() {
   palletLines = [];
   selectedLine = null;
   removeQty = 0;
+  removeComment = '';
   addRunCode = '';
+  addComment = '';
   showScanStep();
 }
 
@@ -653,6 +680,7 @@ window.showAddRunCodeStep = showAddRunCodeStep;
 window.confirmAddUnits = confirmAddUnits;
 window.showAddUnitsStep = showAddUnitsStep;
 window.showAddConfirmStep = showAddConfirmStep;
+window.backFromAddConfirm = backFromAddConfirm;
 window.submitAddProduct = submitAddProduct;
 window.resetModule = resetModule;
 
