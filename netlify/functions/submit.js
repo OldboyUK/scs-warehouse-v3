@@ -28,6 +28,9 @@ exports.handler = async function (event) {
     if (params.has('reconfiguration')) {
       body.append('reconfiguration', params.get('reconfiguration') ?? '');
     }
+    if (params.has('username')) {
+      body.append('username', params.get('username') ?? '');
+    }
     body.append('token', SHARED_TOKEN);
     body.append('action', 'pallet_entry');
 

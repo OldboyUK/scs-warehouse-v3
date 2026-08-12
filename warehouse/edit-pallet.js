@@ -141,6 +141,9 @@ async function submitPalletEntry(code, run, units, comment, isReconfiguration) {
   if (isReconfiguration) {
     body.append('comment', comment == null ? '' : String(comment));
     body.append('reconfiguration', 'true');
+    const username =
+      (typeof SCSAuth !== 'undefined' && SCSAuth.getUsername && SCSAuth.getUsername()) || '';
+    body.append('username', username);
   }
 
   const res = await fetch(SCRIPT_URL, {

@@ -208,16 +208,18 @@ function handlePalletEntry(p) {
   }
   const nextRow = lastRow + 1;
 
-  // Always write A:E. Do not touch F:K or M (lookups / existing sheet behaviour).
+  // Always write A:E. Do not touch F:K or N (lookups / existing sheet behaviour).
   sh.getRange(nextRow, 1, 1, 5).setValues([[code, run, units, date, time]]);
 
-  // Edit Pallet re-configuration only: L = comment, N = boolean TRUE
+  // Edit Pallet re-configuration only: L = comment, M = user, O = boolean TRUE
   const reconfigRaw = String(p.reconfiguration == null ? '' : p.reconfiguration).trim().toLowerCase();
   const isReconfiguration = reconfigRaw === 'true' || reconfigRaw === '1' || reconfigRaw === 'yes';
   if (isReconfiguration) {
     const comment = p.comment == null ? '' : String(p.comment);
-    sh.getRange(nextRow, 12).setValue(comment); // column L
-    sh.getRange(nextRow, 14).setValue(true);    // column N
+    const username = (p.username || p.user || '').trim();
+    sh.getRange(nextRow, 12).setValue(comment);  // column L — comments
+    sh.getRange(nextRow, 13).setValue(username); // column M — current user
+    sh.getRange(nextRow, 15).setValue(true);     // column O — reconfiguration
   }
 
   return json({ result: 'success' });
