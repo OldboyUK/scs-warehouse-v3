@@ -9,6 +9,20 @@ const PALLET_ENTRY_URL = `${window.location.origin}/.netlify/functions/submit`;
 const LOCATION_URL = `${window.location.origin}/.netlify/functions/assignLocation`;
 const STAGING_URL = `${window.location.origin}/.netlify/functions/staging`;
 
+const PICKING_COLS = {
+  collectionRef: 0,
+  pickRef: 1,
+  palletId: 2,
+  runCode: 3,
+  company: 4,
+  product: 5,
+  format: 6,
+  totalUnits: 7,
+  pickQty: 8,
+  location: 9,
+  pickStatus: 10
+};
+
 let allCollectionRows = [];
 let dispatchedPalletIds = new Set();
 let currentCollection = null;
@@ -135,7 +149,8 @@ function buildCollection(collectionId) {
   if (!rows.length) return null;
 
   const pallets = rows.map(r => ({
-    key: `${r.collectionId}|${r.palletId}|${r.runCode}`,
+    key: r.pickRef || `${r.collectionId}|${r.palletId}|${r.runCode}`,
+    pickRef: r.pickRef,
     palletId: r.palletId,
     runCode: r.runCode,
     company: r.company,
@@ -620,22 +635,24 @@ async function proceedToStaging() {
 
 async function writeSplitPalletEntries() {
   const run = activePick.line.runCode;
+  const linePickRef = activePick.line.pickRef || '';
   const removedQty = activePick.originalKeeps === 'picked'
     ? activePick.remainingQty
     : activePick.pickedQty;
 
   // Row 1: original pallet negative movement for stock removed
-  await submitPalletEntry(activePick.originalPalletId, run, -removedQty);
+  await submitPalletEntry(activePick.originalPalletId, run, -removedQty, linePickRef);
   // Row 2: new pallet positive movement for transferred quantity
-  await submitPalletEntry(activePick.newPalletId, run, removedQty);
+  await submitPalletEntry(activePick.newPalletId, run, removedQty, linePickRef);
 }
 
-async function submitPalletEntry(code, run, units) {
+async function submitPalletEntry(code, run, units, movementPickRef) {
   const { date, time } = formatDateTimeForSheets();
   const body = new URLSearchParams();
   body.append('code', code);
   body.append('run', run);
   body.append('units', String(units));
+  body.append('pickRef', movementPickRef || '');
   body.append('date', date);
   body.append('time', time);
 
@@ -660,6 +677,7 @@ async function submitStaging(location) {
   const line = activePick.line;
   const body = new URLSearchParams();
   body.append('collectionId', currentCollection.id);
+  body.append('pickRef', line.pickRef || '');
   body.append('pallet', normalizePalletId(activePick.pickedPalletId));
   body.append('run', line.runCode);
   body.append('company', line.company);
@@ -977,20 +995,22 @@ function loadCollectionRows(text) {
     const r = parseCSVRow(rowStrings[i]);
     if (i === 0 && isHeaderRow(r, 'COLLECTION')) continue;
 
-    const collectionId = cleanCSVField(r[0]);
-    const palletId = cleanCSVField(r[1]);
+    const collectionId = cleanCSVField(r[PICKING_COLS.collectionRef]);
+    const pickRef = cleanCSVField(r[PICKING_COLS.pickRef]);
+    const palletId = cleanCSVField(r[PICKING_COLS.palletId]);
     if (!collectionId || !palletId) continue;
 
     allCollectionRows.push({
       collectionId,
+      pickRef,
       palletId,
-      runCode: cleanCSVField(r[2]),
-      company: cleanCSVField(r[3]),
-      product: cleanCSVField(r[4]),
-      format: cleanCSVField(r[5]),
-      availableUnits: parseUnits(r[6]),
-      unitsRequired: parseUnits(r[7]),
-      location: cleanCSVField(r[8])
+      runCode: cleanCSVField(r[PICKING_COLS.runCode]),
+      company: cleanCSVField(r[PICKING_COLS.company]),
+      product: cleanCSVField(r[PICKING_COLS.product]),
+      format: cleanCSVField(r[PICKING_COLS.format]),
+      availableUnits: parseUnits(r[PICKING_COLS.totalUnits]),
+      unitsRequired: parseUnits(r[PICKING_COLS.pickQty]),
+      location: cleanCSVField(r[PICKING_COLS.location])
     });
   }
 }

@@ -145,9 +145,10 @@ function handleDispatch(p) {
   return json({ result: 'success' });
 }
 
-// STAGING — write columns A–G only (H is a sheet formula / VLOOKUP)
+// STAGING — write A–H only (I location / J pick status are sheet formulas)
 function handleStaging(p) {
   const collectionId = (p.collectionId || '').trim();
+  const pickRef      = (p.pickRef      || '').trim();
   const pallet       = normalizePalletId(p.pallet || '');
   const run          = (p.run          || '').trim();
   const company      = (p.company      || '').trim();
@@ -167,10 +168,13 @@ function handleStaging(p) {
 
   // Write pallet as text first so Sheets does not drop a leading zero
   sh.getRange(nextRow, 1).setValue(collectionId);
-  const palletCell = sh.getRange(nextRow, 2);
+  const pickRefCell = sh.getRange(nextRow, 2);
+  pickRefCell.setNumberFormat('@');
+  pickRefCell.setValue(pickRef);
+  const palletCell = sh.getRange(nextRow, 3);
   palletCell.setNumberFormat('@');
   palletCell.setValue(String(pallet));
-  sh.getRange(nextRow, 3, nextRow, 7).setValues([[
+  sh.getRange(nextRow, 4, 1, 5).setValues([[
     run,
     company,
     product,
@@ -183,11 +187,12 @@ function handleStaging(p) {
 
 // PALLET ENTRY (COUNTS)
 function handlePalletEntry(p) {
-  const code  = (p.code  || '').trim();
-  const run   = (p.run   || '').trim();
-  const units = (p.units || '').trim();
-  const date  = (p.date  || '').trim();
-  const time  = (p.time  || '').trim();
+  const code    = (p.code    || '').trim();
+  const run     = (p.run     || '').trim();
+  const units   = (p.units   || '').trim();
+  const pickRef = (p.pickRef || '').trim();
+  const date    = (p.date    || '').trim();
+  const time    = (p.time    || '').trim();
 
   if (!code || !run || !units) {
     return json({ result: 'error', message: 'Missing fields (code, run, units)' });
@@ -210,6 +215,14 @@ function handlePalletEntry(p) {
 
   // Always write A:E. Do not touch F:K or N (lookups / existing sheet behaviour).
   sh.getRange(nextRow, 1, 1, 5).setValues([[code, run, units, date, time]]);
+
+  // Picking only: column P holds Pick Ref so STAGING can match the task, not the pallet ID.
+  // Leave blank for Counts / Edit Pallet / other callers that do not send pickRef.
+  if (pickRef) {
+    const pickRefCell = sh.getRange(nextRow, 16);
+    pickRefCell.setNumberFormat('@');
+    pickRefCell.setValue(pickRef);
+  }
 
   // Edit Pallet re-configuration only: L = comment, M = user, O = boolean TRUE
   const reconfigRaw = String(p.reconfiguration == null ? '' : p.reconfiguration).trim().toLowerCase();

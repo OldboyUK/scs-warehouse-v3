@@ -7,17 +7,50 @@ const PALLETS_CSV =
 const STOCK_CSV =
 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=1879287780&single=true&output=csv';
 
+const PICKING_CSV =
+'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=810040978&single=true&output=csv';
+
 const SCRIPT_URL =
 `${window.location.origin}/.netlify/functions/submit`;
+
+const PICKING_COLS = {
+  collectionRef: 0,
+  pickRef: 1,
+  palletId: 2,
+  runCode: 3,
+  company: 4,
+  product: 5,
+  format: 6,
+  totalUnits: 7,
+  pickQty: 8,
+  location: 9,
+  pickStatus: 10
+};
+
+const STOCK_COLS = {
+  palletId: 0,
+  runCode: 1,
+  company: 2,
+  product: 3,
+  format: 4,
+  units: 5
+};
 
 let sourcePallet = '';
 let destinationPallet = '';
 
 let selectedRow = null;
+let pickRef = '';
+let runCode = '';
+let company = '';
+let product = '';
+let format = '';
+let unitsAvailable = 0;
 let pickedUnits = 0;
 
 const palletConfigs = new Map();
 let stockData = [];
+let pickingData = [];
 
 function parseCSV(text) {
 
@@ -69,6 +102,49 @@ function parseCSV(text) {
   return rows;
 }
 
+function cell(row, index) {
+  return String((row && row[index]) || '').trim();
+}
+
+function isHeaderRow(row, label) {
+  return cell(row, 0).toUpperCase().replace(/\s+/g, ' ').includes(label);
+}
+
+function fieldsFromPickingRow(row) {
+  return {
+    pickRef: cell(row, PICKING_COLS.pickRef),
+    runCode: cell(row, PICKING_COLS.runCode),
+    company: cell(row, PICKING_COLS.company),
+    product: cell(row, PICKING_COLS.product),
+    format: cell(row, PICKING_COLS.format),
+    unitsAvailable: parseInt(cell(row, PICKING_COLS.totalUnits), 10) || 0,
+    label: cell(row, PICKING_COLS.pickRef)
+      ? `${cell(row, PICKING_COLS.runCode)} (${cell(row, PICKING_COLS.pickRef)})`
+      : cell(row, PICKING_COLS.runCode)
+  };
+}
+
+function fieldsFromStockRow(row) {
+  return {
+    pickRef: '',
+    runCode: cell(row, STOCK_COLS.runCode),
+    company: cell(row, STOCK_COLS.company),
+    product: cell(row, STOCK_COLS.product),
+    format: cell(row, STOCK_COLS.format),
+    unitsAvailable: parseInt(cell(row, STOCK_COLS.units), 10) || 0,
+    label: cell(row, STOCK_COLS.runCode)
+  };
+}
+
+function applySelectedFields(fields) {
+  pickRef = fields.pickRef || '';
+  runCode = fields.runCode || '';
+  company = fields.company || '';
+  product = fields.product || '';
+  format = fields.format || '';
+  unitsAvailable = fields.unitsAvailable || 0;
+}
+
 async function loadData() {
 
   const palletText = await fetch(PALLETS_CSV).then(r => r.text());
@@ -93,11 +169,30 @@ async function loadData() {
   }
 
   const stockText = await fetch(STOCK_CSV).then(r => r.text());
-
   stockData = parseCSV(stockText);
+
+  pickingData = [];
+  try {
+    const pickingText = await fetch(PICKING_CSV).then(r => r.text());
+    pickingData = parseCSV(pickingText).filter((row, i) => {
+      if (i === 0 && isHeaderRow(row, 'COLLECTION')) return false;
+      return !!cell(row, PICKING_COLS.palletId);
+    });
+  } catch (err) {
+    pickingData = [];
+  }
 }
 
 function showStep1() {
+
+  pickRef = '';
+  runCode = '';
+  company = '';
+  product = '';
+  format = '';
+  unitsAvailable = 0;
+  selectedRow = null;
+  pickedUnits = 0;
 
   app.innerHTML = `
     <p>Select which pallet that you want to pick from</p>
@@ -162,10 +257,30 @@ function showVerifyPallet() {
   `;
 }
 
+function rowsForSourcePallet() {
+  const pickingRows = pickingData
+    .filter(r => cell(r, PICKING_COLS.palletId) === sourcePallet)
+    .map(row => ({
+      row,
+      fields: fieldsFromPickingRow(row)
+    }));
+
+  const pickingRuns = new Set(pickingRows.map(e => e.fields.runCode));
+
+  const stockRows = stockData
+    .filter(r => cell(r, STOCK_COLS.palletId) === sourcePallet)
+    .filter(r => !pickingRuns.has(cell(r, STOCK_COLS.runCode)))
+    .map(row => ({
+      row,
+      fields: fieldsFromStockRow(row)
+    }));
+
+  return pickingRows.concat(stockRows);
+}
+
 function showRunSelection() {
 
-  const rows =
-    stockData.filter(r => r[0] === sourcePallet);
+  const rows = rowsForSourcePallet();
 
   if (!rows.length) {
 
@@ -183,8 +298,8 @@ function showRunSelection() {
 
     <select id="runSelect">
 
-      ${rows.map((r,i)=>
-        `<option value="${i}">${r[1]}</option>`
+      ${rows.map((entry,i)=>
+        `<option value="${i}">${entry.fields.label}</option>`
       ).join('')}
 
     </select>
@@ -201,17 +316,20 @@ function showRunSelection() {
 
 function confirmItem() {
 
-  selectedRow =
+  const entry =
     window.currentRows[
       document.getElementById('runSelect').value
     ];
 
+  selectedRow = entry.row;
+  applySelectedFields(entry.fields);
+
   app.innerHTML = `
-    <p>Run Code: ${selectedRow[1]}</p>
-    <p>Company: ${selectedRow[2]}</p>
-    <p>Product: ${selectedRow[3]}</p>
-    <p>Format: ${selectedRow[4]}</p>
-    <p>Units Available: ${selectedRow[5]}</p>
+    <p>Run Code: ${runCode}</p>
+    <p>Company: ${company}</p>
+    <p>Product: ${product}</p>
+    <p>Format: ${format}</p>
+    <p>Units Available: ${unitsAvailable}</p>
 
     <div class="actions">
 
@@ -236,7 +354,7 @@ function showQuantityStep() {
       id="qty"
       type="number"
       min="1"
-      max="${selectedRow[5]}"
+      max="${unitsAvailable}"
     >
 
     <div class="actions">
@@ -257,8 +375,7 @@ async function submitNegativeMovement() {
       10
     );
 
-  const available =
-    parseInt(selectedRow[5],10);
+  const available = unitsAvailable;
 
   if (
     !pickedUnits ||
@@ -272,8 +389,9 @@ async function submitNegativeMovement() {
 
   await submitMovement(
     sourcePallet,
-    selectedRow[1],
-    -pickedUnits
+    runCode,
+    -pickedUnits,
+    pickRef
   );
 
   showDestinationOptions();
@@ -346,8 +464,9 @@ async function submitDestination() {
 
   await submitMovement(
     destinationPallet,
-    selectedRow[1],
-    qty
+    runCode,
+    qty,
+    pickRef
   );
 
   finish();
@@ -356,7 +475,8 @@ async function submitDestination() {
 async function submitMovement(
   pallet,
   run,
-  units
+  units,
+  movementPickRef
 ) {
 
   const now = new Date();
@@ -376,6 +496,7 @@ async function submitMovement(
   body.append('code', pallet);
   body.append('run', run);
   body.append('units', units);
+  body.append('pickRef', movementPickRef || '');
   body.append('date', date);
   body.append('time', time);
 

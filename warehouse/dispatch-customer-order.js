@@ -7,6 +7,19 @@ const DISPATCH_HISTORY_CSV =
 
 const DISPATCH_URL = `${window.location.origin}/.netlify/functions/dispatch`;
 
+const STAGING_COLS = {
+  collectionRef: 0,
+  pickRef: 1,
+  palletId: 2,
+  runCode: 3,
+  company: 4,
+  product: 5,
+  format: 6,
+  pickQty: 7,
+  location: 8,
+  pickStatus: 9
+};
+
 let allStagingRows = [];
 let dispatchedPalletIds = new Set();
 let currentCollection = null;
@@ -533,23 +546,25 @@ function loadStagingRows(text) {
     const r = parseCSVRow(rowStrings[i]);
     if (i === 0 && isHeaderRow(r, 'COLLECTION')) continue;
 
-    const collectionId = cleanCSVField(r[0]);
-    const palletId = cleanCSVField(r[1]);
+    const collectionId = cleanCSVField(r[STAGING_COLS.collectionRef]);
+    const pickRef = cleanCSVField(r[STAGING_COLS.pickRef]);
+    const palletId = cleanCSVField(r[STAGING_COLS.palletId]);
     if (!collectionId || !palletId) continue;
 
-    const locationRaw = cleanCSVField(r[7]);
+    const locationRaw = cleanCSVField(r[STAGING_COLS.location]);
     const location = (!locationRaw || locationRaw === '#REF!' || locationRaw === 'FALSE')
       ? ''
       : locationRaw;
 
     allStagingRows.push({
       collectionId,
+      pickRef,
       palletId: normalizePalletId(palletId),
-      runCode: cleanCSVField(r[2]),
-      company: cleanCSVField(r[3]),
-      product: cleanCSVField(r[4]),
-      format: cleanCSVField(r[5]),
-      pickVolume: parseUnits(r[6]),
+      runCode: cleanCSVField(r[STAGING_COLS.runCode]),
+      company: cleanCSVField(r[STAGING_COLS.company]),
+      product: cleanCSVField(r[STAGING_COLS.product]),
+      format: cleanCSVField(r[STAGING_COLS.format]),
+      pickVolume: parseUnits(r[STAGING_COLS.pickQty]),
       location
     });
   }

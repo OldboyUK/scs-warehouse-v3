@@ -19,6 +19,7 @@ exports.handler = async function (event) {
     body.append('code', params.get('code'));
     body.append('run', params.get('run'));
     body.append('units', params.get('units'));
+    body.append('pickRef', params.get('pickRef') || '');
     body.append('date', params.get('date'));
     body.append('time', params.get('time'));
     // Optional Edit Pallet / re-configuration fields (leave unset for normal pallet entry)
