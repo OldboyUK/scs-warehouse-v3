@@ -611,6 +611,7 @@ button:active, .btn:active { transform: translateY(0); }
 .result-message {
   margin: 0 0 20px;
   color: var(--muted);
+  white-space: pre-line;
 }
 
 /* ===== Combo Dropdown ===== */

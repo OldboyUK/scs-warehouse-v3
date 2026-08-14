@@ -4,6 +4,8 @@ const STAGING_CSV =
   'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=332871798&single=true&output=csv';
 const DISPATCH_HISTORY_CSV =
   'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=848481035&single=true&output=csv';
+const STOCK_CSV =
+  'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=1879287780&single=true&output=csv';
 
 const DISPATCH_URL = `${window.location.origin}/.netlify/functions/dispatch`;
 
@@ -22,6 +24,7 @@ const STAGING_COLS = {
 
 let allStagingRows = [];
 let dispatchedPalletIds = new Set();
+let palletStock = new Map();
 let currentCollection = null;
 let dispatchMode = false;
 let isSubmitting = false;
@@ -108,6 +111,48 @@ function formatDateTimeForSheets() {
 function parseUnits(value) {
   const n = parseInt(String(value || '').replace(/,/g, ''), 10);
   return Number.isFinite(n) ? n : 0;
+}
+
+function runKey(run) {
+  return String(run || '').trim().toUpperCase();
+}
+
+function loadPalletStock(text) {
+  palletStock.clear();
+  const rowStrings = splitCSVRows(text);
+  for (let i = 0; i < rowStrings.length; i++) {
+    const r = parseCSVRow(rowStrings[i]);
+    const palletId = normalizePalletId(cleanCSVField(r[0]));
+    if (!palletId || (i === 0 && /pallet/i.test(palletId))) continue;
+    const units = parseUnits(r[6] != null && String(r[6]).trim() !== '' ? r[6] : r[5]);
+    if (units <= 0) continue;
+    if (!palletStock.has(palletId)) palletStock.set(palletId, []);
+    palletStock.get(palletId).push({
+      runCode: cleanCSVField(r[1]),
+      company: cleanCSVField(r[2]),
+      product: cleanCSVField(r[3]),
+      format: cleanCSVField(r[4]),
+      units
+    });
+  }
+}
+
+function leftoverStockForPallet(palletId) {
+  const id = normalizePalletId(palletId);
+  const stock = palletStock.get(id) || [];
+  const stagedRuns = new Set(
+    allStagingRows
+      .filter(r => normalizePalletId(r.palletId) === id)
+      .map(r => runKey(r.runCode))
+      .filter(Boolean)
+  );
+  if (!stagedRuns.size) return [];
+  return stock.filter(line => !stagedRuns.has(runKey(line.runCode)));
+}
+
+function formatDispatchBlockedMessage(leftover) {
+  const details = leftover.map(line => `${line.runCode} — ${line.units} units remaining.`).join('\n');
+  return `Cannot dispatch pallet\nThis pallet still contains stock that has not been picked or transferred.\n${details}\nThis stock must be picked or transferred to another pallet before dispatch.`;
 }
 
 function getUniqueCollectionIds() {
@@ -411,6 +456,12 @@ function processPalletScan(palletId) {
     return;
   }
 
+  const leftover = leftoverStockForPallet(scannedId);
+  if (leftover.length) {
+    showDispatchStep(formatDispatchBlockedMessage(leftover), true);
+    return;
+  }
+
   submitDispatch(match, scannedId);
 }
 
@@ -454,7 +505,7 @@ async function submitDispatch(pallet, scannedId) {
   } catch (err) {
     console.error(err);
     isSubmitting = false;
-    showDispatchStep('Dispatch failed. Please try again.', true);
+    showDispatchStep(err.message || 'Dispatch failed. Please try again.', true);
   }
 }
 
@@ -600,9 +651,10 @@ function loadDispatchHistory(text) {
 async function init() {
   showLoading('Loading collection data…');
   try {
-    const [stagingRes, dispatchRes] = await Promise.all([
+    const [stagingRes, dispatchRes, stockRes] = await Promise.all([
       fetch(STAGING_CSV),
-      fetch(DISPATCH_HISTORY_CSV)
+      fetch(DISPATCH_HISTORY_CSV),
+      fetch(STOCK_CSV)
     ]);
 
     if (!stagingRes.ok || !dispatchRes.ok) {
@@ -616,6 +668,11 @@ async function init() {
 
     loadStagingRows(stagingText);
     loadDispatchHistory(dispatchText);
+    if (stockRes.ok) {
+      loadPalletStock(await stockRes.text());
+    } else {
+      palletStock.clear();
+    }
     showSelectStep();
   } catch (err) {
     console.error(err);

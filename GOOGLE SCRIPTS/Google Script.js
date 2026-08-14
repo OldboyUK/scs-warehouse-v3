@@ -13,6 +13,7 @@ const SHEET_DISPATCH            = 'PALLET DISPATCH';
 const SHEET_LOCATION_ASSIGNMENT = 'LOCATION ASSIGNMENT';
 const SHEET_STAGING             = 'STAGING';
 const SHEET_PRODUCT_DB_3PT      = 'PRODUCT DATABASE (3PT)';
+const SHEET_GID_STOCK           = 1879287780;
 
 /** ====== MAIN ENTRY POINT ====== **/
 function doPost(e) {
@@ -127,6 +128,14 @@ function handleDispatch(p) {
   if (!pallet || !date || !time) return json({ result: 'error', message: 'Missing fields' });
 
   const ss = openSpreadsheet(SSID_DISPATCH);
+  const leftover = getLeftoverStockBlockingDispatch(ss, pallet);
+  if (leftover.error) {
+    return json({ result: 'error', message: leftover.error });
+  }
+  if (leftover.lines && leftover.lines.length) {
+    return json({ result: 'error', message: formatDispatchBlockedMessage(leftover.lines) });
+  }
+
   const sh = ss.getSheetByName(SHEET_DISPATCH);
   if (!sh) return json({ result: 'error', message: 'Dispatch sheet not found' });
 
@@ -268,6 +277,119 @@ function normalizePalletId(id) {
   const s = String(id || '').trim();
   if (/^\d+$/.test(s) && s.length > 0 && s.length < 15) return s.padStart(15, '0');
   return s;
+}
+
+function getSheetByGid(ss, gid) {
+  const id = Number(gid);
+  const sheets = ss.getSheets();
+  for (let i = 0; i < sheets.length; i++) {
+    if (sheets[i].getSheetId() === id) return sheets[i];
+  }
+  return null;
+}
+
+function getStockSheet(ss) {
+  const byGid = getSheetByGid(ss, SHEET_GID_STOCK);
+  if (byGid) return byGid;
+  const names = ['STOCK COUNT', 'STOCK', 'PALLET CONFIGURATION', 'Pallet Configuration', 'PALLET CONFIG'];
+  for (let i = 0; i < names.length; i++) {
+    const sh = ss.getSheetByName(names[i]);
+    if (sh) return sh;
+  }
+  return null;
+}
+
+function headerIndex(headers, testers) {
+  for (let i = 0; i < headers.length; i++) {
+    const h = String(headers[i] || '').toUpperCase().replace(/\s+/g, ' ').trim();
+    for (let j = 0; j < testers.length; j++) {
+      if (testers[j](h)) return i;
+    }
+  }
+  return -1;
+}
+
+function parseSheetUnits(value) {
+  const n = parseInt(String(value || '').replace(/,/g, ''), 10);
+  return isNaN(n) ? 0 : n;
+}
+
+function getRemainingStockLines(ss, palletId) {
+  const sh = getStockSheet(ss);
+  if (!sh) {
+    return { error: 'Cannot dispatch pallet. Unable to verify remaining stock: stock sheet not found.' };
+  }
+
+  const values = sh.getDataRange().getDisplayValues();
+  if (!values.length) return { lines: [] };
+
+  const headers = values[0];
+  let palletCol = headerIndex(headers, [function (h) { return h.indexOf('PALLET') !== -1; }]);
+  let runCol = headerIndex(headers, [function (h) { return h.indexOf('RUN') !== -1; }]);
+  let availCol = headerIndex(headers, [function (h) { return h.indexOf('AVAILABLE') !== -1; }]);
+  let unitsCol = headerIndex(headers, [function (h) {
+    return h === 'UNITS' || (h.indexOf('UNIT') !== -1 && h.indexOf('TOTAL') === -1);
+  }]);
+
+  if (palletCol < 0) palletCol = 0;
+  if (runCol < 0) runCol = 1;
+  if (availCol < 0) availCol = unitsCol >= 0 ? unitsCol : (headers.length >= 7 ? 6 : 5);
+
+  const target = normalizePalletId(palletId);
+  const lines = [];
+  for (let i = 1; i < values.length; i++) {
+    const id = normalizePalletId(values[i][palletCol]);
+    if (id !== target) continue;
+    const units = parseSheetUnits(values[i][availCol]);
+    if (units <= 0) continue;
+    const runCode = String(values[i][runCol] || '').trim();
+    if (!runCode) continue;
+    lines.push({ runCode: runCode, units: units });
+  }
+  return { lines: lines };
+}
+
+function getStagedRunCodesForPallet(ss, palletId) {
+  const sh = ss.getSheetByName(SHEET_STAGING);
+  if (!sh) return [];
+  const values = sh.getDataRange().getDisplayValues();
+  const target = normalizePalletId(palletId);
+  const runs = [];
+  for (let i = 1; i < values.length; i++) {
+    const id = normalizePalletId(values[i][2]);
+    if (id !== target) continue;
+    const run = String(values[i][3] || '').trim().toUpperCase();
+    if (run) runs.push(run);
+  }
+  return runs;
+}
+
+function leftoverStockForDispatch(remainingLines, stagedRuns) {
+  if (!stagedRuns || !stagedRuns.length) return [];
+  const staged = {};
+  for (let i = 0; i < stagedRuns.length; i++) {
+    staged[String(stagedRuns[i] || '').trim().toUpperCase()] = true;
+  }
+  const leftover = [];
+  for (let i = 0; i < remainingLines.length; i++) {
+    const key = String(remainingLines[i].runCode || '').trim().toUpperCase();
+    if (!staged[key]) leftover.push(remainingLines[i]);
+  }
+  return leftover;
+}
+
+function formatDispatchBlockedMessage(leftover) {
+  const details = leftover.map(function (line) {
+    return line.runCode + ' — ' + line.units + ' units remaining.';
+  }).join('\n');
+  return 'Cannot dispatch pallet\nThis pallet still contains stock that has not been picked or transferred.\n' + details + '\nThis stock must be picked or transferred to another pallet before dispatch.';
+}
+
+function getLeftoverStockBlockingDispatch(ss, palletId) {
+  const remaining = getRemainingStockLines(ss, palletId);
+  if (remaining.error) return remaining;
+  const stagedRuns = getStagedRunCodesForPallet(ss, palletId);
+  return { lines: leftoverStockForDispatch(remaining.lines || [], stagedRuns) };
 }
 
 function findNextDataRow(sh) {

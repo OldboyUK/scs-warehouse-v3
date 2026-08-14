@@ -4,6 +4,8 @@ const COLLECTIONS_CSV =
   'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=810040978&single=true&output=csv';
 const DISPATCH_HISTORY_CSV =
   'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=848481035&single=true&output=csv';
+const STOCK_CSV =
+  'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=1879287780&single=true&output=csv';
 
 const PALLET_ENTRY_URL = `${window.location.origin}/.netlify/functions/submit`;
 const LOCATION_URL = `${window.location.origin}/.netlify/functions/assignLocation`;
@@ -25,6 +27,8 @@ const PICKING_COLS = {
 
 let allCollectionRows = [];
 let dispatchedPalletIds = new Set();
+/** Pallet ID → [{ runCode, company, product, format, units }] */
+let palletStock = new Map();
 let currentCollection = null;
 let pickMode = false;
 
@@ -113,6 +117,206 @@ function formatDateTimeForSheets() {
 function parseUnits(value) {
   const n = parseInt(String(value || '').replace(/,/g, ''), 10);
   return Number.isFinite(n) ? n : 0;
+}
+
+function normalizePalletId(id) {
+  const s = String(id || '').trim();
+  if (/^\d+$/.test(s) && s.length > 0 && s.length < 15) return s.padStart(15, '0');
+  return s;
+}
+
+function runKey(run) {
+  return String(run || '').trim().toUpperCase();
+}
+
+function detectStockColumns(headerRow) {
+  const cols = {
+    palletId: 0,
+    runCode: 1,
+    company: 2,
+    product: 3,
+    format: 4,
+    units: 5,
+    availableUnits: -1
+  };
+  if (!headerRow || !headerRow.length) return cols;
+
+  for (let i = 0; i < headerRow.length; i++) {
+    const h = cleanCSVField(headerRow[i]).toUpperCase().replace(/\s+/g, ' ');
+    if (h.includes('PALLET')) cols.palletId = i;
+    else if (h.includes('RUN')) cols.runCode = i;
+    else if (h.includes('COMPANY') || h.includes('CUSTOMER')) cols.company = i;
+    else if (h.includes('PRODUCT')) cols.product = i;
+    else if (h.includes('FORMAT')) cols.format = i;
+    else if (h.includes('AVAILABLE')) cols.availableUnits = i;
+    else if (h === 'UNITS' || (h.includes('UNIT') && !h.includes('TOTAL'))) cols.units = i;
+  }
+  return cols;
+}
+
+function loadPalletStock(text) {
+  palletStock.clear();
+  const rowStrings = splitCSVRows(text);
+  let cols = detectStockColumns([]);
+
+  for (let i = 0; i < rowStrings.length; i++) {
+    const r = parseCSVRow(rowStrings[i]);
+    if (i === 0 && isHeaderRow(r, 'PALLET')) {
+      cols = detectStockColumns(r);
+      continue;
+    }
+
+    const palletId = normalizePalletId(cleanCSVField(r[cols.palletId]));
+    if (!palletId) continue;
+
+    const unitsIndex = cols.availableUnits >= 0 ? cols.availableUnits : cols.units;
+    const units = parseUnits(r[unitsIndex]);
+    if (units <= 0) continue;
+
+    const line = {
+      palletId,
+      runCode: cleanCSVField(r[cols.runCode]),
+      company: cleanCSVField(r[cols.company]),
+      product: cleanCSVField(r[cols.product]),
+      format: cleanCSVField(r[cols.format]),
+      units
+    };
+
+    if (!palletStock.has(palletId)) palletStock.set(palletId, []);
+    palletStock.get(palletId).push(line);
+  }
+}
+
+function getPhysicalStock(palletId) {
+  return palletStock.get(normalizePalletId(palletId)) || [];
+}
+
+function applyLocalStockMove(fromId, toId, run, qty, meta) {
+  const fromKey = normalizePalletId(fromId);
+  const toKey = normalizePalletId(toId);
+  const key = runKey(run);
+  const amount = parseUnits(qty);
+  if (!fromKey || !toKey || !key || amount <= 0) return;
+
+  const fromLines = palletStock.get(fromKey) || [];
+  const nextFrom = [];
+  for (const line of fromLines) {
+    if (runKey(line.runCode) !== key) {
+      nextFrom.push(line);
+      continue;
+    }
+    const left = line.units - amount;
+    if (left > 0) nextFrom.push(Object.assign({}, line, { units: left }));
+  }
+  if (nextFrom.length) palletStock.set(fromKey, nextFrom);
+  else palletStock.delete(fromKey);
+
+  const toLines = palletStock.get(toKey) || [];
+  const existing = toLines.find(line => runKey(line.runCode) === key);
+  if (existing) {
+    existing.units += amount;
+  } else {
+    toLines.push({
+      palletId: toKey,
+      runCode: (meta && meta.runCode) || run,
+      company: (meta && meta.company) || '',
+      product: (meta && meta.product) || '',
+      format: (meta && meta.format) || '',
+      units: amount
+    });
+  }
+  palletStock.set(toKey, toLines);
+}
+
+function remainingStockAfterPick(palletId, pickedRun, pickedQty) {
+  const remaining = [];
+  const pickedKey = runKey(pickedRun);
+  let foundPicked = false;
+
+  for (const line of getPhysicalStock(palletId)) {
+    if (runKey(line.runCode) === pickedKey) {
+      foundPicked = true;
+      const left = line.units - pickedQty;
+      if (left > 0) remaining.push(Object.assign({}, line, { units: left }));
+    } else {
+      remaining.push(Object.assign({}, line));
+    }
+  }
+
+  if (!foundPicked && activePick && activePick.line) {
+    const left = activePick.line.availableUnits - pickedQty;
+    if (left > 0) {
+      remaining.push({
+        palletId: normalizePalletId(palletId),
+        runCode: activePick.line.runCode,
+        company: activePick.line.company,
+        product: activePick.line.product,
+        format: activePick.line.format,
+        units: left
+      });
+    }
+  }
+
+  return remaining;
+}
+
+function remainingStockHTML(lines) {
+  if (!lines || !lines.length) return '';
+  return `
+    <div class="pallet-stock-list pallet-stock-list--remaining">
+      ${lines.map(line => `
+        <div class="pallet-stock-item pallet-stock-item--other">
+          <div class="pallet-stock-main">
+            <strong>${escapeHTML(line.runCode || '-')}</strong>
+            <span>${escapeHTML([line.product, line.format].filter(Boolean).join(' — ') || 'Remaining stock')}</span>
+          </div>
+          <span class="pallet-stock-qty">${escapeHTML(String(line.units))} units</span>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function buildPalletContents(palletId) {
+  const scannedId = normalizePalletId(palletId);
+  const stock = getPhysicalStock(scannedId);
+  const collectionLines = (currentCollection ? currentCollection.pallets : [])
+    .filter(p => normalizePalletId(p.palletId) === scannedId);
+  const pickableLines = collectionLines.filter(p => !isPalletDone(p));
+  const items = [];
+  const seenRuns = new Set();
+
+  for (const line of stock) {
+    const pending = pickableLines.find(p => runKey(p.runCode) === runKey(line.runCode));
+    const anyLine = collectionLines.find(p => runKey(p.runCode) === runKey(line.runCode));
+    items.push({
+      pickable: !!pending,
+      collectionLine: pending || null,
+      runCode: line.runCode,
+      company: line.company,
+      product: line.product,
+      format: line.format,
+      units: line.units,
+      alreadyDone: !pending && !!anyLine
+    });
+    seenRuns.add(runKey(line.runCode));
+  }
+
+  for (const line of pickableLines) {
+    if (seenRuns.has(runKey(line.runCode))) continue;
+    items.push({
+      pickable: true,
+      collectionLine: line,
+      runCode: line.runCode,
+      company: line.company,
+      product: line.product,
+      format: line.format,
+      units: line.availableUnits,
+      alreadyDone: false
+    });
+  }
+
+  return { collectionLines, pickableLines, items };
 }
 
 function getUniqueCollectionIds() {
@@ -361,44 +565,71 @@ function confirmScanPallet() {
 function processPalletScan(palletId) {
   if (!currentCollection) return;
 
-  const matches = currentCollection.pallets.filter(p => p.palletId === palletId);
-  if (!matches.length) {
+  const scannedId = normalizePalletId(palletId);
+  const contents = buildPalletContents(scannedId);
+
+  if (!contents.collectionLines.length) {
     showPickStep('This pallet is not part of this Collection.', true);
     return;
   }
 
-  const pending = matches.filter(p => !isPalletDone(p));
-  if (!pending.length) {
+  if (!contents.pickableLines.length) {
     showPickStep('This pallet has already been completed.', true);
     return;
   }
 
-  if (pending.length === 1) {
-    beginQuantityStep(pending[0]);
-    return;
-  }
-
-  showLineSelectStep(pending);
+  showPalletContentsStep(scannedId, contents);
 }
 
-function showLineSelectStep(lines) {
+function showPalletContentsStep(palletId, contents) {
+  const items = contents.items;
+  window._palletContentItems = items;
+
+  const list = items.map((item, i) => {
+    const meta = [item.product, item.format].filter(Boolean).join(' — ');
+    const tag = item.pickable
+      ? 'This pick'
+      : item.alreadyDone
+        ? 'Already picked'
+        : 'Not part of this pick';
+    const cls = item.pickable
+      ? 'pallet-stock-item pallet-stock-item--pickable'
+      : 'pallet-stock-item pallet-stock-item--other';
+    const action = item.pickable
+      ? `onclick="selectPalletStockLine(${i})"`
+      : 'disabled';
+
+    return `
+      <button type="button" class="${cls}" ${action}>
+        <div class="pallet-stock-main">
+          <strong>${escapeHTML(item.runCode || '-')}</strong>
+          <span>${escapeHTML(meta || 'Stock line')}</span>
+        </div>
+        <div class="pallet-stock-side">
+          <span class="pallet-stock-qty">${escapeHTML(String(item.units))} units</span>
+          <span class="pallet-stock-tag">${escapeHTML(tag)}</span>
+        </div>
+      </button>
+    `;
+  }).join('');
+
   app.innerHTML = `
     ${summaryHTML(currentCollection)}
-    <p class="status">Multiple items on this pallet. Select the line to pick:</p>
-    <label for="lineSelect">Item</label>
-    <select id="lineSelect">
-      ${lines.map((p, i) => `
-        <option value="${i}">
-          ${escapeHTML(p.runCode)} — ${escapeHTML(p.product)} (${escapeHTML(String(p.unitsRequired))} req / ${escapeHTML(String(p.availableUnits))} avail)
-        </option>
-      `).join('')}
-    </select>
+    <p class="status">Pallet <strong>${escapeHTML(palletId)}</strong> — all stock currently on this pallet is shown below. Select a highlighted item to pick.</p>
+    <div class="pallet-stock-list">
+      ${list}
+    </div>
     <div class="actions mt-3">
       <button class="btn btn-ghost" onclick="showPickStep()">Back</button>
-      <button class="btn btn-primary" onclick="confirmLineSelect()">Next</button>
     </div>
   `;
-  window._lineSelectOptions = lines;
+}
+
+function selectPalletStockLine(index) {
+  const items = window._palletContentItems || [];
+  const item = items[index];
+  if (!item || !item.pickable || !item.collectionLine) return;
+  beginQuantityStep(item.collectionLine);
 }
 
 function confirmLineSelect() {
@@ -418,6 +649,7 @@ function beginQuantityStep(pallet) {
     originalPalletId: pallet.palletId,
     pickedQty: pallet.unitsRequired,
     remainingQty: 0,
+    remainingStock: [],
     needsSplit: false,
     splitWritten: false,
     originalKeeps: null, // 'picked' | 'remaining' — which stock keeps the original pallet ID
@@ -476,7 +708,8 @@ function confirmPickQuantity() {
 
   activePick.pickedQty = qty;
   activePick.remainingQty = line.availableUnits - qty;
-  activePick.needsSplit = qty < line.availableUnits;
+  activePick.remainingStock = remainingStockAfterPick(line.palletId, line.runCode, qty);
+  activePick.needsSplit = activePick.remainingStock.length > 0;
   activePick.pickedPalletId = line.palletId;
   activePick.newPalletId = '';
   activePick.originalKeeps = null;
@@ -493,15 +726,19 @@ function confirmPickQuantity() {
 function showPickedPalletScanStep(message, isError) {
   activePick.splitScanTarget = 'picked';
   const msgClass = isError ? 'text-error' : '';
+  const remainingIntro = (activePick.remainingStock || []).length
+    ? 'Other stock still remains on this pallet. Scan a <strong>different</strong> pallet ID for the picked stock, or scan the original pallet to assign a new pallet ID to the remaining stock.'
+    : 'A split is required. Scan or enter the pallet ID for the <strong>picked</strong> stock.';
 
   app.innerHTML = `
     ${summaryHTML(currentCollection)}
-    <p class="status">A split is required. Scan or enter the pallet ID for the <strong>picked</strong> stock (${activePick.pickedQty} units).</p>
+    <p class="status">${remainingIntro}</p>
     ${UI.summaryCard([
       { label: 'Original Pallet', value: escapeHTML(activePick.originalPalletId) },
-      { label: 'Picked Quantity', value: String(activePick.pickedQty) },
-      { label: 'Remaining Quantity', value: String(activePick.remainingQty) }
+      { label: 'Picked Run Code', value: escapeHTML(activePick.line.runCode || '-') },
+      { label: 'Picked Quantity', value: String(activePick.pickedQty) }
     ])}
+    ${remainingStockHTML(activePick.remainingStock || [])}
     <div id="dispatchMessage" class="status ${msgClass}">${message ? escapeHTML(message) : 'Scan or enter the pallet ID for the picked stock.'}</div>
     <label for="palletInput">Pallet Identifier (15-digit code):</label>
     <input id="palletInput" maxlength="15" placeholder="Scan or type 15 digits" />
@@ -522,19 +759,10 @@ function showPickedPalletScanStep(message, isError) {
 }
 
 function showSamePalletConfirmStep() {
-  app.innerHTML = `
-    ${summaryHTML(currentCollection)}
-    ${UI.summaryCard([
-      { label: 'Original Pallet', value: escapeHTML(activePick.originalPalletId) },
-      { label: 'Picked Quantity', value: String(activePick.pickedQty) },
-      { label: 'Remaining Quantity', value: String(activePick.remainingQty) }
-    ])}
-    <div id="dispatchMessage" class="status">It appears that the scanned pallet ID is the same as the original pallet ID. Would you like to assign a new pallet ID to the remaining stock instead?</div>
-    <div class="actions mt-3">
-      <button class="btn btn-success" onclick="confirmAssignRemainingNewPallet()">Yes</button>
-      <button class="btn btn-ghost" onclick="showPickedPalletScanStep()">No</button>
-    </div>
-  `;
+  showRemainingPalletScanStep(
+    'The destination matches the source pallet and other stock still remains. Scan a NEW pallet ID for the remaining stock.',
+    false
+  );
 }
 
 function confirmAssignRemainingNewPallet() {
@@ -544,15 +772,17 @@ function confirmAssignRemainingNewPallet() {
 function showRemainingPalletScanStep(message, isError) {
   activePick.splitScanTarget = 'remaining';
   const msgClass = isError ? 'text-error' : '';
+  const remainingUnits = (activePick.remainingStock || []).reduce((sum, line) => sum + (line.units || 0), 0);
 
   app.innerHTML = `
     ${summaryHTML(currentCollection)}
-    <p class="status">Scan or enter the pallet ID for the <strong>remaining</strong> stock (${activePick.remainingQty} units).</p>
+    <p class="status">Scan or enter a <strong>new</strong> pallet ID for the remaining stock (${remainingUnits} units). Picked stock will stay on the original pallet.</p>
     ${UI.summaryCard([
       { label: 'Original Pallet', value: escapeHTML(activePick.originalPalletId) },
-      { label: 'Picked Quantity', value: String(activePick.pickedQty) },
-      { label: 'Remaining Quantity', value: String(activePick.remainingQty) }
+      { label: 'Picked Run Code', value: escapeHTML(activePick.line.runCode || '-') },
+      { label: 'Picked Quantity', value: String(activePick.pickedQty) }
     ])}
+    ${remainingStockHTML(activePick.remainingStock || [])}
     <div id="dispatchMessage" class="status ${msgClass}">${message ? escapeHTML(message) : 'Scan or enter a new pallet ID for the remaining stock.'}</div>
     <label for="palletInput">Pallet Identifier (15-digit code):</label>
     <input id="palletInput" maxlength="15" placeholder="Scan or type 15 digits" />
@@ -586,7 +816,7 @@ function confirmSplitPalletScan() {
 
 function processSplitPalletScan(palletId) {
   if (activePick.splitScanTarget === 'remaining') {
-    if (palletId === activePick.originalPalletId) {
+    if (normalizePalletId(palletId) === normalizePalletId(activePick.originalPalletId)) {
       showRemainingPalletScanStep('New pallet ID must be different from the original.', true);
       return;
     }
@@ -600,7 +830,7 @@ function processSplitPalletScan(palletId) {
   }
 
   // Scanning for picked stock
-  if (palletId === activePick.originalPalletId) {
+  if (normalizePalletId(palletId) === normalizePalletId(activePick.originalPalletId)) {
     showSamePalletConfirmStep();
     return;
   }
@@ -634,16 +864,34 @@ async function proceedToStaging() {
 }
 
 async function writeSplitPalletEntries() {
-  const run = activePick.line.runCode;
-  const linePickRef = activePick.line.pickRef || '';
-  const removedQty = activePick.originalKeeps === 'picked'
-    ? activePick.remainingQty
-    : activePick.pickedQty;
+  const line = activePick.line;
+  const linePickRef = line.pickRef || '';
 
-  // Row 1: original pallet negative movement for stock removed
-  await submitPalletEntry(activePick.originalPalletId, run, -removedQty, linePickRef);
-  // Row 2: new pallet positive movement for transferred quantity
-  await submitPalletEntry(activePick.newPalletId, run, removedQty, linePickRef);
+  if (activePick.originalKeeps === 'picked') {
+    for (const rem of activePick.remainingStock || []) {
+      const remPickRef = runKey(rem.runCode) === runKey(line.runCode) ? linePickRef : '';
+      await submitPalletEntry(activePick.originalPalletId, rem.runCode, -rem.units, remPickRef);
+      await submitPalletEntry(activePick.newPalletId, rem.runCode, rem.units, remPickRef);
+      applyLocalStockMove(
+        activePick.originalPalletId,
+        activePick.newPalletId,
+        rem.runCode,
+        rem.units,
+        rem
+      );
+    }
+    return;
+  }
+
+  await submitPalletEntry(activePick.originalPalletId, line.runCode, -activePick.pickedQty, linePickRef);
+  await submitPalletEntry(activePick.newPalletId, line.runCode, activePick.pickedQty, linePickRef);
+  applyLocalStockMove(
+    activePick.originalPalletId,
+    activePick.newPalletId,
+    line.runCode,
+    activePick.pickedQty,
+    line
+  );
 }
 
 async function submitPalletEntry(code, run, units, movementPickRef) {
@@ -665,12 +913,6 @@ async function submitPalletEntry(code, run, units, movementPickRef) {
   if (data.result !== 'ok' && data.result !== 'success') {
     throw new Error(data.message || 'Pallet entry failed.');
   }
-}
-
-function normalizePalletId(id) {
-  const s = String(id || '').trim();
-  if (/^\d{14}$/.test(s)) return '0' + s;
-  return s;
 }
 
 async function submitStaging(location) {
@@ -1003,7 +1245,7 @@ function loadCollectionRows(text) {
     allCollectionRows.push({
       collectionId,
       pickRef,
-      palletId,
+      palletId: normalizePalletId(palletId),
       runCode: cleanCSVField(r[PICKING_COLS.runCode]),
       company: cleanCSVField(r[PICKING_COLS.company]),
       product: cleanCSVField(r[PICKING_COLS.product]),
@@ -1045,9 +1287,10 @@ function loadDispatchHistory(text) {
 async function init() {
   showLoading('Loading collection data…');
   try {
-    const [collectionsRes, dispatchRes] = await Promise.all([
+    const [collectionsRes, dispatchRes, stockRes] = await Promise.all([
       fetch(COLLECTIONS_CSV),
-      fetch(DISPATCH_HISTORY_CSV)
+      fetch(DISPATCH_HISTORY_CSV),
+      fetch(STOCK_CSV)
     ]);
 
     if (!collectionsRes.ok || !dispatchRes.ok) {
@@ -1061,6 +1304,13 @@ async function init() {
 
     loadCollectionRows(collectionsText);
     loadDispatchHistory(dispatchText);
+
+    if (stockRes.ok) {
+      loadPalletStock(await stockRes.text());
+    } else {
+      palletStock.clear();
+    }
+
     showSelectStep();
   } catch (err) {
     console.error(err);
@@ -1074,6 +1324,7 @@ window.stopPick = stopPick;
 window.confirmScanPallet = confirmScanPallet;
 window.startCameraScan = startCameraScan;
 window.showSelectStep = showSelectStep;
+window.selectPalletStockLine = selectPalletStockLine;
 window.confirmLineSelect = confirmLineSelect;
 window.confirmPickQuantity = confirmPickQuantity;
 window.confirmSplitPalletScan = confirmSplitPalletScan;

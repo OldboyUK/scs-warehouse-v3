@@ -36,11 +36,11 @@
     `;
   }
 
-  function errorScreen(message, actionsHtml) {
+  function errorScreen(message, actionsHtml, title) {
     return `
       <div class="result-screen fade-in">
         <div class="result-icon result-icon-error">${ICONS.alert}</div>
-        <h2 class="result-title">Something went wrong</h2>
+        <h2 class="result-title">${title || 'Something went wrong'}</h2>
         <p class="result-message">${message}</p>
         <div class="actions actions-stack">${actionsHtml}</div>
       </div>
