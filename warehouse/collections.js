@@ -4,6 +4,8 @@ const COLLECTIONS_CSV =
   'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=810040978&single=true&output=csv';
 const DISPATCH_HISTORY_CSV =
   'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=848481035&single=true&output=csv';
+const STAGING_CSV =
+  'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=332871798&single=true&output=csv';
 const STOCK_CSV =
   'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=1879287780&single=true&output=csv';
 
@@ -27,6 +29,7 @@ const PICKING_COLS = {
 
 let allCollectionRows = [];
 let dispatchedPalletIds = new Set();
+let stagedPickRefs = new Set();
 /** Pallet ID → [{ runCode, company, product, format, units }] */
 let palletStock = new Map();
 let currentCollection = null;
@@ -127,6 +130,10 @@ function normalizePalletId(id) {
 
 function runKey(run) {
   return String(run || '').trim().toUpperCase();
+}
+
+function normalizePickRef(ref) {
+  return String(ref || '').trim();
 }
 
 function detectStockColumns(headerRow) {
@@ -342,8 +349,9 @@ function isPalletDone(pallet) {
 
 function applyHistoryStatus(pallets) {
   for (const p of pallets) {
-    if (dispatchedPalletIds.has(p.palletId)) {
-      p.status = 'dispatched';
+    const pickRef = normalizePickRef(p.pickRef);
+    if (pickRef && stagedPickRefs.has(pickRef)) {
+      p.status = dispatchedPalletIds.has(p.palletId) ? 'dispatched' : 'staged';
     }
   }
 }
@@ -1105,6 +1113,8 @@ function finalizePick() {
   line.status = isPartialQty ? 'partial' : 'staged';
   line.pickedQty = activePick.pickedQty;
   line.pickedPalletId = activePick.pickedPalletId;
+  const pickRef = normalizePickRef(line.pickRef);
+  if (pickRef) stagedPickRefs.add(pickRef);
 
   const doneLabel = statusLabel(line.status);
   activePick = null;
@@ -1270,6 +1280,19 @@ function extractDispatchPalletId(fields) {
   return '';
 }
 
+function loadStagedPickRefs(text) {
+  stagedPickRefs.clear();
+  const rowStrings = splitCSVRows(text);
+
+  for (let i = 0; i < rowStrings.length; i++) {
+    const r = parseCSVRow(rowStrings[i]);
+    if (i === 0 && isHeaderRow(r, 'COLLECTION')) continue;
+
+    const pickRef = normalizePickRef(r[1]);
+    if (pickRef) stagedPickRefs.add(pickRef);
+  }
+}
+
 function loadDispatchHistory(text) {
   const rowStrings = splitCSVRows(text);
   dispatchedPalletIds.clear();
@@ -1287,23 +1310,26 @@ function loadDispatchHistory(text) {
 async function init() {
   showLoading('Loading collection data…');
   try {
-    const [collectionsRes, dispatchRes, stockRes] = await Promise.all([
+    const [collectionsRes, dispatchRes, stockRes, stagingRes] = await Promise.all([
       fetch(COLLECTIONS_CSV),
       fetch(DISPATCH_HISTORY_CSV),
-      fetch(STOCK_CSV)
+      fetch(STOCK_CSV),
+      fetch(STAGING_CSV)
     ]);
 
-    if (!collectionsRes.ok || !dispatchRes.ok) {
+    if (!collectionsRes.ok || !dispatchRes.ok || !stagingRes.ok) {
       throw new Error('Failed to load CSV data.');
     }
 
-    const [collectionsText, dispatchText] = await Promise.all([
+    const [collectionsText, dispatchText, stagingText] = await Promise.all([
       collectionsRes.text(),
-      dispatchRes.text()
+      dispatchRes.text(),
+      stagingRes.text()
     ]);
 
     loadCollectionRows(collectionsText);
     loadDispatchHistory(dispatchText);
+    loadStagedPickRefs(stagingText);
 
     if (stockRes.ok) {
       loadPalletStock(await stockRes.text());
