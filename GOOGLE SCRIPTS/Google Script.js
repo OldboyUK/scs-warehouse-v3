@@ -13,6 +13,7 @@ const SHEET_DISPATCH            = 'PALLET DISPATCH';
 const SHEET_LOCATION_ASSIGNMENT = 'LOCATION ASSIGNMENT';
 const SHEET_STAGING             = 'STAGING';
 const SHEET_PRODUCT_DB_3PT      = 'PRODUCT DATABASE (3PT)';
+const SHEET_INGREDIENTS_ENTRY   = 'PALLET ENTRY [INGREDIENTS]';
 const SHEET_GID_STOCK           = 1879287780;
 
 /** ====== MAIN ENTRY POINT ====== **/
@@ -28,6 +29,7 @@ function doPost(e) {
     const action = (p.action || '').trim().toLowerCase();
 
     // Priority order - be more specific
+    if (action === 'ingredients_entry')                  return handleIngredientsEntry(p);
     if (action === 'location_assignment')               return handleLocationAssignment(p);
     if (action === 'add_third_party_product')            return handleAddThirdPartyProduct(p);
     if (action === 'staging')                            return handleStaging(p);
@@ -48,6 +50,91 @@ function isDispatch(p)      { return !!(p.pallet && p.date && p.time && !p.locat
 function isPalletEntry(p)   { return !!(p.code && p.run && p.units); }
 
 /** ====== HANDLERS ====== **/
+
+// INBOUND INGREDIENTS — writes to PALLET ENTRY [INGREDIENTS]
+function handleIngredientsEntry(p) {
+  const pallet       = (p.pallet || '').trim();
+  const customer     = (p.customer || '').trim();
+  const customerCode = (p.customerCode || '').trim();
+  const product      = (p.product || '').trim();
+  const helper       = p.helper == null ? '' : String(p.helper).trim();
+  const stockCodeF   = p.stockCodeF == null ? '' : String(p.stockCodeF).trim();
+  const stockCodeG   = p.stockCodeG == null ? '' : String(p.stockCodeG).trim();
+  const abv          = (p.abv || '').trim();
+  const bbe          = (p.bbe || '').trim();
+  const unitType     = (p.unitType || '').trim();
+  const value        = (p.value || '').trim();
+  const duty         = (p.duty || '').trim();
+  const comments     = p.comments == null ? '' : String(p.comments);
+  const username     = (p.username || p.user || '').trim();
+
+  const manualRaw = String(p.manualEntry == null ? '' : p.manualEntry).trim().toLowerCase();
+  const isManual = manualRaw === 'true' || manualRaw === '1' || manualRaw === 'yes';
+
+  if (!pallet || !customer || !customerCode || !product || !abv || !bbe || !unitType || !value || !duty || !username) {
+    return json({ result: 'error', message: 'Missing required fields' });
+  }
+
+  if (!(pallet === 'NO_BARCODE' || /^\d{15}$/.test(pallet))) {
+    return json({ result: 'error', message: 'Invalid pallet' });
+  }
+
+  const abvNum = Number(abv);
+  if (isNaN(abvNum)) {
+    return json({ result: 'error', message: 'ABV must be numeric' });
+  }
+
+  const unitAllowed = ['Kg', 'g', 'L', 'ml'];
+  if (unitAllowed.indexOf(unitType) === -1) {
+    return json({ result: 'error', message: 'Invalid unit type' });
+  }
+
+  const valueNum = Number(value);
+  if (isNaN(valueNum) || valueNum <= 0) {
+    return json({ result: 'error', message: 'Value must be numeric and greater than zero' });
+  }
+
+  const dutyAllowed = ['Duty Suspended', 'Duty Paid', "Don't Know"];
+  if (dutyAllowed.indexOf(duty) === -1) {
+    return json({ result: 'error', message: 'Invalid duty status' });
+  }
+
+  const tz = Session.getScriptTimeZone();
+  const now = new Date();
+  const dateStr = Utilities.formatDate(now, tz, 'dd/MM/yyyy');
+  const timeStr = Utilities.formatDate(now, tz, 'HH:mm:ss');
+
+  const ss = openSpreadsheet(SSID_MAIN);
+  const sh = ss.getSheetByName(SHEET_INGREDIENTS_ENTRY);
+  if (!sh) return json({ result: 'error', message: 'PALLET ENTRY [INGREDIENTS] sheet not found' });
+
+  const nextRow = Math.max(2, findNextDataRow(sh));
+
+  const palletCell = sh.getRange(nextRow, 1);
+  palletCell.setNumberFormat('@');
+  palletCell.setValue(String(pallet));
+
+  sh.getRange(nextRow, 2, 1, 16).setValues([[
+    customer,
+    customerCode,
+    product,
+    isManual ? '' : helper,
+    isManual ? '' : stockCodeF,
+    isManual ? '' : stockCodeG,
+    abvNum,
+    bbe,
+    unitType,
+    valueNum,
+    duty,
+    comments,
+    username,
+    dateStr,
+    timeStr,
+    isManual
+  ]]);
+
+  return json({ result: 'success' });
+}
 
 // GOODS IN (3P) — writes to PALLET ENTRY (same sheet as COUNTS)
 function handleGoods3P(p) {
