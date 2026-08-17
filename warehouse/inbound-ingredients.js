@@ -9,8 +9,18 @@ const SCRIPT_URL = '/.netlify/functions/submitIngredients';
 
 const UNIT_OPTIONS = ['Kg', 'g', 'L', 'ml'];
 const DUTY_OPTIONS = ['Duty Suspended', 'Duty Paid', "Don't Know"];
+const SCS_CUSTOMER_NAME = 'Somerset Cider Solutions';
+const abvDutyCategories = [
+  'Cider Base',
+  'Other Base',
+  'Spirit',
+  'Wine',
+  'Preblended',
+  'Beer'
+];
 
 let palletId = '';
+let scsOwned = null;
 let customer = '';
 let customerCode = '';
 let product = '';
@@ -61,6 +71,38 @@ function parseCSV(text) {
   return rows;
 }
 
+function parseCustomers(text) {
+  const rows = parseCSV(text);
+  const seen = new Map();
+  rows.slice(1).forEach(r => {
+    const name = (r[1] || '').trim();
+    const code = (r[2] || '').trim();
+    if (!name || !code) return;
+    if (!seen.has(name)) seen.set(name, { customer: name, customerCode: code });
+  });
+  return Array.from(seen.values())
+    .sort((a, b) => a.customer.localeCompare(b.customer, undefined, { numeric: true }));
+}
+
+function parseIngredients(text) {
+  const rows = parseCSV(text);
+  const list = [];
+  rows.slice(1).forEach(r => {
+    const prod = (r[0] || '').trim();
+    const code = (r[2] || '').trim();
+    if (!prod || !code) return;
+    list.push({
+      product: prod,
+      customerCode: code,
+      helper: (r[3] || '').trim(),
+      stockCodeF: (r[5] || '').trim(),
+      stockCodeG: (r[4] || '').trim(),
+      category: (r[6] || '').trim()
+    });
+  });
+  return list;
+}
+
 function escapeHTML(s) {
   return String(s).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
 }
@@ -83,6 +125,37 @@ function getLoggedInUsername() {
 
 function isValidPalletId(v) {
   return /^\d{15}$/.test(String(v || '').trim());
+}
+
+function findScsCustomer() {
+  const exact = customersList.find(c => c.customer === SCS_CUSTOMER_NAME);
+  if (exact) return exact;
+  const target = SCS_CUSTOMER_NAME.toLowerCase();
+  return customersList.find(c => c.customer.toLowerCase() === target) || null;
+}
+
+function requiresAbvAndDuty() {
+  if (manualEntry || !selectedProduct) return false;
+  return abvDutyCategories.includes(String(selectedProduct.category || '').trim());
+}
+
+function resetProductFields() {
+  product = '';
+  helper = '';
+  stockCodeF = '';
+  stockCodeG = '';
+  selectedProduct = null;
+  manualEntry = false;
+  abv = '';
+  duty = '';
+}
+
+function applyCustomer(match) {
+  if (customerCode && customerCode !== match.customerCode) {
+    resetProductFields();
+  }
+  customer = match.customer;
+  customerCode = match.customerCode;
 }
 
 function scannerReadyFocus(input) {
@@ -172,10 +245,11 @@ async function startScan(onValue) {
   }
 }
 
-function combo(id, placeholder, list) {
+function combo(id, placeholder, list, clearable) {
   return `
     <div id="${id}-wrap" class="combo-wrap">
-      <input id="${id}" placeholder="${placeholder}" autocomplete="off" autocapitalize="off" spellcheck="false" />
+      <input id="${id}" placeholder="${placeholder}" autocomplete="off" autocapitalize="off" spellcheck="false"${clearable ? ' style="padding-right: 92px;"' : ''} />
+      ${clearable ? `<button id="${id}-clear" type="button" class="combo-toggle" hidden aria-label="Clear" style="right: 48px;">×</button>` : ''}
       <button id="${id}-toggle" type="button" class="combo-toggle" aria-label="Open suggestions">▾</button>
       <div id="${id}-list" class="combo-list" hidden>
         ${list.map(v => `<div class="combo-option" data-value="${escapeHTML(v)}">${escapeHTML(v)}</div>`).join('')}
@@ -184,9 +258,10 @@ function combo(id, placeholder, list) {
   `;
 }
 
-function wireCombo(id) {
+function wireCombo(id, onClear) {
   const input = document.getElementById(id);
   const toggle = document.getElementById(id + '-toggle');
+  const clearBtn = document.getElementById(id + '-clear');
   const list = document.getElementById(id + '-list');
   const wrap = document.getElementById(id + '-wrap');
   const filter = () => {
@@ -198,16 +273,34 @@ function wireCombo(id) {
   };
   const open = () => { list.hidden = false; filter(); };
   const close = () => { list.hidden = true; };
-  input.addEventListener('input', filter);
+  const updateClear = () => {
+    if (!clearBtn) return;
+    clearBtn.hidden = !(input.value || '').length;
+  };
+  input.addEventListener('input', () => { filter(); updateClear(); });
   input.addEventListener('focus', open);
   toggle.addEventListener('click', () => list.hidden ? open() : close());
   list.addEventListener('click', e => {
     const el = e.target.closest('.combo-option');
     if (!el) return;
     input.value = el.dataset.value || '';
+    updateClear();
     close();
   });
+  if (clearBtn) {
+    clearBtn.addEventListener('click', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      input.value = '';
+      updateClear();
+      filter();
+      close();
+      input.focus();
+      if (typeof onClear === 'function') onClear();
+    });
+  }
   document.addEventListener('click', e => { if (!wrap.contains(e.target)) close(); }, { capture: true });
+  updateClear();
 }
 
 function loadLookups() {
@@ -219,16 +312,7 @@ function loadLookups() {
   fetch(CUSTOMERS_CSV)
     .then(r => r.text())
     .then(t => {
-      const rows = parseCSV(t);
-      const seen = new Map();
-      rows.slice(1).forEach(r => {
-        const name = (r[1] || '').trim();
-        const code = (r[2] || '').trim();
-        if (!name || !code) return;
-        if (!seen.has(name)) seen.set(name, { customer: name, customerCode: code });
-      });
-      customersList = Array.from(seen.values())
-        .sort((a, b) => a.customer.localeCompare(b.customer, undefined, { numeric: true }));
+      customersList = parseCustomers(t);
       customersLoaded = true;
     })
     .catch(err => {
@@ -240,20 +324,7 @@ function loadLookups() {
   fetch(INGREDIENTS_CSV)
     .then(r => r.text())
     .then(t => {
-      const rows = parseCSV(t);
-      ingredientsList = [];
-      rows.slice(1).forEach(r => {
-        const prod = (r[0] || '').trim();
-        const code = (r[2] || '').trim();
-        if (!prod || !code) return;
-        ingredientsList.push({
-          product: prod,
-          customerCode: code,
-          helper: (r[3] || '').trim(),
-          stockCodeF: (r[5] || '').trim(),
-          stockCodeG: (r[6] || '').trim()
-        });
-      });
+      ingredientsList = parseIngredients(t);
       ingredientsLoaded = true;
     })
     .catch(err => {
@@ -356,17 +427,73 @@ function showCustomer() {
   }
 
   const names = customersList.map(c => c.customer);
-  app.innerHTML = `
-    <p>Pallet ID: <strong>${escapeHTML(palletId)}</strong></p>
-    <label>Select Customer.</label>
-    ${combo('customerCombo', 'Type to search…', names)}
+  const yesClass = scsOwned === true ? 'btn-primary' : 'btn-secondary';
+  const noClass = scsOwned === false ? 'btn-primary' : 'btn-secondary';
+  let followOn = `
     <div class="actions mt-3">
       <button class="btn btn-ghost" type="button" onclick="showPallet()">Back</button>
-      <button class="btn btn-primary" type="button" onclick="confirmCustomer()">Next</button>
     </div>
   `;
-  wireCombo('customerCombo');
-  if (customer) document.getElementById('customerCombo').value = customer;
+  if (scsOwned === true) {
+    followOn = `
+      <p>Customer: <strong>${escapeHTML(customer || SCS_CUSTOMER_NAME)}</strong></p>
+      <div class="actions mt-3">
+        <button class="btn btn-ghost" type="button" onclick="showPallet()">Back</button>
+        <button class="btn btn-primary" type="button" onclick="showProduct()">Next</button>
+      </div>
+    `;
+  } else if (scsOwned === false) {
+    followOn = `
+      <label>Select Customer.</label>
+      ${combo('customerCombo', 'Type to search…', names, true)}
+      <div class="actions mt-3">
+        <button class="btn btn-ghost" type="button" onclick="showPallet()">Back</button>
+        <button class="btn btn-primary" type="button" onclick="confirmCustomer()">Next</button>
+      </div>
+    `;
+  }
+
+  app.innerHTML = `
+    <p>Pallet ID: <strong>${escapeHTML(palletId)}</strong></p>
+    <label>Is this an SCS owned product?</label>
+    <div class="actions mt-3">
+      <button class="btn ${yesClass}" type="button" onclick="chooseScsOwned(true)">Yes</button>
+      <button class="btn ${noClass}" type="button" onclick="chooseScsOwned(false)">No</button>
+    </div>
+    ${followOn}
+  `;
+
+  if (scsOwned === false) {
+    wireCombo('customerCombo', () => {
+      customer = '';
+      customerCode = '';
+    });
+    if (customer) document.getElementById('customerCombo').value = customer;
+    const clearBtn = document.getElementById('customerCombo-clear');
+    if (clearBtn) clearBtn.hidden = !(document.getElementById('customerCombo').value || '').length;
+  }
+}
+
+function chooseScsOwned(isScs) {
+  if (isScs) {
+    const match = findScsCustomer();
+    if (!match) {
+      alert('Could not find Somerset Cider Solutions in the customer list.');
+      return;
+    }
+    scsOwned = true;
+    applyCustomer(match);
+    showProduct();
+    return;
+  }
+
+  scsOwned = false;
+  if (customer === SCS_CUSTOMER_NAME) {
+    customer = '';
+    customerCode = '';
+    resetProductFields();
+  }
+  showCustomer();
 }
 
 function retryCustomers() {
@@ -376,16 +503,7 @@ function retryCustomers() {
   fetch(CUSTOMERS_CSV)
     .then(r => r.text())
     .then(t => {
-      const rows = parseCSV(t);
-      const seen = new Map();
-      rows.slice(1).forEach(r => {
-        const name = (r[1] || '').trim();
-        const code = (r[2] || '').trim();
-        if (!name || !code) return;
-        if (!seen.has(name)) seen.set(name, { customer: name, customerCode: code });
-      });
-      customersList = Array.from(seen.values())
-        .sort((a, b) => a.customer.localeCompare(b.customer, undefined, { numeric: true }));
+      customersList = parseCustomers(t);
       customersLoaded = true;
       showCustomer();
     })
@@ -408,16 +526,7 @@ function confirmCustomer() {
     alert('Please choose a customer from the list.');
     return;
   }
-  if (customerCode && customerCode !== match.customerCode) {
-    product = '';
-    helper = '';
-    stockCodeF = '';
-    stockCodeG = '';
-    selectedProduct = null;
-    manualEntry = false;
-  }
-  customer = match.customer;
-  customerCode = match.customerCode;
+  applyCustomer(match);
   showProduct();
 }
 
@@ -471,20 +580,7 @@ function retryIngredients() {
   fetch(INGREDIENTS_CSV)
     .then(r => r.text())
     .then(t => {
-      const rows = parseCSV(t);
-      ingredientsList = [];
-      rows.slice(1).forEach(r => {
-        const prod = (r[0] || '').trim();
-        const code = (r[2] || '').trim();
-        if (!prod || !code) return;
-        ingredientsList.push({
-          product: prod,
-          customerCode: code,
-          helper: (r[3] || '').trim(),
-          stockCodeF: (r[5] || '').trim(),
-          stockCodeG: (r[6] || '').trim()
-        });
-      });
+      ingredientsList = parseIngredients(t);
       ingredientsLoaded = true;
       showProduct();
     })
@@ -513,6 +609,10 @@ function confirmProduct() {
   stockCodeF = match.stockCodeF;
   stockCodeG = match.stockCodeG;
   manualEntry = false;
+  if (!requiresAbvAndDuty()) {
+    abv = '';
+    duty = '';
+  }
   showDetails();
 }
 
@@ -523,6 +623,8 @@ function showManualProduct() {
   helper = '';
   stockCodeF = '';
   stockCodeG = '';
+  abv = '';
+  duty = '';
   app.innerHTML = `
     <label for="manualProduct">Enter ingredient name:</label>
     <input id="manualProduct" autocomplete="off" autocapitalize="off" spellcheck="false" />
@@ -553,56 +655,52 @@ function confirmManualProduct() {
   stockCodeG = '';
   selectedProduct = null;
   manualEntry = true;
+  abv = '';
+  duty = '';
   showDetails();
 }
 
 function showDetails() {
+  const showAbvDuty = requiresAbvAndDuty();
+  const productInfo = (!manualEntry && selectedProduct) ? UI.summaryCard([
+    { label: 'Helper Column', value: escapeHTML(helper || '-') },
+    { label: 'Stock Code', value: escapeHTML(stockCodeF || '-') },
+    { label: 'Stock Code', value: escapeHTML(stockCodeG || '-') }
+  ]) : '';
+
   app.innerHTML = `
     <p>Ingredient: <strong>${escapeHTML(product)}</strong>${manualEntry ? ' <span class="status">(manually entered)</span>' : ''}</p>
-    <label for="abvInput">Enter ABV</label>
-    <input id="abvInput" type="number" step="any" inputmode="decimal" />
+    ${productInfo}
+    ${showAbvDuty ? `
+      <label for="abvInput">Enter ABV</label>
+      <input id="abvInput" type="number" step="any" inputmode="decimal" />
+    ` : ''}
     <label for="bbeInput">Enter BBE</label>
     <input id="bbeInput" autocomplete="off" />
-    <div class="actions mt-3">
-      <button class="btn btn-ghost" type="button" onclick="${manualEntry ? 'showManualProduct()' : 'showProduct()'}">Back</button>
-      <button class="btn btn-primary" type="button" onclick="confirmDetails()">Next</button>
-    </div>
-  `;
-  if (abv !== '') document.getElementById('abvInput').value = abv;
-  if (bbe) document.getElementById('bbeInput').value = bbe;
-}
-
-function confirmDetails() {
-  const abvRaw = (document.getElementById('abvInput').value || '').trim();
-  const bbeRaw = (document.getElementById('bbeInput').value || '').trim();
-  const abvNum = Number(abvRaw);
-  if (abvRaw === '' || Number.isNaN(abvNum)) {
-    alert('Please enter a valid ABV.');
-    return;
-  }
-  if (!bbeRaw) {
-    alert('Please enter a BBE.');
-    return;
-  }
-  abv = String(abvNum);
-  bbe = bbeRaw;
-  showUnit();
-}
-
-function showUnit() {
-  app.innerHTML = `
-    <label for="unitTypeSelect">Select Unit Type.</label>
+    <label for="unitTypeSelect">Unit Type</label>
     <select id="unitTypeSelect">
       <option value="">-- Choose a unit --</option>
       ${UNIT_OPTIONS.map(opt => `<option value="${escapeHTML(opt)}">${escapeHTML(opt)}</option>`).join('')}
     </select>
     <label id="valueLabel" for="valueInput">${valueLabelForUnit(unitType)}</label>
     <input id="valueInput" type="number" step="any" min="0" inputmode="decimal" />
+    ${showAbvDuty ? `
+      <label for="dutySelect">Current Duty Status</label>
+      <select id="dutySelect">
+        <option value="">-- Choose status --</option>
+        ${DUTY_OPTIONS.map(opt => `<option value="${escapeHTML(opt)}">${escapeHTML(opt)}</option>`).join('')}
+      </select>
+    ` : ''}
+    <label for="commentsInput">Comments</label>
+    <input id="commentsInput" autocomplete="off" />
     <div class="actions mt-3">
-      <button class="btn btn-ghost" type="button" onclick="showDetails()">Back</button>
-      <button class="btn btn-primary" type="button" onclick="confirmUnit()">Next</button>
+      <button class="btn btn-ghost" type="button" onclick="${manualEntry ? 'showManualProduct()' : 'showProduct()'}">Back</button>
+      <button class="btn btn-primary" type="button" onclick="confirmDetails()">Next</button>
     </div>
   `;
+
+  if (showAbvDuty && abv !== '') document.getElementById('abvInput').value = abv;
+  if (bbe) document.getElementById('bbeInput').value = bbe;
   const select = document.getElementById('unitTypeSelect');
   const label = document.getElementById('valueLabel');
   if (unitType) select.value = unitType;
@@ -610,77 +708,88 @@ function showUnit() {
   select.addEventListener('change', () => {
     label.textContent = valueLabelForUnit(select.value);
   });
+  if (showAbvDuty && duty) document.getElementById('dutySelect').value = duty;
+  if (comments) document.getElementById('commentsInput').value = comments;
 }
 
-function confirmUnit() {
+function confirmDetails() {
+  const showAbvDuty = requiresAbvAndDuty();
+  const bbeRaw = (document.getElementById('bbeInput').value || '').trim();
   const unit = (document.getElementById('unitTypeSelect').value || '').trim();
-  const raw = (document.getElementById('valueInput').value || '').trim();
-  const num = Number(raw);
+  const valueRaw = (document.getElementById('valueInput').value || '').trim();
+  const valueNum = Number(valueRaw);
+
+  if (showAbvDuty) {
+    const abvRaw = (document.getElementById('abvInput').value || '').trim();
+    const abvNum = Number(abvRaw);
+    if (abvRaw === '' || Number.isNaN(abvNum)) {
+      alert('Please enter a valid ABV.');
+      return;
+    }
+    const dutyVal = (document.getElementById('dutySelect').value || '').trim();
+    if (!DUTY_OPTIONS.includes(dutyVal)) {
+      alert('Please choose a duty status.');
+      return;
+    }
+    abv = String(abvNum);
+    duty = dutyVal;
+  } else {
+    abv = '';
+    duty = '';
+  }
+
+  if (!bbeRaw) {
+    alert('Please enter a BBE.');
+    return;
+  }
   if (!UNIT_OPTIONS.includes(unit)) {
     alert('Please choose a unit type.');
     return;
   }
-  if (raw === '' || Number.isNaN(num) || num <= 0) {
+  if (valueRaw === '' || Number.isNaN(valueNum) || valueNum <= 0) {
     alert('Please enter a valid quantity greater than zero.');
     return;
   }
+
+  bbe = bbeRaw;
   unitType = unit;
-  value = String(num);
-  showDuty();
-}
-
-function showDuty() {
-  app.innerHTML = `
-    <label for="dutySelect">Current Duty Status.</label>
-    <select id="dutySelect">
-      <option value="">-- Choose status --</option>
-      ${DUTY_OPTIONS.map(opt => `<option value="${escapeHTML(opt)}">${escapeHTML(opt)}</option>`).join('')}
-    </select>
-    <label for="commentsInput">Comments</label>
-    <input id="commentsInput" autocomplete="off" />
-    <div class="actions mt-3">
-      <button class="btn btn-ghost" type="button" onclick="showUnit()">Back</button>
-      <button class="btn btn-primary" type="button" onclick="confirmDuty()">Next</button>
-    </div>
-  `;
-  if (duty) document.getElementById('dutySelect').value = duty;
-  if (comments) document.getElementById('commentsInput').value = comments;
-}
-
-function confirmDuty() {
-  const v = (document.getElementById('dutySelect').value || '').trim();
-  if (!DUTY_OPTIONS.includes(v)) {
-    alert('Please choose a duty status.');
-    return;
-  }
-  duty = v;
+  value = String(valueNum);
   comments = (document.getElementById('commentsInput').value || '').trim();
   showSummary();
 }
 
 function showSummary() {
   const username = getLoggedInUsername();
+  const showAbvDuty = requiresAbvAndDuty();
   const rows = [
     { label: 'Pallet ID', value: escapeHTML(palletId) },
     { label: 'Customer', value: escapeHTML(customer) },
     { label: 'Customer Code', value: escapeHTML(customerCode) },
     { label: 'Product', value: escapeHTML(product) },
-    { label: 'Manual Entry', value: manualEntry ? 'Yes' : 'No' },
-    { label: 'Helper', value: escapeHTML(helper || '-') },
-    { label: 'Stock Code', value: escapeHTML(stockCodeF || '-') },
-    { label: 'Stock Code', value: escapeHTML(stockCodeG || '-') },
-    { label: 'ABV', value: escapeHTML(abv) },
+    { label: 'Manual Entry', value: manualEntry ? 'Yes' : 'No' }
+  ];
+  if (!manualEntry) {
+    rows.push(
+      { label: 'Helper', value: escapeHTML(helper || '-') },
+      { label: 'Stock Code', value: escapeHTML(stockCodeF || '-') },
+      { label: 'Stock Code', value: escapeHTML(stockCodeG || '-') }
+    );
+  }
+  if (showAbvDuty) rows.push({ label: 'ABV', value: escapeHTML(abv) });
+  rows.push(
     { label: 'BBE', value: escapeHTML(bbe) },
     { label: 'Unit Type', value: escapeHTML(unitType) },
-    { label: 'Value', value: escapeHTML(value) },
-    { label: 'Current Duty Status', value: escapeHTML(duty) },
+    { label: 'Value', value: escapeHTML(value) }
+  );
+  if (showAbvDuty) rows.push({ label: 'Current Duty Status', value: escapeHTML(duty) });
+  rows.push(
     { label: 'Comments', value: escapeHTML(comments || '-') },
     { label: 'User', value: escapeHTML(username || '-') }
-  ];
+  );
   app.innerHTML = `
     ${UI.summaryCard(rows)}
     <div class="actions mt-3">
-      <button class="btn btn-ghost" type="button" onclick="showDuty()">Back</button>
+      <button class="btn btn-ghost" type="button" onclick="showDetails()">Back</button>
       <button class="btn btn-success" type="button" onclick="submitEntry()">Confirm & Submit</button>
     </div>
   `;
@@ -764,6 +873,7 @@ window.confirmPallet = confirmPallet;
 window.skipPallet = skipPallet;
 window.scanPallet = scanPallet;
 window.showCustomer = showCustomer;
+window.chooseScsOwned = chooseScsOwned;
 window.retryCustomers = retryCustomers;
 window.confirmCustomer = confirmCustomer;
 window.showProduct = showProduct;
@@ -774,10 +884,6 @@ window.cancelManualProduct = cancelManualProduct;
 window.confirmManualProduct = confirmManualProduct;
 window.showDetails = showDetails;
 window.confirmDetails = confirmDetails;
-window.showUnit = showUnit;
-window.confirmUnit = confirmUnit;
-window.showDuty = showDuty;
-window.confirmDuty = confirmDuty;
 window.showSummary = showSummary;
 window.submitEntry = submitEntry;
 window.goHome = goHome;

@@ -71,7 +71,7 @@ function handleIngredientsEntry(p) {
   const manualRaw = String(p.manualEntry == null ? '' : p.manualEntry).trim().toLowerCase();
   const isManual = manualRaw === 'true' || manualRaw === '1' || manualRaw === 'yes';
 
-  if (!pallet || !customer || !customerCode || !product || !abv || !bbe || !unitType || !value || !duty || !username) {
+  if (!pallet || !customer || !customerCode || !product || !bbe || !unitType || !value || !username) {
     return json({ result: 'error', message: 'Missing required fields' });
   }
 
@@ -79,9 +79,13 @@ function handleIngredientsEntry(p) {
     return json({ result: 'error', message: 'Invalid pallet' });
   }
 
-  const abvNum = Number(abv);
-  if (isNaN(abvNum)) {
-    return json({ result: 'error', message: 'ABV must be numeric' });
+  let abvOut = '';
+  if (abv !== '') {
+    const abvNum = Number(abv);
+    if (isNaN(abvNum)) {
+      return json({ result: 'error', message: 'ABV must be numeric' });
+    }
+    abvOut = abvNum;
   }
 
   const unitAllowed = ['Kg', 'g', 'L', 'ml'];
@@ -95,7 +99,7 @@ function handleIngredientsEntry(p) {
   }
 
   const dutyAllowed = ['Duty Suspended', 'Duty Paid', "Don't Know"];
-  if (dutyAllowed.indexOf(duty) === -1) {
+  if (duty !== '' && dutyAllowed.indexOf(duty) === -1) {
     return json({ result: 'error', message: 'Invalid duty status' });
   }
 
@@ -121,7 +125,7 @@ function handleIngredientsEntry(p) {
     isManual ? '' : helper,
     isManual ? '' : stockCodeF,
     isManual ? '' : stockCodeG,
-    abvNum,
+    abvOut,
     bbe,
     unitType,
     valueNum,

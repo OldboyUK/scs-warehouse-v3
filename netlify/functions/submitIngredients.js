@@ -40,7 +40,7 @@ exports.handler = async function (event) {
     const username = (params.get('username') || '').trim();
 
     const required = {
-      pallet, customer, customerCode, product, abv, bbe, unitType, value, duty, username
+      pallet, customer, customerCode, product, bbe, unitType, value, username
     };
     for (const [key, val] of Object.entries(required)) {
       if (!val) {
@@ -51,7 +51,7 @@ exports.handler = async function (event) {
     if (!isValidPallet(pallet)) {
       return { statusCode: 400, body: JSON.stringify({ result: 'error', message: 'Invalid pallet' }) };
     }
-    if (!isNumeric(abv)) {
+    if (abv && !isNumeric(abv)) {
       return { statusCode: 400, body: JSON.stringify({ result: 'error', message: 'ABV must be numeric' }) };
     }
     if (!UNIT_OPTIONS.includes(unitType)) {
@@ -60,7 +60,7 @@ exports.handler = async function (event) {
     if (!isNumeric(value) || Number(value) <= 0) {
       return { statusCode: 400, body: JSON.stringify({ result: 'error', message: 'Value must be numeric and greater than zero' }) };
     }
-    if (!DUTY_OPTIONS.includes(duty)) {
+    if (duty && !DUTY_OPTIONS.includes(duty)) {
       return { statusCode: 400, body: JSON.stringify({ result: 'error', message: 'Invalid duty status' }) };
     }
 
