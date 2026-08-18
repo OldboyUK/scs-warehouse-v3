@@ -133,7 +133,7 @@ function handleIngredientsEntry(p) {
 
   const nextRow = Math.max(2, findNextDataRow(sh));
   const stockCode = isManual ? '' : stockCodeF;
-  const groupOut = isManual ? '' : group;
+  const groupOut = group;
   const stockId = stockCode + ' | ' + lotCode;
 
   const palletCell = sh.getRange(nextRow, 1);

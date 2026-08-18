@@ -18,6 +18,23 @@ const abvDutyCategories = [
   'Preblended',
   'Beer'
 ];
+const nonAlcoholCategories = [
+  'Soft Drink',
+  'Espresso',
+  'Juice',
+  'Compound',
+  'Concentrate',
+  'Flavouring',
+  'Colouring',
+  'Acid',
+  'De-Acidifier',
+  'Preservative',
+  'Sugar',
+  'Sweetener',
+  'Clouding',
+  'Water',
+  'Preblended'
+];
 
 let palletId = '';
 let scsOwned = null;
@@ -29,6 +46,8 @@ let stockCodeF = '';
 let stockCodeG = '';
 let selectedProduct = null;
 let manualEntry = false;
+let manualContainsAlcohol = null;
+let manualGroup = '';
 let lotCode = '';
 let abv = '';
 let bbe = '';
@@ -140,12 +159,14 @@ function buildStockId(stockCode, lot) {
 }
 
 function currentGroup() {
-  if (manualEntry || !selectedProduct) return '';
+  if (manualEntry) return String(manualGroup || '').trim();
+  if (!selectedProduct) return '';
   return String(selectedProduct.category || '').trim();
 }
 
 function requiresAbvAndDuty() {
-  if (manualEntry || !selectedProduct) return false;
+  if (manualEntry) return manualContainsAlcohol === true;
+  if (!selectedProduct) return false;
   return abvDutyCategories.includes(String(selectedProduct.category || '').trim());
 }
 
@@ -156,6 +177,8 @@ function resetProductFields() {
   stockCodeG = '';
   selectedProduct = null;
   manualEntry = false;
+  manualContainsAlcohol = null;
+  manualGroup = '';
   abv = '';
   duty = '';
 }
@@ -656,29 +679,67 @@ function confirmProduct() {
 }
 
 function showManualProduct() {
-  const keepName = manualEntry ? product : '';
   manualEntry = true;
   selectedProduct = null;
   helper = '';
   stockCodeF = '';
   stockCodeG = '';
-  abv = '';
-  duty = '';
+
+  const yesClass = manualContainsAlcohol === true ? 'btn-primary' : 'btn-secondary';
+  const noClass = manualContainsAlcohol === false ? 'btn-primary' : 'btn-secondary';
+  const typeOptions = manualContainsAlcohol === true
+    ? abvDutyCategories
+    : manualContainsAlcohol === false
+      ? nonAlcoholCategories
+      : null;
+
   app.innerHTML = `
     <label for="manualProduct">Enter ingredient name:</label>
     <input id="manualProduct" autocomplete="off" autocapitalize="off" spellcheck="false" />
+    <label>Does this ingredient contain alcohol?</label>
+    <div class="actions mt-3">
+      <button class="btn ${yesClass}" type="button" onclick="chooseManualAlcohol(true)">Yes</button>
+      <button class="btn ${noClass}" type="button" onclick="chooseManualAlcohol(false)">No</button>
+    </div>
+    ${typeOptions ? `
+      <label for="manualTypeSelect">Select Ingredient type.</label>
+      <select id="manualTypeSelect">
+        <option value="">-- Choose type --</option>
+        ${typeOptions.map(opt => `<option value="${escapeHTML(opt)}">${escapeHTML(opt)}</option>`).join('')}
+      </select>
+    ` : ''}
     <div class="actions mt-3">
       <button class="btn btn-ghost" type="button" onclick="cancelManualProduct()">Back</button>
       <button class="btn btn-primary" type="button" onclick="confirmManualProduct()">Next</button>
     </div>
   `;
   const input = document.getElementById('manualProduct');
-  if (keepName) input.value = keepName;
+  if (product && manualEntry) input.value = product;
   input.focus();
+  const typeSelect = document.getElementById('manualTypeSelect');
+  if (typeSelect && manualGroup) typeSelect.value = manualGroup;
+}
+
+function chooseManualAlcohol(isAlcohol) {
+  const typed = (document.getElementById('manualProduct').value || '').trim();
+  if (typed) product = typed;
+  const typeSelect = document.getElementById('manualTypeSelect');
+  if (typeSelect) manualGroup = (typeSelect.value || '').trim();
+  if (manualContainsAlcohol !== isAlcohol) {
+    manualGroup = '';
+    if (!isAlcohol) {
+      abv = '';
+      duty = '';
+    }
+  }
+  manualContainsAlcohol = isAlcohol;
+  showManualProduct();
 }
 
 function cancelManualProduct() {
   manualEntry = false;
+  manualContainsAlcohol = null;
+  manualGroup = '';
   showProduct();
 }
 
@@ -688,14 +749,28 @@ function confirmManualProduct() {
     alert('Please enter an ingredient name.');
     return;
   }
+  if (manualContainsAlcohol !== true && manualContainsAlcohol !== false) {
+    alert('Please say whether this ingredient contains alcohol.');
+    return;
+  }
+  const typeSelect = document.getElementById('manualTypeSelect');
+  const typeVal = typeSelect ? (typeSelect.value || '').trim() : '';
+  const allowed = manualContainsAlcohol ? abvDutyCategories : nonAlcoholCategories;
+  if (!typeVal || !allowed.includes(typeVal)) {
+    alert('Please choose an ingredient type.');
+    return;
+  }
   product = val;
   helper = '';
   stockCodeF = '';
   stockCodeG = '';
   selectedProduct = null;
   manualEntry = true;
-  abv = '';
-  duty = '';
+  manualGroup = typeVal;
+  if (!manualContainsAlcohol) {
+    abv = '';
+    duty = '';
+  }
   showDetails();
 }
 
@@ -836,7 +911,7 @@ function showSummary() {
   body += summaryRowHtml('Pallet ID', escapeHTML(palletId));
   body += summaryRowHtml('Customer', escapeHTML(customer));
   body += summaryRowHtml('Product', escapeHTML(product));
-  if (!manualEntry && currentGroup()) {
+  if (currentGroup()) {
     body += summaryRowHtml('Group', escapeHTML(currentGroup()));
   }
   body += summaryPairHtml(
@@ -947,6 +1022,7 @@ window.showProduct = showProduct;
 window.retryIngredients = retryIngredients;
 window.confirmProduct = confirmProduct;
 window.showManualProduct = showManualProduct;
+window.chooseManualAlcohol = chooseManualAlcohol;
 window.cancelManualProduct = cancelManualProduct;
 window.confirmManualProduct = confirmManualProduct;
 window.showDetails = showDetails;
