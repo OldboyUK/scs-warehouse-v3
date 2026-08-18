@@ -101,8 +101,8 @@ function handleIngredientsEntry(p) {
   let abvOut = '';
   if (abv !== '') {
     const abvNum = Number(abv);
-    if (isNaN(abvNum)) {
-      return json({ result: 'error', message: 'ABV must be numeric' });
+    if (isNaN(abvNum) || abvNum < 0 || abvNum > 100) {
+      return json({ result: 'error', message: 'ABV must be between 0 and 100' });
     }
     abvOut = abvNum;
   }

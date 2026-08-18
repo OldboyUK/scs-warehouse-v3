@@ -702,7 +702,6 @@ function confirmManualProduct() {
 function showDetails() {
   const showAbvDuty = requiresAbvAndDuty();
   const productInfo = (!manualEntry && selectedProduct) ? UI.summaryCard([
-    { label: 'Helper Column', value: escapeHTML(helper || '-') },
     { label: 'Stock Code', value: escapeHTML(stockCodeF || '-') },
     { label: 'Group', value: escapeHTML(currentGroup() || '-') }
   ]) : '';
@@ -712,7 +711,7 @@ function showDetails() {
     ${productInfo}
     ${showAbvDuty ? `
       <label for="abvInput">Enter ABV</label>
-      <input id="abvInput" type="number" step="any" inputmode="decimal" />
+      <input id="abvInput" type="number" min="0" max="100" step="any" inputmode="decimal" />
     ` : ''}
     <label for="lotCodeInput">Enter Lot Code</label>
     <input id="lotCodeInput" autocomplete="off" autocapitalize="off" spellcheck="false" />
@@ -772,8 +771,8 @@ function confirmDetails() {
   if (showAbvDuty) {
     const abvRaw = (document.getElementById('abvInput').value || '').trim();
     const abvNum = Number(abvRaw);
-    if (abvRaw === '' || Number.isNaN(abvNum)) {
-      alert('Please enter a valid ABV.');
+    if (abvRaw === '' || Number.isNaN(abvNum) || abvNum < 0 || abvNum > 100) {
+      alert('Please enter an ABV between 0 and 100.');
       return;
     }
     const dutyVal = (document.getElementById('dutySelect').value || '').trim();
@@ -813,28 +812,48 @@ function confirmDetails() {
   showSummary();
 }
 
+function summaryRowHtml(label, value) {
+  return `
+    <div class="summary-row">
+      <span class="summary-label">${label}</span>
+      <span class="summary-value">${value}</span>
+    </div>
+  `;
+}
+
+function summaryPairHtml(left, right) {
+  return `
+    <div style="display:flex; gap:16px;">
+      <div style="flex:1; min-width:0;">${summaryRowHtml(left.label, left.value)}</div>
+      <div style="flex:1; min-width:0;">${summaryRowHtml(right.label, right.value)}</div>
+    </div>
+  `;
+}
+
 function showSummary() {
   const showAbvDuty = requiresAbvAndDuty();
-  const rows = [
-    { label: 'Pallet ID', value: escapeHTML(palletId) },
-    { label: 'Customer', value: escapeHTML(customer) },
-    { label: 'Product', value: escapeHTML(product) }
-  ];
+  let body = '';
+  body += summaryRowHtml('Pallet ID', escapeHTML(palletId));
+  body += summaryRowHtml('Customer', escapeHTML(customer));
+  body += summaryRowHtml('Product', escapeHTML(product));
   if (!manualEntry && currentGroup()) {
-    rows.push({ label: 'Group', value: escapeHTML(currentGroup()) });
+    body += summaryRowHtml('Group', escapeHTML(currentGroup()));
   }
-  rows.push({ label: 'Stock ID', value: escapeHTML(buildStockId(manualEntry ? '' : stockCodeF, lotCode)) });
-  rows.push({ label: 'Lot Code', value: escapeHTML(lotCode) });
-  if (showAbvDuty) rows.push({ label: 'ABV', value: escapeHTML(abv) });
-  rows.push(
-    { label: 'BBE', value: escapeHTML(bbe) },
+  body += summaryPairHtml(
+    { label: 'Stock Code', value: escapeHTML((manualEntry ? '' : stockCodeF) || '-') },
+    { label: 'Lot Code', value: escapeHTML(lotCode) }
+  );
+  if (showAbvDuty) body += summaryRowHtml('ABV', escapeHTML(abv));
+  body += summaryRowHtml('BBE', escapeHTML(bbe));
+  body += summaryPairHtml(
     { label: 'Unit Type', value: escapeHTML(unitType) },
     { label: 'Value', value: escapeHTML(value) }
   );
-  if (showAbvDuty) rows.push({ label: 'Current Duty Status', value: escapeHTML(duty) });
-  if (comments) rows.push({ label: 'Comments', value: escapeHTML(comments) });
+  if (showAbvDuty) body += summaryRowHtml('Current Duty Status', escapeHTML(duty));
+  if (comments) body += summaryRowHtml('Comments', escapeHTML(comments));
+
   app.innerHTML = `
-    ${UI.summaryCard(rows)}
+    <div class="summary-card">${body}</div>
     <div class="actions mt-3">
       <button class="btn btn-ghost" type="button" onclick="showDetails()">Back</button>
       <button class="btn btn-success" type="button" onclick="submitEntry()">Confirm & Submit</button>

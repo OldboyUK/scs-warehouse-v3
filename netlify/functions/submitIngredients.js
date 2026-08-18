@@ -69,8 +69,8 @@ exports.handler = async function (event) {
     if (!isBbeTodayOrFuture(bbe)) {
       return { statusCode: 400, body: JSON.stringify({ result: 'error', message: 'BBE must be today or later' }) };
     }
-    if (abv && !isNumeric(abv)) {
-      return { statusCode: 400, body: JSON.stringify({ result: 'error', message: 'ABV must be numeric' }) };
+    if (abv && (!isNumeric(abv) || Number(abv) < 0 || Number(abv) > 100)) {
+      return { statusCode: 400, body: JSON.stringify({ result: 'error', message: 'ABV must be between 0 and 100' }) };
     }
     if (!UNIT_OPTIONS.includes(unitType)) {
       return { statusCode: 400, body: JSON.stringify({ result: 'error', message: 'Invalid unit type' }) };
