@@ -998,6 +998,7 @@ function submitEntry() {
   body.append('helper', helper);
   body.append('stockCodeF', stockCodeF);
   body.append('group', currentGroup());
+  body.append('ingredientGroup', currentGroup());
   body.append('lotCode', lotCode);
   body.append('abv', abv);
   body.append('bbe', bbe);

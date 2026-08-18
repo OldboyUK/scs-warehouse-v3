@@ -15,6 +15,7 @@ const SHEET_STAGING             = 'STAGING';
 const SHEET_PRODUCT_DB_3PT      = 'PRODUCT DATABASE (3PT)';
 const SHEET_INGREDIENTS_ENTRY   = 'PALLET ENTRY [INGREDIENTS]';
 const SHEET_GID_STOCK           = 1879287780;
+const SKIPPED_BBE               = '01/01/3000';
 
 /** ====== MAIN ENTRY POINT ====== **/
 function doPost(e) {
@@ -59,7 +60,7 @@ function handleIngredientsEntry(p) {
   const product      = (p.product || '').trim();
   const helper       = p.helper == null ? '' : String(p.helper).trim();
   const stockCodeF   = p.stockCodeF == null ? '' : String(p.stockCodeF).trim();
-  const group        = p.group == null ? '' : String(p.group).trim();
+  const group        = String(p.ingredientGroup || p.group || '').trim();
   const lotCode      = (p.lotCode || '').trim();
   const abv          = (p.abv || '').trim();
   const bbe          = (p.bbe || '').trim();
@@ -74,6 +75,9 @@ function handleIngredientsEntry(p) {
 
   if (!pallet || !customer || !customerCode || !product || !lotCode || !bbe || !unitType || !value || !username) {
     return json({ result: 'error', message: 'Missing required fields' });
+  }
+  if (isManual && !group) {
+    return json({ result: 'error', message: 'Missing group' });
   }
 
   if (!(pallet === 'NO_BARCODE' || /^\d{15}$/.test(pallet))) {
@@ -132,9 +136,10 @@ function handleIngredientsEntry(p) {
   if (!sh) return json({ result: 'error', message: 'PALLET ENTRY [INGREDIENTS] sheet not found' });
 
   const nextRow = Math.max(2, findNextDataRow(sh));
+  const stockCode = isManual ? '' : stockCodeF;
   const groupOut = group;
-  const stockCode = isManual ? groupOut : stockCodeF;
   const stockId = stockCode + ' | ' + lotCode;
+  const bbeOut = bbe === SKIPPED_BBE ? '' : bbe;
 
   const palletCell = sh.getRange(nextRow, 1);
   palletCell.setNumberFormat('@');
@@ -148,18 +153,21 @@ function handleIngredientsEntry(p) {
   lotCell.setNumberFormat('@');
   lotCell.setValue(String(lotCode));
 
-  sh.getRange(nextRow, 3, 1, 6).setValues([[
+  sh.getRange(nextRow, 3, 1, 5).setValues([[
     customer,
     customerCode,
     product,
     isManual ? '' : helper,
-    stockCode,
-    groupOut
+    stockCode
   ]]);
+
+  const groupCell = sh.getRange(nextRow, 8);
+  groupCell.setNumberFormat('@');
+  groupCell.setValue(String(groupOut));
 
   sh.getRange(nextRow, 10, 1, 10).setValues([[
     abvOut,
-    bbe,
+    bbeOut,
     unitType,
     valueNum,
     duty,
