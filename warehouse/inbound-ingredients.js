@@ -10,6 +10,7 @@ const SCRIPT_URL = '/.netlify/functions/submitIngredients';
 const UNIT_OPTIONS = ['Kg', 'g', 'L', 'ml'];
 const DUTY_OPTIONS = ['Duty Suspended', 'Duty Paid', "Don't Know"];
 const SCS_CUSTOMER_NAME = 'Somerset Cider Solutions';
+const SKIPPED_BBE = '01/01/3000';
 const abvDutyCategories = [
   'Cider Base',
   'Other Base',
@@ -51,6 +52,7 @@ let manualGroup = '';
 let lotCode = '';
 let abv = '';
 let bbe = '';
+let bbeSkipped = false;
 let unitType = '';
 let value = '';
 let duty = '';
@@ -181,6 +183,7 @@ function resetProductFields() {
   manualGroup = '';
   abv = '';
   duty = '';
+  bbeSkipped = false;
 }
 
 function applyCustomer(match) {
@@ -791,7 +794,12 @@ function showDetails() {
     <label for="lotCodeInput">Enter Lot Code</label>
     <input id="lotCodeInput" autocomplete="off" autocapitalize="off" spellcheck="false" />
     <label for="bbeInput">Enter BBE</label>
-    <input id="bbeInput" type="date" min="${todayISO()}" />
+    <div style="display:flex; gap:12px; align-items:stretch;">
+      <div style="flex:1; min-width:0;">
+        <input id="bbeInput" type="date" min="${todayISO()}" />
+      </div>
+      <button id="bbeSkipBtn" class="btn ${bbeSkipped ? 'btn-primary' : 'btn-secondary'}" type="button" onclick="skipBBE()" style="min-height:52px; width:auto; padding:12px 18px; margin-top:0;">Skip</button>
+    </div>
     <div style="display:flex; gap:12px; align-items:flex-end;">
       <div style="flex:1; min-width:0;">
         <label for="unitTypeSelect">Unit Type</label>
@@ -822,8 +830,15 @@ function showDetails() {
 
   if (showAbvDuty && abv !== '') document.getElementById('abvInput').value = abv;
   if (lotCode) document.getElementById('lotCodeInput').value = lotCode;
-  const bbeISO = bbeToISO(bbe);
-  if (bbeISO) document.getElementById('bbeInput').value = bbeISO;
+  const bbeInput = document.getElementById('bbeInput');
+  if (bbeSkipped || bbe === SKIPPED_BBE) {
+    bbeSkipped = true;
+    bbeInput.value = '';
+    bbeInput.disabled = true;
+  } else {
+    const bbeISO = bbeToISO(bbe);
+    if (bbeISO) bbeInput.value = bbeISO;
+  }
   const select = document.getElementById('unitTypeSelect');
   const label = document.getElementById('valueLabel');
   if (unitType) select.value = unitType;
@@ -833,6 +848,17 @@ function showDetails() {
   });
   if (showAbvDuty && duty) document.getElementById('dutySelect').value = duty;
   if (comments) document.getElementById('commentsInput').value = comments;
+}
+
+function skipBBE() {
+  if (bbeSkipped) {
+    bbeSkipped = false;
+    if (bbe === SKIPPED_BBE) bbe = '';
+  } else {
+    bbeSkipped = true;
+    bbe = SKIPPED_BBE;
+  }
+  showDetails();
 }
 
 function confirmDetails() {
@@ -866,9 +892,13 @@ function confirmDetails() {
     alert('Please enter a lot code.');
     return;
   }
-  if (!isBbeTodayOrFuture(bbeISO)) {
-    alert('Please enter a BBE date of today or later.');
+  if (bbeSkipped) {
+    bbe = SKIPPED_BBE;
+  } else if (!isBbeTodayOrFuture(bbeISO)) {
+    alert('Please enter a BBE date of today or later, or skip BBE.');
     return;
+  } else {
+    bbe = isoToBBE(bbeISO);
   }
   if (!UNIT_OPTIONS.includes(unit)) {
     alert('Please choose a unit type.');
@@ -880,7 +910,6 @@ function confirmDetails() {
   }
 
   lotCode = lotRaw;
-  bbe = isoToBBE(bbeISO);
   unitType = unit;
   value = String(valueNum);
   comments = (document.getElementById('commentsInput').value || '').trim();
@@ -1026,6 +1055,7 @@ window.chooseManualAlcohol = chooseManualAlcohol;
 window.cancelManualProduct = cancelManualProduct;
 window.confirmManualProduct = confirmManualProduct;
 window.showDetails = showDetails;
+window.skipBBE = skipBBE;
 window.confirmDetails = confirmDetails;
 window.showSummary = showSummary;
 window.submitEntry = submitEntry;
