@@ -16,6 +16,20 @@ function isNumeric(value) {
   return !Number.isNaN(n);
 }
 
+function isBbeTodayOrFuture(bbe) {
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(String(bbe || '').trim());
+  if (!m) return false;
+  const day = Number(m[1]);
+  const month = Number(m[2]);
+  const year = Number(m[3]);
+  const dt = new Date(year, month - 1, day);
+  if (dt.getFullYear() !== year || dt.getMonth() + 1 !== month || dt.getDate() !== day) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  dt.setHours(0, 0, 0, 0);
+  return dt >= today;
+}
+
 exports.handler = async function (event) {
   try {
     if (event.httpMethod !== 'POST') {
@@ -34,13 +48,14 @@ exports.handler = async function (event) {
     const product = (params.get('product') || '').trim();
     const abv = (params.get('abv') || '').trim();
     const bbe = (params.get('bbe') || '').trim();
+    const lotCode = (params.get('lotCode') || '').trim();
     const unitType = (params.get('unitType') || '').trim();
     const value = (params.get('value') || '').trim();
     const duty = (params.get('duty') || '').trim();
     const username = (params.get('username') || '').trim();
 
     const required = {
-      pallet, customer, customerCode, product, bbe, unitType, value, username
+      pallet, customer, customerCode, product, lotCode, bbe, unitType, value, username
     };
     for (const [key, val] of Object.entries(required)) {
       if (!val) {
@@ -50,6 +65,9 @@ exports.handler = async function (event) {
 
     if (!isValidPallet(pallet)) {
       return { statusCode: 400, body: JSON.stringify({ result: 'error', message: 'Invalid pallet' }) };
+    }
+    if (!isBbeTodayOrFuture(bbe)) {
+      return { statusCode: 400, body: JSON.stringify({ result: 'error', message: 'BBE must be today or later' }) };
     }
     if (abv && !isNumeric(abv)) {
       return { statusCode: 400, body: JSON.stringify({ result: 'error', message: 'ABV must be numeric' }) };

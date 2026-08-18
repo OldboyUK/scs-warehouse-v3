@@ -59,7 +59,8 @@ function handleIngredientsEntry(p) {
   const product      = (p.product || '').trim();
   const helper       = p.helper == null ? '' : String(p.helper).trim();
   const stockCodeF   = p.stockCodeF == null ? '' : String(p.stockCodeF).trim();
-  const stockCodeG   = p.stockCodeG == null ? '' : String(p.stockCodeG).trim();
+  const group        = p.group == null ? '' : String(p.group).trim();
+  const lotCode      = (p.lotCode || '').trim();
   const abv          = (p.abv || '').trim();
   const bbe          = (p.bbe || '').trim();
   const unitType     = (p.unitType || '').trim();
@@ -71,12 +72,30 @@ function handleIngredientsEntry(p) {
   const manualRaw = String(p.manualEntry == null ? '' : p.manualEntry).trim().toLowerCase();
   const isManual = manualRaw === 'true' || manualRaw === '1' || manualRaw === 'yes';
 
-  if (!pallet || !customer || !customerCode || !product || !bbe || !unitType || !value || !username) {
+  if (!pallet || !customer || !customerCode || !product || !lotCode || !bbe || !unitType || !value || !username) {
     return json({ result: 'error', message: 'Missing required fields' });
   }
 
   if (!(pallet === 'NO_BARCODE' || /^\d{15}$/.test(pallet))) {
     return json({ result: 'error', message: 'Invalid pallet' });
+  }
+
+  const bbeMatch = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(bbe);
+  if (!bbeMatch) {
+    return json({ result: 'error', message: 'BBE must be a date in DD/MM/YYYY format' });
+  }
+  const bbeDay = Number(bbeMatch[1]);
+  const bbeMonth = Number(bbeMatch[2]);
+  const bbeYear = Number(bbeMatch[3]);
+  const bbeDate = new Date(bbeYear, bbeMonth - 1, bbeDay);
+  if (bbeDate.getFullYear() !== bbeYear || bbeDate.getMonth() + 1 !== bbeMonth || bbeDate.getDate() !== bbeDay) {
+    return json({ result: 'error', message: 'BBE must be a valid date' });
+  }
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  bbeDate.setHours(0, 0, 0, 0);
+  if (bbeDate < today) {
+    return json({ result: 'error', message: 'BBE must be today or later' });
   }
 
   let abvOut = '';
@@ -113,18 +132,32 @@ function handleIngredientsEntry(p) {
   if (!sh) return json({ result: 'error', message: 'PALLET ENTRY [INGREDIENTS] sheet not found' });
 
   const nextRow = Math.max(2, findNextDataRow(sh));
+  const stockCode = isManual ? '' : stockCodeF;
+  const groupOut = isManual ? '' : group;
+  const stockId = stockCode + ' | ' + lotCode;
 
   const palletCell = sh.getRange(nextRow, 1);
   palletCell.setNumberFormat('@');
   palletCell.setValue(String(pallet));
 
-  sh.getRange(nextRow, 2, 1, 16).setValues([[
+  const stockIdCell = sh.getRange(nextRow, 2);
+  stockIdCell.setNumberFormat('@');
+  stockIdCell.setValue(String(stockId));
+
+  const lotCell = sh.getRange(nextRow, 9);
+  lotCell.setNumberFormat('@');
+  lotCell.setValue(String(lotCode));
+
+  sh.getRange(nextRow, 3, 1, 6).setValues([[
     customer,
     customerCode,
     product,
     isManual ? '' : helper,
-    isManual ? '' : stockCodeF,
-    isManual ? '' : stockCodeG,
+    stockCode,
+    groupOut
+  ]]);
+
+  sh.getRange(nextRow, 10, 1, 10).setValues([[
     abvOut,
     bbe,
     unitType,

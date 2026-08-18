@@ -29,6 +29,7 @@ let stockCodeF = '';
 let stockCodeG = '';
 let selectedProduct = null;
 let manualEntry = false;
+let lotCode = '';
 let abv = '';
 let bbe = '';
 let unitType = '';
@@ -132,6 +133,15 @@ function findScsCustomer() {
   if (exact) return exact;
   const target = SCS_CUSTOMER_NAME.toLowerCase();
   return customersList.find(c => c.customer.toLowerCase() === target) || null;
+}
+
+function buildStockId(stockCode, lot) {
+  return String(stockCode || '') + ' | ' + String(lot || '');
+}
+
+function currentGroup() {
+  if (manualEntry || !selectedProduct) return '';
+  return String(selectedProduct.category || '').trim();
 }
 
 function requiresAbvAndDuty() {
@@ -345,6 +355,35 @@ function valueLabelForUnit(unit) {
   if (unit === 'Kg' || unit === 'g') return 'Enter the weight';
   if (unit === 'L' || unit === 'ml') return 'Enter the volume';
   return 'Enter the value';
+}
+
+function todayISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function bbeToISO(value) {
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(String(value || '').trim());
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : '';
+}
+
+function isoToBBE(value) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || '').trim());
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : '';
+}
+
+function isBbeTodayOrFuture(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || '').trim());
+  if (!m) return false;
+  const y = parseInt(m[1], 10);
+  const month = parseInt(m[2], 10);
+  const day = parseInt(m[3], 10);
+  const dt = new Date(y, month - 1, day);
+  if (dt.getFullYear() !== y || dt.getMonth() + 1 !== month || dt.getDate() !== day) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  dt.setHours(0, 0, 0, 0);
+  return dt >= today;
 }
 
 function showPallet() {
@@ -665,7 +704,7 @@ function showDetails() {
   const productInfo = (!manualEntry && selectedProduct) ? UI.summaryCard([
     { label: 'Helper Column', value: escapeHTML(helper || '-') },
     { label: 'Stock Code', value: escapeHTML(stockCodeF || '-') },
-    { label: 'Stock Code', value: escapeHTML(stockCodeG || '-') }
+    { label: 'Group', value: escapeHTML(currentGroup() || '-') }
   ]) : '';
 
   app.innerHTML = `
@@ -675,15 +714,23 @@ function showDetails() {
       <label for="abvInput">Enter ABV</label>
       <input id="abvInput" type="number" step="any" inputmode="decimal" />
     ` : ''}
+    <label for="lotCodeInput">Enter Lot Code</label>
+    <input id="lotCodeInput" autocomplete="off" autocapitalize="off" spellcheck="false" />
     <label for="bbeInput">Enter BBE</label>
-    <input id="bbeInput" autocomplete="off" />
-    <label for="unitTypeSelect">Unit Type</label>
-    <select id="unitTypeSelect">
-      <option value="">-- Choose a unit --</option>
-      ${UNIT_OPTIONS.map(opt => `<option value="${escapeHTML(opt)}">${escapeHTML(opt)}</option>`).join('')}
-    </select>
-    <label id="valueLabel" for="valueInput">${valueLabelForUnit(unitType)}</label>
-    <input id="valueInput" type="number" step="any" min="0" inputmode="decimal" />
+    <input id="bbeInput" type="date" min="${todayISO()}" />
+    <div style="display:flex; gap:12px; align-items:flex-end;">
+      <div style="flex:1; min-width:0;">
+        <label for="unitTypeSelect">Unit Type</label>
+        <select id="unitTypeSelect">
+          <option value="">-- Choose a unit --</option>
+          ${UNIT_OPTIONS.map(opt => `<option value="${escapeHTML(opt)}">${escapeHTML(opt)}</option>`).join('')}
+        </select>
+      </div>
+      <div style="flex:1; min-width:0;">
+        <label id="valueLabel" for="valueInput">${valueLabelForUnit(unitType)}</label>
+        <input id="valueInput" type="number" step="any" min="0" inputmode="decimal" />
+      </div>
+    </div>
     ${showAbvDuty ? `
       <label for="dutySelect">Current Duty Status</label>
       <select id="dutySelect">
@@ -691,8 +738,8 @@ function showDetails() {
         ${DUTY_OPTIONS.map(opt => `<option value="${escapeHTML(opt)}">${escapeHTML(opt)}</option>`).join('')}
       </select>
     ` : ''}
-    <label for="commentsInput">Comments</label>
-    <input id="commentsInput" autocomplete="off" />
+    <label for="commentsInput" style="color: var(--muted); font-weight: 500;">Comments (optional)</label>
+    <input id="commentsInput" autocomplete="off" placeholder="Optional" style="background: var(--card);" />
     <div class="actions mt-3">
       <button class="btn btn-ghost" type="button" onclick="${manualEntry ? 'showManualProduct()' : 'showProduct()'}">Back</button>
       <button class="btn btn-primary" type="button" onclick="confirmDetails()">Next</button>
@@ -700,7 +747,9 @@ function showDetails() {
   `;
 
   if (showAbvDuty && abv !== '') document.getElementById('abvInput').value = abv;
-  if (bbe) document.getElementById('bbeInput').value = bbe;
+  if (lotCode) document.getElementById('lotCodeInput').value = lotCode;
+  const bbeISO = bbeToISO(bbe);
+  if (bbeISO) document.getElementById('bbeInput').value = bbeISO;
   const select = document.getElementById('unitTypeSelect');
   const label = document.getElementById('valueLabel');
   if (unitType) select.value = unitType;
@@ -714,7 +763,8 @@ function showDetails() {
 
 function confirmDetails() {
   const showAbvDuty = requiresAbvAndDuty();
-  const bbeRaw = (document.getElementById('bbeInput').value || '').trim();
+  const lotRaw = (document.getElementById('lotCodeInput').value || '').trim();
+  const bbeISO = (document.getElementById('bbeInput').value || '').trim();
   const unit = (document.getElementById('unitTypeSelect').value || '').trim();
   const valueRaw = (document.getElementById('valueInput').value || '').trim();
   const valueNum = Number(valueRaw);
@@ -738,8 +788,12 @@ function confirmDetails() {
     duty = '';
   }
 
-  if (!bbeRaw) {
-    alert('Please enter a BBE.');
+  if (!lotRaw) {
+    alert('Please enter a lot code.');
+    return;
+  }
+  if (!isBbeTodayOrFuture(bbeISO)) {
+    alert('Please enter a BBE date of today or later.');
     return;
   }
   if (!UNIT_OPTIONS.includes(unit)) {
@@ -751,7 +805,8 @@ function confirmDetails() {
     return;
   }
 
-  bbe = bbeRaw;
+  lotCode = lotRaw;
+  bbe = isoToBBE(bbeISO);
   unitType = unit;
   value = String(valueNum);
   comments = (document.getElementById('commentsInput').value || '').trim();
@@ -759,22 +814,17 @@ function confirmDetails() {
 }
 
 function showSummary() {
-  const username = getLoggedInUsername();
   const showAbvDuty = requiresAbvAndDuty();
   const rows = [
     { label: 'Pallet ID', value: escapeHTML(palletId) },
     { label: 'Customer', value: escapeHTML(customer) },
-    { label: 'Customer Code', value: escapeHTML(customerCode) },
-    { label: 'Product', value: escapeHTML(product) },
-    { label: 'Manual Entry', value: manualEntry ? 'Yes' : 'No' }
+    { label: 'Product', value: escapeHTML(product) }
   ];
-  if (!manualEntry) {
-    rows.push(
-      { label: 'Helper', value: escapeHTML(helper || '-') },
-      { label: 'Stock Code', value: escapeHTML(stockCodeF || '-') },
-      { label: 'Stock Code', value: escapeHTML(stockCodeG || '-') }
-    );
+  if (!manualEntry && currentGroup()) {
+    rows.push({ label: 'Group', value: escapeHTML(currentGroup()) });
   }
+  rows.push({ label: 'Stock ID', value: escapeHTML(buildStockId(manualEntry ? '' : stockCodeF, lotCode)) });
+  rows.push({ label: 'Lot Code', value: escapeHTML(lotCode) });
   if (showAbvDuty) rows.push({ label: 'ABV', value: escapeHTML(abv) });
   rows.push(
     { label: 'BBE', value: escapeHTML(bbe) },
@@ -782,10 +832,7 @@ function showSummary() {
     { label: 'Value', value: escapeHTML(value) }
   );
   if (showAbvDuty) rows.push({ label: 'Current Duty Status', value: escapeHTML(duty) });
-  rows.push(
-    { label: 'Comments', value: escapeHTML(comments || '-') },
-    { label: 'User', value: escapeHTML(username || '-') }
-  );
+  if (comments) rows.push({ label: 'Comments', value: escapeHTML(comments) });
   app.innerHTML = `
     ${UI.summaryCard(rows)}
     <div class="actions mt-3">
@@ -810,7 +857,8 @@ function submitEntry() {
   body.append('product', product);
   body.append('helper', helper);
   body.append('stockCodeF', stockCodeF);
-  body.append('stockCodeG', stockCodeG);
+  body.append('group', currentGroup());
+  body.append('lotCode', lotCode);
   body.append('abv', abv);
   body.append('bbe', bbe);
   body.append('unitType', unitType);
