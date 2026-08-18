@@ -540,6 +540,16 @@ button:active, .btn:active { transform: translateY(0); }
 
 .summary-row:last-child { border-bottom: none; }
 
+.summary-pair {
+  display: flex;
+  gap: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.summary-pair .summary-row { border-bottom: none; }
+
+.summary-pair:last-child { border-bottom: none; }
+
 .summary-label {
   font-size: 0.85rem;
   color: var(--muted);

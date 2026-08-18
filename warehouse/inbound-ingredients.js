@@ -823,7 +823,7 @@ function summaryRowHtml(label, value) {
 
 function summaryPairHtml(left, right) {
   return `
-    <div style="display:flex; gap:16px;">
+    <div class="summary-pair">
       <div style="flex:1; min-width:0;">${summaryRowHtml(left.label, left.value)}</div>
       <div style="flex:1; min-width:0;">${summaryRowHtml(right.label, right.value)}</div>
     </div>
