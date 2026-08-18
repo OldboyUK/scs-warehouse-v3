@@ -851,14 +851,31 @@ function showDetails() {
 }
 
 function skipBBE() {
+  const bbeInput = document.getElementById('bbeInput');
+  const skipBtn = document.getElementById('bbeSkipBtn');
   if (bbeSkipped) {
     bbeSkipped = false;
     if (bbe === SKIPPED_BBE) bbe = '';
+    if (bbeInput) {
+      bbeInput.disabled = false;
+      bbeInput.value = '';
+    }
+    if (skipBtn) {
+      skipBtn.classList.remove('btn-primary');
+      skipBtn.classList.add('btn-secondary');
+    }
   } else {
     bbeSkipped = true;
     bbe = SKIPPED_BBE;
+    if (bbeInput) {
+      bbeInput.value = '';
+      bbeInput.disabled = true;
+    }
+    if (skipBtn) {
+      skipBtn.classList.remove('btn-secondary');
+      skipBtn.classList.add('btn-primary');
+    }
   }
-  showDetails();
 }
 
 function confirmDetails() {
