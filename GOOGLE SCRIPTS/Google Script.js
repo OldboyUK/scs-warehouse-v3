@@ -132,8 +132,8 @@ function handleIngredientsEntry(p) {
   if (!sh) return json({ result: 'error', message: 'PALLET ENTRY [INGREDIENTS] sheet not found' });
 
   const nextRow = Math.max(2, findNextDataRow(sh));
-  const stockCode = isManual ? '' : stockCodeF;
   const groupOut = group;
+  const stockCode = isManual ? groupOut : stockCodeF;
   const stockId = stockCode + ' | ' + lotCode;
 
   const palletCell = sh.getRange(nextRow, 1);

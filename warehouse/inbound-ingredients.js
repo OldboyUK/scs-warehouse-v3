@@ -965,7 +965,7 @@ function showSummary() {
     { label: 'Lot Code', value: escapeHTML(lotCode) }
   );
   if (showAbvDuty) body += summaryRowHtml('ABV', escapeHTML(abv));
-  body += summaryRowHtml('BBE', escapeHTML(bbe));
+  if (!bbeSkipped) body += summaryRowHtml('BBE', escapeHTML(bbe));
   body += summaryPairHtml(
     { label: 'Unit Type', value: escapeHTML(unitType) },
     { label: 'Value', value: escapeHTML(value) }
