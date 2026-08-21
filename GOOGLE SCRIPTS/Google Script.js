@@ -197,7 +197,7 @@ function handlePackagingEntry(p) {
   const comments     = p.comments == null ? '' : String(p.comments);
   const username     = (p.username || p.user || '').trim();
 
-  if (!pallet || !customer || !customerCode || !productType || !size || !colour || !type || !unitType || !value || !username) {
+  if (!pallet || !customer || !customerCode || !productType || !unitType || !value || !username) {
     return json({ result: 'error', message: 'Missing required fields' });
   }
 
@@ -205,13 +205,15 @@ function handlePackagingEntry(p) {
     return json({ result: 'error', message: 'Invalid pallet' });
   }
 
-  const unitAllowed = ['Kg', 'g', 'L', 'ml'];
+  const unitAllowed = ['Units', 'Box(es)', 'Bundle', 'Full Pallet'];
   if (unitAllowed.indexOf(unitType) === -1) {
     return json({ result: 'error', message: 'Invalid unit type' });
   }
 
-  const valueNum = Number(value);
-  if (isNaN(valueNum) || valueNum <= 0) {
+  let valueNum = Number(value);
+  if (unitType === 'Full Pallet') {
+    valueNum = 1;
+  } else if (isNaN(valueNum) || valueNum <= 0) {
     return json({ result: 'error', message: 'Value must be numeric and greater than zero' });
   }
 

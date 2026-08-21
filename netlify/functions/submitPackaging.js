@@ -3,7 +3,7 @@ const fetch = require('node-fetch');
 const { getAppsScriptUrl, missingUrlMessage } = require('./scriptConfig');
 
 const SHARED_TOKEN = 'J4PAN88';
-const UNIT_OPTIONS = ['Kg', 'g', 'L', 'ml'];
+const UNIT_OPTIONS = ['Units', 'Box(es)', 'Bundle', 'Full Pallet'];
 
 function isValidPallet(pallet) {
   return pallet === 'NO_BARCODE' || /^\d{15}$/.test(pallet);
@@ -39,7 +39,7 @@ exports.handler = async function (event) {
     const username = (params.get('username') || '').trim();
 
     const required = {
-      pallet, customer, customerCode, productType, size, colour, type, unitType, value, username
+      pallet, customer, customerCode, productType, unitType, value, username
     };
     for (const [key, val] of Object.entries(required)) {
       if (!val) {
@@ -53,7 +53,7 @@ exports.handler = async function (event) {
     if (!UNIT_OPTIONS.includes(unitType)) {
       return { statusCode: 400, body: JSON.stringify({ result: 'error', message: 'Invalid unit type' }) };
     }
-    if (!isNumeric(value) || Number(value) <= 0) {
+    if (unitType !== 'Full Pallet' && (!isNumeric(value) || Number(value) <= 0)) {
       return { statusCode: 400, body: JSON.stringify({ result: 'error', message: 'Value must be numeric and greater than zero' }) };
     }
 

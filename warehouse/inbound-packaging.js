@@ -7,7 +7,8 @@ const PACKAGING_CSV =
   'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=120813966&single=true&output=csv';
 const SCRIPT_URL = '/.netlify/functions/submitPackaging';
 
-const UNIT_OPTIONS = ['Kg', 'g', 'L', 'ml'];
+const UNIT_OPTIONS = ['Units', 'Box(es)', 'Bundle', 'Full Pallet'];
+const FULL_PALLET = 'Full Pallet';
 const SCS_CUSTOMER_NAME = 'Somerset Cider Solutions';
 
 let palletId = '';
@@ -79,7 +80,7 @@ function parsePackaging(text) {
     const sizeVal = (r[3] || '').trim();
     const colourVal = (r[4] || '').trim();
     const typeVal = (r[5] || '').trim();
-    if (!prodType || !sizeVal || !colourVal || !typeVal) return;
+    if (!prodType) return;
     list.push({
       productType: prodType,
       size: sizeVal,
@@ -121,9 +122,16 @@ function findScsCustomer() {
   return customersList.find(c => c.customer.toLowerCase() === target) || null;
 }
 
-function uniqueSorted(values) {
-  return Array.from(new Set(values.filter(v => String(v || '').trim())))
-    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+function uniqueInOrder(values) {
+  const seen = new Set();
+  const out = [];
+  values.forEach(v => {
+    const val = String(v || '').trim();
+    if (!val || seen.has(val)) return;
+    seen.add(val);
+    out.push(val);
+  });
+  return out;
 }
 
 function packagingMatches(filters) {
@@ -137,7 +145,79 @@ function packagingMatches(filters) {
 }
 
 function uniqueField(field, filters) {
-  return uniqueSorted(packagingMatches(filters).map(row => row[field]));
+  return uniqueInOrder(packagingMatches(filters).map(row => row[field]));
+}
+
+function sizeOptions() {
+  return uniqueField('size', { productType });
+}
+
+function colourOptions() {
+  const filters = { productType };
+  if (size) filters.size = size;
+  return uniqueField('colour', filters);
+}
+
+function typeOptions() {
+  const filters = { productType };
+  if (size) filters.size = size;
+  if (colour) filters.colour = colour;
+  return uniqueField('type', filters);
+}
+
+function goAfterProductType() {
+  if (sizeOptions().length) {
+    showSize();
+    return;
+  }
+  size = '';
+  goAfterSize();
+}
+
+function goAfterSize() {
+  if (colourOptions().length) {
+    showColour();
+    return;
+  }
+  colour = '';
+  goAfterColour();
+}
+
+function goAfterColour() {
+  if (typeOptions().length) {
+    showType();
+    return;
+  }
+  type = '';
+  finishPackagingSelection();
+}
+
+function goBackFromColour() {
+  if (sizeOptions().length) showSize();
+  else showProductType();
+}
+
+function goBackFromType() {
+  if (colourOptions().length) showColour();
+  else if (sizeOptions().length) showSize();
+  else showProductType();
+}
+
+function goBackFromDetails() {
+  if (typeOptions().length) showType();
+  else if (colourOptions().length) showColour();
+  else if (sizeOptions().length) showSize();
+  else showProductType();
+}
+
+function finishPackagingSelection() {
+  selectedPackaging = {
+    productType,
+    size,
+    colour,
+    type
+  };
+  showDetails();
 }
 
 function resetPackagingFields() {
@@ -335,10 +415,16 @@ function loadLookups() {
     });
 }
 
-function valueLabelForUnit(unit) {
-  if (unit === 'Kg' || unit === 'g') return 'Enter the weight';
-  if (unit === 'L' || unit === 'ml') return 'Enter the volume';
-  return 'Enter the value';
+function applyUnitTypeState(select, valueInput) {
+  if (!select || !valueInput) return;
+  if (select.value === FULL_PALLET) {
+    valueInput.value = '1';
+    valueInput.disabled = true;
+    valueInput.style.background = 'var(--card)';
+  } else {
+    valueInput.disabled = false;
+    valueInput.style.background = '';
+  }
 }
 
 function showPallet() {
@@ -621,12 +707,17 @@ function confirmProductType() {
     type = '';
     selectedPackaging = null;
   }
-  showSize();
+  goAfterProductType();
 }
 
 function showSize() {
   if (waitForPackaging(showSize, 'showProductType()')) return;
-  const options = uniqueField('size', { productType });
+  const options = sizeOptions();
+  if (!options.length) {
+    size = '';
+    goAfterSize();
+    return;
+  }
   if (size && !options.includes(size)) {
     size = '';
     colour = '';
@@ -646,7 +737,7 @@ function showSize() {
 }
 
 function confirmSize() {
-  const options = uniqueField('size', { productType });
+  const options = sizeOptions();
   const val = confirmSelectValue('sizeCombo', options, 'size');
   if (!val) return;
   if (val !== size) {
@@ -655,12 +746,17 @@ function confirmSize() {
     type = '';
     selectedPackaging = null;
   }
-  showColour();
+  goAfterSize();
 }
 
 function showColour() {
-  if (waitForPackaging(showColour, 'showSize()')) return;
-  const options = uniqueField('colour', { productType, size });
+  if (waitForPackaging(showColour, 'goBackFromColour()')) return;
+  const options = colourOptions();
+  if (!options.length) {
+    colour = '';
+    goAfterColour();
+    return;
+  }
   if (colour && !options.includes(colour)) {
     colour = '';
     type = '';
@@ -671,16 +767,16 @@ function showColour() {
     comboId: 'colourCombo',
     options,
     current: colour,
-    emptyPlaceholder: 'No colours available for this size',
+    emptyPlaceholder: 'No colours available for this selection',
     contextHtml: `<p>Product Type: <strong>${escapeHTML(productType)}</strong></p>
-      <p>Size: <strong>${escapeHTML(size)}</strong></p>`,
-    back: 'showSize()',
+      ${size ? `<p>Size: <strong>${escapeHTML(size)}</strong></p>` : ''}`,
+    back: 'goBackFromColour()',
     next: 'confirmColour()'
   });
 }
 
 function confirmColour() {
-  const options = uniqueField('colour', { productType, size });
+  const options = colourOptions();
   const val = confirmSelectValue('colourCombo', options, 'colour');
   if (!val) return;
   if (val !== colour) {
@@ -688,12 +784,17 @@ function confirmColour() {
     type = '';
     selectedPackaging = null;
   }
-  showType();
+  goAfterColour();
 }
 
 function showType() {
-  if (waitForPackaging(showType, 'showColour()')) return;
-  const options = uniqueField('type', { productType, size, colour });
+  if (waitForPackaging(showType, 'goBackFromType()')) return;
+  const options = typeOptions();
+  if (!options.length) {
+    type = '';
+    finishPackagingSelection();
+    return;
+  }
   if (type && !options.includes(type)) {
     type = '';
     selectedPackaging = null;
@@ -703,65 +804,64 @@ function showType() {
     comboId: 'typeCombo',
     options,
     current: type,
-    emptyPlaceholder: 'No types available for this colour',
+    emptyPlaceholder: 'No types available for this selection',
     contextHtml: `<p>Product Type: <strong>${escapeHTML(productType)}</strong></p>
-      <p>Size: <strong>${escapeHTML(size)}</strong></p>
-      <p>Colour: <strong>${escapeHTML(colour)}</strong></p>`,
-    back: 'showColour()',
+      ${size ? `<p>Size: <strong>${escapeHTML(size)}</strong></p>` : ''}
+      ${colour ? `<p>Colour: <strong>${escapeHTML(colour)}</strong></p>` : ''}`,
+    back: 'goBackFromType()',
     next: 'confirmType()'
   });
 }
 
 function confirmType() {
-  const options = uniqueField('type', { productType, size, colour });
+  const options = typeOptions();
   const val = confirmSelectValue('typeCombo', options, 'type');
   if (!val) return;
   type = val;
-  const matches = packagingMatches({ productType, size, colour, type });
+  const matches = packagingMatches({
+    productType,
+    ...(size ? { size } : {}),
+    ...(colour ? { colour } : {}),
+    type
+  });
   if (!matches.length) {
     alert('That packaging combination is not available. Please choose again.');
     return;
   }
-  selectedPackaging = {
-    productType,
-    size,
-    colour,
-    type
-  };
-  showDetails();
+  finishPackagingSelection();
 }
 
 function showDetails() {
+  const packingBits = [productType, size, colour, type].filter(Boolean);
   app.innerHTML = `
-    <p>Packaging: <strong>${escapeHTML(productType)}</strong> · ${escapeHTML(size)} · ${escapeHTML(colour)} · ${escapeHTML(type)}</p>
+    <p>Packaging: <strong>${escapeHTML(packingBits.join(' · '))}</strong></p>
     <div style="display:flex; gap:12px; align-items:flex-end;">
       <div style="flex:1; min-width:0;">
-        <label for="unitTypeSelect">Select Unit Type</label>
+        <label for="unitTypeSelect">Please enter the unit type</label>
         <select id="unitTypeSelect">
           <option value="">-- Choose a unit --</option>
           ${UNIT_OPTIONS.map(opt => `<option value="${escapeHTML(opt)}">${escapeHTML(opt)}</option>`).join('')}
         </select>
       </div>
       <div style="flex:1; min-width:0;">
-        <label id="valueLabel" for="valueInput">${valueLabelForUnit(unitType)}</label>
+        <label for="valueInput">Enter the quantity</label>
         <input id="valueInput" type="number" step="any" min="0" inputmode="decimal" />
       </div>
     </div>
     <label for="commentsInput" style="color: var(--muted); font-weight: 500;">Comments (optional)</label>
     <input id="commentsInput" autocomplete="off" placeholder="Optional" style="background: var(--card);" />
     <div class="actions mt-3">
-      <button class="btn btn-ghost" type="button" onclick="showType()">Back</button>
+      <button class="btn btn-ghost" type="button" onclick="goBackFromDetails()">Back</button>
       <button class="btn btn-primary" type="button" onclick="confirmDetails()">Next</button>
     </div>
   `;
 
   const select = document.getElementById('unitTypeSelect');
-  const label = document.getElementById('valueLabel');
+  const valueInput = document.getElementById('valueInput');
   if (unitType) select.value = unitType;
-  if (value !== '') document.getElementById('valueInput').value = value;
-  select.addEventListener('change', () => {
-    label.textContent = valueLabelForUnit(select.value);
-  });
+  if (value !== '') valueInput.value = value;
+  applyUnitTypeState(select, valueInput);
+  select.addEventListener('change', () => applyUnitTypeState(select, valueInput));
   if (comments) document.getElementById('commentsInput').value = comments;
 }
 
@@ -774,13 +874,17 @@ function confirmDetails() {
     alert('Please choose a unit type.');
     return;
   }
-  if (valueRaw === '' || Number.isNaN(valueNum) || valueNum <= 0) {
-    alert('Please enter a valid quantity greater than zero.');
-    return;
+  if (unit === FULL_PALLET) {
+    unitType = unit;
+    value = '1';
+  } else {
+    if (valueRaw === '' || Number.isNaN(valueNum) || valueNum <= 0) {
+      alert('Please enter a valid quantity greater than zero.');
+      return;
+    }
+    unitType = unit;
+    value = String(valueNum);
   }
-
-  unitType = unit;
-  value = String(valueNum);
   comments = (document.getElementById('commentsInput').value || '').trim();
   showSummary();
 }
@@ -811,9 +915,9 @@ function showSummary() {
   body += summaryRowHtml('Customer', escapeHTML(customer));
   body += summaryRowHtml('Customer Code', escapeHTML(customerCode));
   body += summaryRowHtml('Product Type', escapeHTML(productType));
-  body += summaryRowHtml('Size', escapeHTML(size));
-  body += summaryRowHtml('Colour', escapeHTML(colour));
-  body += summaryRowHtml('Type', escapeHTML(type));
+  if (size) body += summaryRowHtml('Size', escapeHTML(size));
+  if (colour) body += summaryRowHtml('Colour', escapeHTML(colour));
+  if (type) body += summaryRowHtml('Type', escapeHTML(type));
   body += summaryPairHtml(
     { label: 'Unit Type', value: escapeHTML(unitType) },
     { label: 'Value', value: escapeHTML(value) }
@@ -914,10 +1018,13 @@ window.confirmProductType = confirmProductType;
 window.retryPackaging = retryPackaging;
 window.showSize = showSize;
 window.confirmSize = confirmSize;
+window.goBackFromColour = goBackFromColour;
 window.showColour = showColour;
 window.confirmColour = confirmColour;
+window.goBackFromType = goBackFromType;
 window.showType = showType;
 window.confirmType = confirmType;
+window.goBackFromDetails = goBackFromDetails;
 window.showDetails = showDetails;
 window.confirmDetails = confirmDetails;
 window.showSummary = showSummary;
