@@ -14,6 +14,7 @@ const SHEET_LOCATION_ASSIGNMENT = 'LOCATION ASSIGNMENT';
 const SHEET_STAGING             = 'STAGING';
 const SHEET_PRODUCT_DB_3PT      = 'PRODUCT DATABASE (3PT)';
 const SHEET_INGREDIENTS_ENTRY   = 'PALLET ENTRY [INGREDIENTS]';
+const SHEET_PACKAGING_ENTRY     = 'PALLET ENTRY [PACKAGING]';
 const SHEET_GID_STOCK           = 1879287780;
 const SKIPPED_BBE               = '01/01/3000';
 
@@ -30,6 +31,7 @@ function doPost(e) {
     const action = (p.action || '').trim().toLowerCase();
 
     // Priority order - be more specific
+    if (action === 'packaging_entry')                    return handlePackagingEntry(p);
     if (action === 'ingredients_entry')                  return handleIngredientsEntry(p);
     if (action === 'location_assignment')               return handleLocationAssignment(p);
     if (action === 'add_third_party_product')            return handleAddThirdPartyProduct(p);
@@ -176,6 +178,75 @@ function handleIngredientsEntry(p) {
     dateStr,
     timeStr,
     isManual
+  ]]);
+
+  return json({ result: 'success' });
+}
+
+// INBOUND PACKAGING — writes to PALLET ENTRY [PACKAGING]
+function handlePackagingEntry(p) {
+  const pallet       = (p.pallet || '').trim();
+  const customer     = (p.customer || '').trim();
+  const customerCode = (p.customerCode || '').trim();
+  const productType  = (p.productType || '').trim();
+  const size         = (p.size || '').trim();
+  const colour       = (p.colour || '').trim();
+  const type         = (p.type || '').trim();
+  const unitType     = (p.unitType || '').trim();
+  const value        = (p.value || '').trim();
+  const comments     = p.comments == null ? '' : String(p.comments);
+  const username     = (p.username || p.user || '').trim();
+
+  if (!pallet || !customer || !customerCode || !productType || !size || !colour || !type || !unitType || !value || !username) {
+    return json({ result: 'error', message: 'Missing required fields' });
+  }
+
+  if (!(pallet === 'NO_BARCODE' || /^\d{15}$/.test(pallet))) {
+    return json({ result: 'error', message: 'Invalid pallet' });
+  }
+
+  const unitAllowed = ['Kg', 'g', 'L', 'ml'];
+  if (unitAllowed.indexOf(unitType) === -1) {
+    return json({ result: 'error', message: 'Invalid unit type' });
+  }
+
+  const valueNum = Number(value);
+  if (isNaN(valueNum) || valueNum <= 0) {
+    return json({ result: 'error', message: 'Value must be numeric and greater than zero' });
+  }
+
+  const tz = Session.getScriptTimeZone();
+  const now = new Date();
+  const dateStr = Utilities.formatDate(now, tz, 'dd/MM/yyyy');
+  const timeStr = Utilities.formatDate(now, tz, 'HH:mm:ss');
+
+  const ss = openSpreadsheet(SSID_MAIN);
+  const sh = ss.getSheetByName(SHEET_PACKAGING_ENTRY);
+  if (!sh) return json({ result: 'error', message: 'PALLET ENTRY [PACKAGING] sheet not found' });
+
+  const nextRow = Math.max(2, findNextDataRow(sh));
+
+  const palletCell = sh.getRange(nextRow, 1);
+  palletCell.setNumberFormat('@');
+  palletCell.setValue(String(pallet));
+
+  // Do not write B (Stock ID) or I (Stock Code); spreadsheet formulas own those cells.
+  sh.getRange(nextRow, 3, 1, 6).setValues([[
+    customer,
+    customerCode,
+    productType,
+    size,
+    colour,
+    type
+  ]]);
+
+  sh.getRange(nextRow, 10, 1, 6).setValues([[
+    unitType,
+    valueNum,
+    comments,
+    username,
+    dateStr,
+    timeStr
   ]]);
 
   return json({ result: 'success' });

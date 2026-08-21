@@ -111,6 +111,16 @@
   status = 301
 
 [[redirects]]
+  from = "/inbound-packaging"
+  to = "/warehouse/inbound-packaging.html"
+  status = 301
+
+[[redirects]]
+  from = "/inbound-packaging.html"
+  to = "/warehouse/inbound-packaging.html"
+  status = 301
+
+[[redirects]]
   from = "/hr"
   to = "/hr/"
   status = 301
