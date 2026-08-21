@@ -50,7 +50,9 @@ let manualEntry = false;
 let manualContainsAlcohol = null;
 let manualGroup = '';
 let lotCode = '';
+let lotSkipped = false;
 let abv = '';
+let abvSkipped = false;
 let bbe = '';
 let bbeSkipped = false;
 let unitType = '';
@@ -157,7 +159,10 @@ function findScsCustomer() {
 }
 
 function buildStockId(stockCode, lot) {
-  return String(stockCode || '') + ' | ' + String(lot || '');
+  const code = String(stockCode || '');
+  const lotVal = String(lot || '');
+  if (!lotVal) return code;
+  return code + ' | ' + lotVal;
 }
 
 function currentGroup() {
@@ -183,6 +188,8 @@ function resetProductFields() {
   manualGroup = '';
   abv = '';
   duty = '';
+  abvSkipped = false;
+  lotSkipped = false;
   bbeSkipped = false;
 }
 
@@ -789,10 +796,20 @@ function showDetails() {
     ${productInfo}
     ${showAbvDuty ? `
       <label for="abvInput">Enter ABV</label>
-      <input id="abvInput" type="number" min="0" max="100" step="any" inputmode="decimal" />
+      <div style="display:flex; gap:12px; align-items:stretch;">
+        <div style="flex:1; min-width:0;">
+          <input id="abvInput" type="number" min="0" max="100" step="any" inputmode="decimal" />
+        </div>
+        <button id="abvSkipBtn" class="btn ${abvSkipped ? 'btn-primary' : 'btn-secondary'}" type="button" onclick="skipABV()" style="min-height:52px; width:auto; padding:12px 18px; margin-top:0;">Skip</button>
+      </div>
     ` : ''}
     <label for="lotCodeInput">Enter Lot Code</label>
-    <input id="lotCodeInput" autocomplete="off" autocapitalize="off" spellcheck="false" />
+    <div style="display:flex; gap:12px; align-items:stretch;">
+      <div style="flex:1; min-width:0;">
+        <input id="lotCodeInput" autocomplete="off" autocapitalize="off" spellcheck="false" />
+      </div>
+      <button id="lotSkipBtn" class="btn ${lotSkipped ? 'btn-primary' : 'btn-secondary'}" type="button" onclick="skipLotCode()" style="min-height:52px; width:auto; padding:12px 18px; margin-top:0;">Skip</button>
+    </div>
     <label for="bbeInput">Enter BBE</label>
     <div style="display:flex; gap:12px; align-items:stretch;">
       <div style="flex:1; min-width:0;">
@@ -828,8 +845,22 @@ function showDetails() {
     </div>
   `;
 
-  if (showAbvDuty && abv !== '') document.getElementById('abvInput').value = abv;
-  if (lotCode) document.getElementById('lotCodeInput').value = lotCode;
+  const abvInput = document.getElementById('abvInput');
+  if (showAbvDuty && abvInput) {
+    if (abvSkipped) {
+      abvInput.value = '';
+      abvInput.disabled = true;
+    } else if (abv !== '') {
+      abvInput.value = abv;
+    }
+  }
+  const lotInput = document.getElementById('lotCodeInput');
+  if (lotSkipped) {
+    lotInput.value = '';
+    lotInput.disabled = true;
+  } else if (lotCode) {
+    lotInput.value = lotCode;
+  }
   const bbeInput = document.getElementById('bbeInput');
   if (bbeSkipped || bbe === SKIPPED_BBE) {
     bbeSkipped = true;
@@ -850,32 +881,42 @@ function showDetails() {
   if (comments) document.getElementById('commentsInput').value = comments;
 }
 
+function applySkipToggle(skipped, input, btn) {
+  if (input) {
+    if (skipped) {
+      input.value = '';
+      input.disabled = true;
+    } else {
+      input.disabled = false;
+    }
+  }
+  if (btn) {
+    btn.classList.toggle('btn-primary', skipped);
+    btn.classList.toggle('btn-secondary', !skipped);
+  }
+}
+
+function skipABV() {
+  abvSkipped = !abvSkipped;
+  if (abvSkipped) abv = '';
+  applySkipToggle(abvSkipped, document.getElementById('abvInput'), document.getElementById('abvSkipBtn'));
+}
+
+function skipLotCode() {
+  lotSkipped = !lotSkipped;
+  if (lotSkipped) lotCode = '';
+  applySkipToggle(lotSkipped, document.getElementById('lotCodeInput'), document.getElementById('lotSkipBtn'));
+}
+
 function skipBBE() {
-  const bbeInput = document.getElementById('bbeInput');
-  const skipBtn = document.getElementById('bbeSkipBtn');
   if (bbeSkipped) {
     bbeSkipped = false;
     if (bbe === SKIPPED_BBE) bbe = '';
-    if (bbeInput) {
-      bbeInput.disabled = false;
-      bbeInput.value = '';
-    }
-    if (skipBtn) {
-      skipBtn.classList.remove('btn-primary');
-      skipBtn.classList.add('btn-secondary');
-    }
   } else {
     bbeSkipped = true;
     bbe = SKIPPED_BBE;
-    if (bbeInput) {
-      bbeInput.value = '';
-      bbeInput.disabled = true;
-    }
-    if (skipBtn) {
-      skipBtn.classList.remove('btn-secondary');
-      skipBtn.classList.add('btn-primary');
-    }
   }
+  applySkipToggle(bbeSkipped, document.getElementById('bbeInput'), document.getElementById('bbeSkipBtn'));
 }
 
 function confirmDetails() {
@@ -887,27 +928,37 @@ function confirmDetails() {
   const valueNum = Number(valueRaw);
 
   if (showAbvDuty) {
-    const abvRaw = (document.getElementById('abvInput').value || '').trim();
-    const abvNum = Number(abvRaw);
-    if (abvRaw === '' || Number.isNaN(abvNum) || abvNum < 0 || abvNum > 100) {
-      alert('Please enter an ABV between 0 and 100.');
-      return;
-    }
     const dutyVal = (document.getElementById('dutySelect').value || '').trim();
     if (!DUTY_OPTIONS.includes(dutyVal)) {
       alert('Please choose a duty status.');
       return;
     }
-    abv = String(abvNum);
     duty = dutyVal;
+    if (abvSkipped) {
+      abv = '';
+    } else {
+      const abvRaw = (document.getElementById('abvInput').value || '').trim();
+      const abvNum = Number(abvRaw);
+      if (abvRaw === '' || Number.isNaN(abvNum) || abvNum < 0 || abvNum > 100) {
+        alert('Please enter an ABV between 0 and 100, or skip ABV.');
+        return;
+      }
+      abv = String(abvNum);
+    }
   } else {
     abv = '';
+    abvSkipped = false;
     duty = '';
   }
 
-  if (!lotRaw) {
-    alert('Please enter a lot code.');
-    return;
+  if (lotSkipped) {
+    lotCode = '';
+  } else {
+    if (!lotRaw) {
+      alert('Please enter a lot code, or skip lot code.');
+      return;
+    }
+    lotCode = lotRaw;
   }
   if (bbeSkipped) {
     bbe = SKIPPED_BBE;
@@ -926,7 +977,6 @@ function confirmDetails() {
     return;
   }
 
-  lotCode = lotRaw;
   unitType = unit;
   value = String(valueNum);
   comments = (document.getElementById('commentsInput').value || '').trim();
@@ -960,11 +1010,15 @@ function showSummary() {
   if (currentGroup()) {
     body += summaryRowHtml('Group', escapeHTML(currentGroup()));
   }
-  body += summaryPairHtml(
-    { label: 'Stock Code', value: escapeHTML((manualEntry ? '' : stockCodeF) || '-') },
-    { label: 'Lot Code', value: escapeHTML(lotCode) }
-  );
-  if (showAbvDuty) body += summaryRowHtml('ABV', escapeHTML(abv));
+  if (lotSkipped) {
+    body += summaryRowHtml('Stock Code', escapeHTML((manualEntry ? '' : stockCodeF) || '-'));
+  } else {
+    body += summaryPairHtml(
+      { label: 'Stock Code', value: escapeHTML((manualEntry ? '' : stockCodeF) || '-') },
+      { label: 'Lot Code', value: escapeHTML(lotCode) }
+    );
+  }
+  if (showAbvDuty && !abvSkipped) body += summaryRowHtml('ABV', escapeHTML(abv));
   if (!bbeSkipped) body += summaryRowHtml('BBE', escapeHTML(bbe));
   body += summaryPairHtml(
     { label: 'Unit Type', value: escapeHTML(unitType) },
@@ -1073,6 +1127,8 @@ window.chooseManualAlcohol = chooseManualAlcohol;
 window.cancelManualProduct = cancelManualProduct;
 window.confirmManualProduct = confirmManualProduct;
 window.showDetails = showDetails;
+window.skipABV = skipABV;
+window.skipLotCode = skipLotCode;
 window.skipBBE = skipBBE;
 window.confirmDetails = confirmDetails;
 window.showSummary = showSummary;

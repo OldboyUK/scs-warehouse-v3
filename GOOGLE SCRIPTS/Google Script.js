@@ -73,7 +73,7 @@ function handleIngredientsEntry(p) {
   const manualRaw = String(p.manualEntry == null ? '' : p.manualEntry).trim().toLowerCase();
   const isManual = manualRaw === 'true' || manualRaw === '1' || manualRaw === 'yes';
 
-  if (!pallet || !customer || !customerCode || !product || !lotCode || !bbe || !unitType || !value || !username) {
+  if (!pallet || !customer || !customerCode || !product || !bbe || !unitType || !value || !username) {
     return json({ result: 'error', message: 'Missing required fields' });
   }
   if (isManual && !group) {
@@ -138,7 +138,7 @@ function handleIngredientsEntry(p) {
   const nextRow = Math.max(2, findNextDataRow(sh));
   const stockCode = isManual ? '' : stockCodeF;
   const groupOut = group;
-  const stockId = stockCode + ' | ' + lotCode;
+  const stockId = lotCode ? (stockCode + ' | ' + lotCode) : String(stockCode || '');
   const bbeOut = bbe === SKIPPED_BBE ? '' : bbe;
 
   const palletCell = sh.getRange(nextRow, 1);

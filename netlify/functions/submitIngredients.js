@@ -48,14 +48,13 @@ exports.handler = async function (event) {
     const product = (params.get('product') || '').trim();
     const abv = (params.get('abv') || '').trim();
     const bbe = (params.get('bbe') || '').trim();
-    const lotCode = (params.get('lotCode') || '').trim();
     const unitType = (params.get('unitType') || '').trim();
     const value = (params.get('value') || '').trim();
     const duty = (params.get('duty') || '').trim();
     const username = (params.get('username') || '').trim();
 
     const required = {
-      pallet, customer, customerCode, product, lotCode, bbe, unitType, value, username
+      pallet, customer, customerCode, product, bbe, unitType, value, username
     };
     for (const [key, val] of Object.entries(required)) {
       if (!val) {
