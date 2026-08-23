@@ -908,12 +908,9 @@ function summaryPairHtml(left, right) {
 }
 
 function showSummary() {
-  const username = getLoggedInUsername();
-  const { date, time } = nowForSheets();
   let body = '';
   body += summaryRowHtml('Pallet ID', escapeHTML(palletId));
   body += summaryRowHtml('Customer', escapeHTML(customer));
-  body += summaryRowHtml('Customer Code', escapeHTML(customerCode));
   body += summaryRowHtml('Product Type', escapeHTML(productType));
   if (size) body += summaryRowHtml('Size', escapeHTML(size));
   if (colour) body += summaryRowHtml('Colour', escapeHTML(colour));
@@ -923,9 +920,6 @@ function showSummary() {
     { label: 'Value', value: escapeHTML(value) }
   );
   if (comments) body += summaryRowHtml('Comments', escapeHTML(comments));
-  if (username) body += summaryRowHtml('User', escapeHTML(username));
-  body += summaryRowHtml('Date', escapeHTML(date));
-  body += summaryRowHtml('Time', escapeHTML(time));
 
   app.innerHTML = `
     <div class="summary-card">${body}</div>
