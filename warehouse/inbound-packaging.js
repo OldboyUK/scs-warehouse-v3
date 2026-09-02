@@ -1084,7 +1084,7 @@ function submitEntry() {
       const text = await r.text();
       let json = null;
       try { json = JSON.parse(text); } catch (_) {}
-      if (!r.ok || !json || (json.result !== 'ok' && json.result !== 'success')) {
+      if (!json || (json.result !== 'ok' && json.result !== 'success')) {
         throw new Error('submit-failed');
       }
       showSuccess();

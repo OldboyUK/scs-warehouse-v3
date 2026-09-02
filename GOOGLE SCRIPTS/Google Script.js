@@ -631,15 +631,10 @@ function getLeftoverStockBlockingDispatch(ss, palletId) {
 }
 
 function findNextDataRow(sh) {
-  const columnAValues = sh.getRange('A:A').getValues();
-  let lastRow = 0;
-  for (let i = columnAValues.length - 1; i >= 0; i--) {
-    if (columnAValues[i][0] !== '') {
-      lastRow = i + 1;
-      break;
-    }
-  }
-  return lastRow + 1;
+  const lastCell = sh.getRange(sh.getMaxRows(), 1).getNextDataCell(SpreadsheetApp.Direction.UP);
+  const lastRow = lastCell.getRow();
+  if (lastRow <= 1 && (lastCell.getValue() === '' || lastCell.getValue() == null)) return 2;
+  return Math.max(2, lastRow + 1);
 }
 
 function findFirstBlankDisplayRowInColumnA(sh, startRow) {

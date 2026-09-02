@@ -1,6 +1,6 @@
 // /.netlify/functions/submitPackaging.js
 const fetch = require('node-fetch');
-const { getAppsScriptUrl, missingUrlMessage } = require('./scriptConfig');
+const { getAppsScriptUrl, missingUrlMessage, appsScriptProxyResult } = require('./scriptConfig');
 
 const SHARED_TOKEN = 'J4PAN88';
 const PACKAGE_OPTIONS = ['Box', 'Bundle', 'Bag', 'Individual Units'];
@@ -77,12 +77,7 @@ exports.handler = async function (event) {
     });
 
     const text = await res.text();
-    try {
-      const json = JSON.parse(text);
-      return { statusCode: res.status || 200, body: JSON.stringify(json) };
-    } catch {
-      return { statusCode: res.status || 200, body: JSON.stringify({ result: 'ok', raw: text }) };
-    }
+    return appsScriptProxyResult(res, text);
   } catch (err) {
     console.error(err);
     return { statusCode: 500, body: JSON.stringify({ result: 'error', message: String(err) }) };
