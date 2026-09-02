@@ -8,6 +8,7 @@ const INGREDIENTS_CSV =
 const SCRIPT_URL = '/.netlify/functions/submitIngredients';
 
 const UNIT_OPTIONS = ['Kg', 'g', 'L', 'ml'];
+const CONTAINER_OPTIONS = ['Bag', 'Box', 'Carton', 'Bottle', 'Vial', 'Jerrycan', 'Drum', 'Pouch', 'Barrel', 'Keg', 'IBC'];
 const DUTY_OPTIONS = ['Duty Suspended', 'Duty Paid', "Don't Know"];
 const SCS_CUSTOMER_NAME = 'Somerset Cider Solutions';
 const SKIPPED_BBE = '01/01/3000';
@@ -55,8 +56,10 @@ let abv = '';
 let abvSkipped = false;
 let bbe = '';
 let bbeSkipped = false;
+let containerType = '';
 let unitType = '';
 let value = '';
+let quantity = '';
 let duty = '';
 let comments = '';
 
@@ -388,6 +391,47 @@ function valueLabelForUnit(unit) {
   if (unit === 'Kg' || unit === 'g') return 'Enter the weight';
   if (unit === 'L' || unit === 'ml') return 'Enter the volume';
   return 'Enter the value';
+}
+
+function containerTypePlural(type) {
+  switch (type) {
+    case 'Bag': return 'Bags';
+    case 'Box': return 'Boxes';
+    case 'Carton': return 'Cartons';
+    case 'Bottle': return 'Bottles';
+    case 'Vial': return 'Vials';
+    case 'Jerrycan': return 'Jerrycans';
+    case 'Drum': return 'Drums';
+    case 'Pouch': return 'Pouches';
+    case 'Barrel': return 'Barrels';
+    case 'Keg': return 'Kegs';
+    case 'IBC': return 'IBCs';
+    default: return type;
+  }
+}
+
+function quantityPrompt(type) {
+  const name = containerTypePlural(type);
+  if (palletId === 'NO_BARCODE') {
+    return `Please enter the quantity of ${name} that you would like to add to this entry`;
+  }
+  return `Please enter the quantity of ${name} that you would like to add to this pallet`;
+}
+
+function applyContainerTypeState() {
+  const select = document.getElementById('containerTypeSelect');
+  const wrap = document.getElementById('quantityWrap');
+  const label = document.getElementById('quantityLabel');
+  const input = document.getElementById('quantityInput');
+  if (!select || !wrap) return;
+  const type = (select.value || '').trim();
+  if (!type || type === 'IBC') {
+    wrap.hidden = true;
+    if (type === 'IBC' && input) input.value = '1';
+    return;
+  }
+  wrap.hidden = false;
+  if (label) label.textContent = quantityPrompt(type);
 }
 
 function todayISO() {
@@ -817,6 +861,11 @@ function showDetails() {
       </div>
       <button id="bbeSkipBtn" class="btn ${bbeSkipped ? 'btn-primary' : 'btn-secondary'}" type="button" onclick="skipBBE()" style="min-height:52px; width:auto; padding:12px 18px; margin-top:0;">Skip</button>
     </div>
+    <label for="containerTypeSelect">Please select a container type for the ingredient</label>
+    <select id="containerTypeSelect">
+      <option value="">-- Choose a container --</option>
+      ${CONTAINER_OPTIONS.map(opt => `<option value="${escapeHTML(opt)}">${escapeHTML(opt)}</option>`).join('')}
+    </select>
     <div style="display:flex; gap:12px; align-items:flex-end;">
       <div style="flex:1; min-width:0;">
         <label for="unitTypeSelect">Unit Type</label>
@@ -829,6 +878,10 @@ function showDetails() {
         <label id="valueLabel" for="valueInput">${valueLabelForUnit(unitType)}</label>
         <input id="valueInput" type="number" step="any" min="0" inputmode="decimal" />
       </div>
+    </div>
+    <div id="quantityWrap">
+      <label id="quantityLabel" for="quantityInput">${quantityPrompt(containerType || 'Bag')}</label>
+      <input id="quantityInput" type="number" step="any" min="0" inputmode="decimal" />
     </div>
     ${showAbvDuty ? `
       <label for="dutySelect">Current Duty Status</label>
@@ -870,6 +923,8 @@ function showDetails() {
     const bbeISO = bbeToISO(bbe);
     if (bbeISO) bbeInput.value = bbeISO;
   }
+  const containerSelect = document.getElementById('containerTypeSelect');
+  if (containerType) containerSelect.value = containerType;
   const select = document.getElementById('unitTypeSelect');
   const label = document.getElementById('valueLabel');
   if (unitType) select.value = unitType;
@@ -877,6 +932,10 @@ function showDetails() {
   select.addEventListener('change', () => {
     label.textContent = valueLabelForUnit(select.value);
   });
+  const quantityInput = document.getElementById('quantityInput');
+  if (quantity !== '') quantityInput.value = quantity;
+  applyContainerTypeState();
+  containerSelect.addEventListener('change', applyContainerTypeState);
   if (showAbvDuty && duty) document.getElementById('dutySelect').value = duty;
   if (comments) document.getElementById('commentsInput').value = comments;
 }
@@ -923,9 +982,12 @@ function confirmDetails() {
   const showAbvDuty = requiresAbvAndDuty();
   const lotRaw = (document.getElementById('lotCodeInput').value || '').trim();
   const bbeISO = (document.getElementById('bbeInput').value || '').trim();
+  const container = (document.getElementById('containerTypeSelect').value || '').trim();
   const unit = (document.getElementById('unitTypeSelect').value || '').trim();
   const valueRaw = (document.getElementById('valueInput').value || '').trim();
   const valueNum = Number(valueRaw);
+  const quantityRaw = (document.getElementById('quantityInput').value || '').trim();
+  const quantityNum = Number(quantityRaw);
 
   if (showAbvDuty) {
     const dutyVal = (document.getElementById('dutySelect').value || '').trim();
@@ -968,6 +1030,10 @@ function confirmDetails() {
   } else {
     bbe = isoToBBE(bbeISO);
   }
+  if (!CONTAINER_OPTIONS.includes(container)) {
+    alert('Please choose a container type.');
+    return;
+  }
   if (!UNIT_OPTIONS.includes(unit)) {
     alert('Please choose a unit type.');
     return;
@@ -976,7 +1042,16 @@ function confirmDetails() {
     alert('Please enter a valid quantity greater than zero.');
     return;
   }
+  if (container === 'IBC') {
+    quantity = '1';
+  } else if (quantityRaw === '' || Number.isNaN(quantityNum) || quantityNum <= 0) {
+    alert('Please enter a valid container quantity greater than zero.');
+    return;
+  } else {
+    quantity = String(quantityNum);
+  }
 
+  containerType = container;
   unitType = unit;
   value = String(valueNum);
   comments = (document.getElementById('commentsInput').value || '').trim();
@@ -1020,10 +1095,12 @@ function showSummary() {
   }
   if (showAbvDuty && !abvSkipped) body += summaryRowHtml('ABV', escapeHTML(abv));
   if (!bbeSkipped) body += summaryRowHtml('BBE', escapeHTML(bbe));
+  body += summaryRowHtml('Container Type', escapeHTML(containerType));
   body += summaryPairHtml(
     { label: 'Unit Type', value: escapeHTML(unitType) },
     { label: 'Value', value: escapeHTML(value) }
   );
+  body += summaryRowHtml('Quantity', escapeHTML(quantity));
   if (showAbvDuty) body += summaryRowHtml('Current Duty Status', escapeHTML(duty));
   if (comments) body += summaryRowHtml('Comments', escapeHTML(comments));
 
@@ -1056,8 +1133,10 @@ function submitEntry() {
   body.append('lotCode', lotCode);
   body.append('abv', abv);
   body.append('bbe', bbe);
+  body.append('containerType', containerType);
   body.append('unitType', unitType);
   body.append('value', value);
+  body.append('quantity', quantity);
   body.append('duty', duty);
   body.append('comments', comments);
   body.append('username', username);

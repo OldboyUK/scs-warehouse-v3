@@ -66,8 +66,10 @@ function handleIngredientsEntry(p) {
   const lotCode      = (p.lotCode || '').trim();
   const abv          = (p.abv || '').trim();
   const bbe          = (p.bbe || '').trim();
+  const containerType = (p.containerType || '').trim();
   const unitType     = (p.unitType || '').trim();
   const value        = (p.value || '').trim();
+  const quantity     = (p.quantity || '').trim();
   const duty         = (p.duty || '').trim();
   const comments     = p.comments == null ? '' : String(p.comments);
   const username     = (p.username || p.user || '').trim();
@@ -75,7 +77,7 @@ function handleIngredientsEntry(p) {
   const manualRaw = String(p.manualEntry == null ? '' : p.manualEntry).trim().toLowerCase();
   const isManual = manualRaw === 'true' || manualRaw === '1' || manualRaw === 'yes';
 
-  if (!pallet || !customer || !customerCode || !product || !bbe || !unitType || !value || !username) {
+  if (!pallet || !customer || !customerCode || !product || !bbe || !containerType || !unitType || !value || !quantity || !username) {
     return json({ result: 'error', message: 'Missing required fields' });
   }
   if (isManual && !group) {
@@ -113,6 +115,11 @@ function handleIngredientsEntry(p) {
     abvOut = abvNum;
   }
 
+  const containerAllowed = ['Bag', 'Box', 'Carton', 'Bottle', 'Vial', 'Jerrycan', 'Drum', 'Pouch', 'Barrel', 'Keg', 'IBC'];
+  if (containerAllowed.indexOf(containerType) === -1) {
+    return json({ result: 'error', message: 'Invalid container type' });
+  }
+
   const unitAllowed = ['Kg', 'g', 'L', 'ml'];
   if (unitAllowed.indexOf(unitType) === -1) {
     return json({ result: 'error', message: 'Invalid unit type' });
@@ -121,6 +128,13 @@ function handleIngredientsEntry(p) {
   const valueNum = Number(value);
   if (isNaN(valueNum) || valueNum <= 0) {
     return json({ result: 'error', message: 'Value must be numeric and greater than zero' });
+  }
+
+  let quantityNum = Number(quantity);
+  if (containerType === 'IBC') {
+    quantityNum = 1;
+  } else if (isNaN(quantityNum) || quantityNum <= 0) {
+    return json({ result: 'error', message: 'Quantity must be numeric and greater than zero' });
   }
 
   const dutyAllowed = ['Duty Suspended', 'Duty Paid', "Don't Know"];
@@ -140,17 +154,13 @@ function handleIngredientsEntry(p) {
   const nextRow = Math.max(2, findNextDataRow(sh));
   const stockCode = isManual ? '' : stockCodeF;
   const groupOut = group;
-  const stockId = lotCode ? (stockCode + ' | ' + lotCode) : String(stockCode || '');
   const bbeOut = bbe === SKIPPED_BBE ? '' : bbe;
 
   const palletCell = sh.getRange(nextRow, 1);
   palletCell.setNumberFormat('@');
   palletCell.setValue(String(pallet));
 
-  const stockIdCell = sh.getRange(nextRow, 2);
-  stockIdCell.setNumberFormat('@');
-  stockIdCell.setValue(String(stockId));
-
+  // Do not write B (Stock ID) or P (Total Quantity); spreadsheet formulas own those cells.
   const lotCell = sh.getRange(nextRow, 9);
   lotCell.setNumberFormat('@');
   lotCell.setValue(String(lotCode));
@@ -167,17 +177,21 @@ function handleIngredientsEntry(p) {
   groupCell.setNumberFormat('@');
   groupCell.setValue(String(groupOut));
 
-  sh.getRange(nextRow, 10, 1, 10).setValues([[
+  sh.getRange(nextRow, 10, 1, 6).setValues([[
     abvOut,
     bbeOut,
+    containerType,
     unitType,
     valueNum,
+    quantityNum
+  ]]);
+
+  sh.getRange(nextRow, 17, 1, 5).setValues([[
     duty,
     comments,
     username,
     dateStr,
-    timeStr,
-    isManual
+    timeStr
   ]]);
 
   return json({ result: 'success' });
