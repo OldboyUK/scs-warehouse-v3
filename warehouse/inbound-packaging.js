@@ -7,8 +7,8 @@ const PACKAGING_CSV =
   'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=120813966&single=true&output=csv';
 const SCRIPT_URL = '/.netlify/functions/submitPackaging';
 
-const UNIT_OPTIONS = ['Units', 'Box(es)', 'Bundle', 'Full Pallet'];
-const FULL_PALLET = 'Full Pallet';
+const PACKAGE_OPTIONS = ['Box', 'Bundle', 'Bag', 'Individual Units'];
+const PACKAGE_INDIVIDUAL = 'Individual Units';
 const SCS_CUSTOMER_NAME = 'Somerset Cider Solutions';
 
 let palletId = '';
@@ -20,8 +20,9 @@ let size = '';
 let colour = '';
 let type = '';
 let selectedPackaging = null;
-let unitType = '';
-let value = '';
+let packageType = '';
+let unitsPerPackage = '';
+let packageQty = '';
 let comments = '';
 
 let customersList = [];
@@ -226,8 +227,9 @@ function resetPackagingFields() {
   colour = '';
   type = '';
   selectedPackaging = null;
-  unitType = '';
-  value = '';
+  packageType = '';
+  unitsPerPackage = '';
+  packageQty = '';
   comments = '';
 }
 
@@ -415,16 +417,102 @@ function loadLookups() {
     });
 }
 
-function applyUnitTypeState(select, valueInput) {
-  if (!select || !valueInput) return;
-  if (select.value === FULL_PALLET) {
-    valueInput.value = '1';
-    valueInput.disabled = true;
-    valueInput.style.background = 'var(--card)';
-  } else {
-    valueInput.disabled = false;
-    valueInput.style.background = '';
+function packageFieldCopy(type) {
+  if (type === 'Box') {
+    return {
+      perLabel: 'Units per box',
+      perPrompt: 'Please enter the number of units contained in each box.',
+      qtyLabel: 'Number of boxes',
+      qtyPrompt: 'Please enter the total number of boxes being added to stock.'
+    };
   }
+  if (type === 'Bundle') {
+    return {
+      perLabel: 'Units per bundle',
+      perPrompt: 'Please enter the number of units contained in each bundle.',
+      qtyLabel: 'Number of bundles',
+      qtyPrompt: 'Please enter the total number of bundles being added to stock.'
+    };
+  }
+  if (type === 'Bag') {
+    return {
+      perLabel: 'Units per bag',
+      perPrompt: 'Please enter the number of units contained in each bag.',
+      qtyLabel: 'Number of bags',
+      qtyPrompt: 'Please enter the total number of bags being added to stock.'
+    };
+  }
+  if (type === PACKAGE_INDIVIDUAL) {
+    return {
+      qtyLabel: 'Number of units',
+      qtyPrompt: 'Please enter the total number of individual units being added to stock.'
+    };
+  }
+  return null;
+}
+
+function formatTotalUnits(n) {
+  if (!Number.isFinite(n) || n <= 0) return '—';
+  if (Number.isInteger(n)) return String(n);
+  return String(Math.round(n * 1000) / 1000);
+}
+
+function parsePositiveNumber(raw) {
+  const text = String(raw || '').trim();
+  if (text === '') return null;
+  const n = Number(text);
+  if (Number.isNaN(n) || n <= 0) return null;
+  return n;
+}
+
+function updateTotalUnitsDisplay() {
+  const display = document.getElementById('totalUnitsDisplay');
+  if (!display) return;
+  const type = (document.getElementById('packageTypeSelect').value || '').trim();
+  if (!PACKAGE_OPTIONS.includes(type)) {
+    display.hidden = true;
+    return;
+  }
+  display.hidden = false;
+  const qty = parsePositiveNumber(document.getElementById('packageQtyInput') && document.getElementById('packageQtyInput').value);
+  let total = null;
+  if (type === PACKAGE_INDIVIDUAL) {
+    total = qty;
+  } else {
+    const per = parsePositiveNumber(document.getElementById('unitsPerPackageInput') && document.getElementById('unitsPerPackageInput').value);
+    if (per != null && qty != null) total = per * qty;
+  }
+  display.innerHTML = '<strong>Total units: ' + formatTotalUnits(total == null ? 0 : total) + '</strong>';
+}
+
+function applyPackageTypeState() {
+  const select = document.getElementById('packageTypeSelect');
+  const perWrap = document.getElementById('unitsPerPackageWrap');
+  const qtyWrap = document.getElementById('packageQtyWrap');
+  const display = document.getElementById('totalUnitsDisplay');
+  if (!select || !perWrap || !qtyWrap) return;
+
+  const type = (select.value || '').trim();
+  const copy = packageFieldCopy(type);
+  if (!copy) {
+    perWrap.hidden = true;
+    qtyWrap.hidden = true;
+    if (display) display.hidden = true;
+    return;
+  }
+
+  qtyWrap.hidden = false;
+  document.getElementById('packageQtyLabel').textContent = copy.qtyLabel;
+  document.getElementById('packageQtyPrompt').textContent = copy.qtyPrompt;
+
+  if (type === PACKAGE_INDIVIDUAL) {
+    perWrap.hidden = true;
+  } else {
+    perWrap.hidden = false;
+    document.getElementById('unitsPerPackageLabel').textContent = copy.perLabel;
+    document.getElementById('unitsPerPackagePrompt').textContent = copy.perPrompt;
+  }
+  updateTotalUnitsDisplay();
 }
 
 function showPallet() {
@@ -835,19 +923,22 @@ function showDetails() {
   const packingBits = [productType, size, colour, type].filter(Boolean);
   app.innerHTML = `
     <p>Packaging: <strong>${escapeHTML(packingBits.join(' · '))}</strong></p>
-    <div style="display:flex; gap:12px; align-items:flex-end;">
-      <div style="flex:1; min-width:0;">
-        <label for="unitTypeSelect">Please enter the unit type</label>
-        <select id="unitTypeSelect">
-          <option value="">-- Choose a unit --</option>
-          ${UNIT_OPTIONS.map(opt => `<option value="${escapeHTML(opt)}">${escapeHTML(opt)}</option>`).join('')}
-        </select>
-      </div>
-      <div style="flex:1; min-width:0;">
-        <label for="valueInput">Enter the quantity</label>
-        <input id="valueInput" type="number" step="any" min="0" inputmode="decimal" />
-      </div>
+    <label for="packageTypeSelect">How are the items packaged?</label>
+    <select id="packageTypeSelect">
+      <option value="">-- Choose packaging --</option>
+      ${PACKAGE_OPTIONS.map(opt => `<option value="${escapeHTML(opt)}">${escapeHTML(opt)}</option>`).join('')}
+    </select>
+    <div id="unitsPerPackageWrap" hidden>
+      <label id="unitsPerPackageLabel" for="unitsPerPackageInput">Units per box</label>
+      <p id="unitsPerPackagePrompt" class="status" style="margin-top:0; margin-bottom:8px;">Please enter the number of units contained in each box.</p>
+      <input id="unitsPerPackageInput" type="number" step="any" min="0" inputmode="decimal" />
     </div>
+    <div id="packageQtyWrap" hidden>
+      <label id="packageQtyLabel" for="packageQtyInput">Number of boxes</label>
+      <p id="packageQtyPrompt" class="status" style="margin-top:0; margin-bottom:8px;">Please enter the total number of boxes being added to stock.</p>
+      <input id="packageQtyInput" type="number" step="any" min="0" inputmode="decimal" />
+    </div>
+    <p id="totalUnitsDisplay" hidden><strong>Total units: —</strong></p>
     <label for="commentsInput" style="color: var(--muted); font-weight: 500;">Comments (optional)</label>
     <input id="commentsInput" autocomplete="off" placeholder="Optional" style="background: var(--card);" />
     <div class="actions mt-3">
@@ -856,34 +947,56 @@ function showDetails() {
     </div>
   `;
 
-  const select = document.getElementById('unitTypeSelect');
-  const valueInput = document.getElementById('valueInput');
-  if (unitType) select.value = unitType;
-  if (value !== '') valueInput.value = value;
-  applyUnitTypeState(select, valueInput);
-  select.addEventListener('change', () => applyUnitTypeState(select, valueInput));
+  const select = document.getElementById('packageTypeSelect');
+  if (packageType) select.value = packageType;
+  applyPackageTypeState();
+  if (unitsPerPackage !== '' && packageType !== PACKAGE_INDIVIDUAL) {
+    document.getElementById('unitsPerPackageInput').value = unitsPerPackage;
+  }
+  if (packageQty !== '') document.getElementById('packageQtyInput').value = packageQty;
+  updateTotalUnitsDisplay();
+  select.addEventListener('change', applyPackageTypeState);
+  const perInput = document.getElementById('unitsPerPackageInput');
+  const qtyInput = document.getElementById('packageQtyInput');
+  perInput.addEventListener('input', updateTotalUnitsDisplay);
+  qtyInput.addEventListener('input', updateTotalUnitsDisplay);
   if (comments) document.getElementById('commentsInput').value = comments;
 }
 
 function confirmDetails() {
-  const unit = (document.getElementById('unitTypeSelect').value || '').trim();
-  const valueRaw = (document.getElementById('valueInput').value || '').trim();
-  const valueNum = Number(valueRaw);
-
-  if (!UNIT_OPTIONS.includes(unit)) {
-    alert('Please choose a unit type.');
+  const type = (document.getElementById('packageTypeSelect').value || '').trim();
+  if (!PACKAGE_OPTIONS.includes(type)) {
+    alert('Please choose how the items are packaged.');
     return;
   }
-  if (unit === FULL_PALLET) {
-    unitType = unit;
-    value = '1';
+
+  const qtyRaw = (document.getElementById('packageQtyInput').value || '').trim();
+  const qtyNum = parsePositiveNumber(qtyRaw);
+  if (qtyNum == null) {
+    if (type === PACKAGE_INDIVIDUAL) {
+      alert('Please enter a valid number of individual units greater than zero.');
+    } else {
+      const noun = type === 'Box' ? 'boxes' : type === 'Bundle' ? 'bundles' : 'bags';
+      alert('Please enter a valid number of ' + noun + ' greater than zero.');
+    }
+    return;
+  }
+
+  if (type === PACKAGE_INDIVIDUAL) {
+    packageType = type;
+    unitsPerPackage = '1';
+    packageQty = String(qtyNum);
   } else {
-    if (valueRaw === '' || Number.isNaN(valueNum) || valueNum <= 0) {
-      alert('Please enter a valid quantity greater than zero.');
+    const perRaw = (document.getElementById('unitsPerPackageInput').value || '').trim();
+    const perNum = parsePositiveNumber(perRaw);
+    if (perNum == null) {
+      const noun = type === 'Box' ? 'box' : type === 'Bundle' ? 'bundle' : 'bag';
+      alert('Please enter a valid number of units per ' + noun + ' greater than zero.');
       return;
     }
-    unitType = unit;
-    value = String(valueNum);
+    packageType = type;
+    unitsPerPackage = String(perNum);
+    packageQty = String(qtyNum);
   }
   comments = (document.getElementById('commentsInput').value || '').trim();
   showSummary();
@@ -908,6 +1021,10 @@ function summaryPairHtml(left, right) {
 }
 
 function showSummary() {
+  const copy = packageFieldCopy(packageType);
+  const perNum = Number(unitsPerPackage);
+  const qtyNum = Number(packageQty);
+  const total = packageType === PACKAGE_INDIVIDUAL ? qtyNum : perNum * qtyNum;
   let body = '';
   body += summaryRowHtml('Pallet ID', escapeHTML(palletId));
   body += summaryRowHtml('Customer', escapeHTML(customer));
@@ -915,10 +1032,12 @@ function showSummary() {
   if (size) body += summaryRowHtml('Size', escapeHTML(size));
   if (colour) body += summaryRowHtml('Colour', escapeHTML(colour));
   if (type) body += summaryRowHtml('Type', escapeHTML(type));
-  body += summaryPairHtml(
-    { label: 'Unit Type', value: escapeHTML(unitType) },
-    { label: 'Value', value: escapeHTML(value) }
-  );
+  body += summaryRowHtml('Package Type', escapeHTML(packageType));
+  if (packageType !== PACKAGE_INDIVIDUAL && copy) {
+    body += summaryRowHtml(copy.perLabel, escapeHTML(unitsPerPackage));
+  }
+  if (copy) body += summaryRowHtml(copy.qtyLabel, escapeHTML(packageQty));
+  body += summaryRowHtml('Total units', escapeHTML(formatTotalUnits(total)));
   if (comments) body += summaryRowHtml('Comments', escapeHTML(comments));
 
   app.innerHTML = `
@@ -946,8 +1065,9 @@ function submitEntry() {
   body.append('size', size);
   body.append('colour', colour);
   body.append('type', type);
-  body.append('unitType', unitType);
-  body.append('value', value);
+  body.append('packageType', packageType);
+  body.append('unitsPerPackage', unitsPerPackage);
+  body.append('packageQty', packageQty);
   body.append('comments', comments);
   body.append('username', username);
   body.append('date', date);

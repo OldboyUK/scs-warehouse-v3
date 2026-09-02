@@ -206,12 +206,13 @@ function handlePackagingEntry(p) {
   const size         = (p.size || '').trim();
   const colour       = (p.colour || '').trim();
   const type         = (p.type || '').trim();
-  const unitType     = (p.unitType || '').trim();
-  const value        = (p.value || '').trim();
+  const packageType  = (p.packageType || '').trim();
+  const unitsPerPackage = (p.unitsPerPackage || '').trim();
+  const packageQty   = (p.packageQty || '').trim();
   const comments     = p.comments == null ? '' : String(p.comments);
   const username     = (p.username || p.user || '').trim();
 
-  if (!pallet || !customer || !customerCode || !productType || !unitType || !value || !username) {
+  if (!pallet || !customer || !customerCode || !productType || !packageType || !unitsPerPackage || !packageQty || !username) {
     return json({ result: 'error', message: 'Missing required fields' });
   }
 
@@ -219,16 +220,20 @@ function handlePackagingEntry(p) {
     return json({ result: 'error', message: 'Invalid pallet' });
   }
 
-  const unitAllowed = ['Units', 'Box(es)', 'Bundle', 'Full Pallet'];
-  if (unitAllowed.indexOf(unitType) === -1) {
-    return json({ result: 'error', message: 'Invalid unit type' });
+  const packageAllowed = ['Box', 'Bundle', 'Bag', 'Individual Units'];
+  if (packageAllowed.indexOf(packageType) === -1) {
+    return json({ result: 'error', message: 'Invalid package type' });
   }
 
-  let valueNum = Number(value);
-  if (unitType === 'Full Pallet') {
-    valueNum = 1;
-  } else if (isNaN(valueNum) || valueNum <= 0) {
-    return json({ result: 'error', message: 'Value must be numeric and greater than zero' });
+  let unitsPerPackageNum = Number(unitsPerPackage);
+  let packageQtyNum = Number(packageQty);
+  if (packageType === 'Individual Units') {
+    unitsPerPackageNum = 1;
+  } else if (isNaN(unitsPerPackageNum) || unitsPerPackageNum <= 0) {
+    return json({ result: 'error', message: 'Units per package must be numeric and greater than zero' });
+  }
+  if (isNaN(packageQtyNum) || packageQtyNum <= 0) {
+    return json({ result: 'error', message: 'Package quantity must be numeric and greater than zero' });
   }
 
   const tz = Session.getScriptTimeZone();
@@ -246,7 +251,7 @@ function handlePackagingEntry(p) {
   palletCell.setNumberFormat('@');
   palletCell.setValue(String(pallet));
 
-  // Do not write B (Stock ID) or I (Stock Code); spreadsheet formulas own those cells.
+  // Do not write B (Stock ID), I (Stock Code), or M (Total Qty); spreadsheet formulas own those cells.
   sh.getRange(nextRow, 3, 1, 6).setValues([[
     customer,
     customerCode,
@@ -256,9 +261,13 @@ function handlePackagingEntry(p) {
     type
   ]]);
 
-  sh.getRange(nextRow, 10, 1, 6).setValues([[
-    unitType,
-    valueNum,
+  sh.getRange(nextRow, 10, 1, 3).setValues([[
+    packageType,
+    unitsPerPackageNum,
+    packageQtyNum
+  ]]);
+
+  sh.getRange(nextRow, 14, 1, 4).setValues([[
     comments,
     username,
     dateStr,

@@ -3,7 +3,8 @@ const fetch = require('node-fetch');
 const { getAppsScriptUrl, missingUrlMessage } = require('./scriptConfig');
 
 const SHARED_TOKEN = 'J4PAN88';
-const UNIT_OPTIONS = ['Units', 'Box(es)', 'Bundle', 'Full Pallet'];
+const PACKAGE_OPTIONS = ['Box', 'Bundle', 'Bag', 'Individual Units'];
+const PACKAGE_INDIVIDUAL = 'Individual Units';
 
 function isValidPallet(pallet) {
   return pallet === 'NO_BARCODE' || /^\d{15}$/.test(pallet);
@@ -34,12 +35,13 @@ exports.handler = async function (event) {
     const size = (params.get('size') || '').trim();
     const colour = (params.get('colour') || '').trim();
     const type = (params.get('type') || '').trim();
-    const unitType = (params.get('unitType') || '').trim();
-    const value = (params.get('value') || '').trim();
+    const packageType = (params.get('packageType') || '').trim();
+    const unitsPerPackage = (params.get('unitsPerPackage') || '').trim();
+    const packageQty = (params.get('packageQty') || '').trim();
     const username = (params.get('username') || '').trim();
 
     const required = {
-      pallet, customer, customerCode, productType, unitType, value, username
+      pallet, customer, customerCode, productType, packageType, unitsPerPackage, packageQty, username
     };
     for (const [key, val] of Object.entries(required)) {
       if (!val) {
@@ -50,11 +52,18 @@ exports.handler = async function (event) {
     if (!isValidPallet(pallet)) {
       return { statusCode: 400, body: JSON.stringify({ result: 'error', message: 'Invalid pallet' }) };
     }
-    if (!UNIT_OPTIONS.includes(unitType)) {
-      return { statusCode: 400, body: JSON.stringify({ result: 'error', message: 'Invalid unit type' }) };
+    if (!PACKAGE_OPTIONS.includes(packageType)) {
+      return { statusCode: 400, body: JSON.stringify({ result: 'error', message: 'Invalid package type' }) };
     }
-    if (unitType !== 'Full Pallet' && (!isNumeric(value) || Number(value) <= 0)) {
-      return { statusCode: 400, body: JSON.stringify({ result: 'error', message: 'Value must be numeric and greater than zero' }) };
+    if (packageType === PACKAGE_INDIVIDUAL) {
+      if (Number(unitsPerPackage) !== 1) {
+        return { statusCode: 400, body: JSON.stringify({ result: 'error', message: 'Individual Units must have 1 unit per package' }) };
+      }
+    } else if (!isNumeric(unitsPerPackage) || Number(unitsPerPackage) <= 0) {
+      return { statusCode: 400, body: JSON.stringify({ result: 'error', message: 'Units per package must be numeric and greater than zero' }) };
+    }
+    if (!isNumeric(packageQty) || Number(packageQty) <= 0) {
+      return { statusCode: 400, body: JSON.stringify({ result: 'error', message: 'Package quantity must be numeric and greater than zero' }) };
     }
 
     const body = new URLSearchParams(event.body || '');
