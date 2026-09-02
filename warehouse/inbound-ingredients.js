@@ -393,6 +393,13 @@ function valueLabelForUnit(unit) {
   return 'Enter the value';
 }
 
+function normalisedUnitForSheet(unit, rawValue) {
+  const valueNum = Number(rawValue);
+  if (unit === 'g') return { unitType: 'Kg', value: valueNum / 1000 };
+  if (unit === 'ml') return { unitType: 'L', value: valueNum / 1000 };
+  return { unitType: unit, value: valueNum };
+}
+
 function containerTypePlural(type) {
   switch (type) {
     case 'Bag': return 'Bags';
@@ -1134,8 +1141,9 @@ function submitEntry() {
   body.append('abv', abv);
   body.append('bbe', bbe);
   body.append('containerType', containerType);
-  body.append('unitType', unitType);
-  body.append('value', value);
+  const storedUnit = normalisedUnitForSheet(unitType, value);
+  body.append('unitType', storedUnit.unitType);
+  body.append('value', String(storedUnit.value));
   body.append('quantity', quantity);
   body.append('duty', duty);
   body.append('comments', comments);

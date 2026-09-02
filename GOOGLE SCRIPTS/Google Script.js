@@ -130,6 +130,16 @@ function handleIngredientsEntry(p) {
     return json({ result: 'error', message: 'Value must be numeric and greater than zero' });
   }
 
+  let unitOut = unitType;
+  let valueOut = valueNum;
+  if (unitType === 'g') {
+    unitOut = 'Kg';
+    valueOut = valueNum / 1000;
+  } else if (unitType === 'ml') {
+    unitOut = 'L';
+    valueOut = valueNum / 1000;
+  }
+
   let quantityNum = Number(quantity);
   if (containerType === 'IBC') {
     quantityNum = 1;
@@ -181,8 +191,8 @@ function handleIngredientsEntry(p) {
     abvOut,
     bbeOut,
     containerType,
-    unitType,
-    valueNum,
+    unitOut,
+    valueOut,
     quantityNum
   ]]);
 
