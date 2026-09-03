@@ -841,12 +841,32 @@ td.pre-line { white-space: pre-line; }
   box-shadow: 0 0 0 1px var(--primary-soft);
 }
 
+.inquiry-item-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  min-width: 0;
+}
+
 .inquiry-pallet-id {
-  margin: 0 0 8px;
+  margin: 0;
   font-size: 0.95rem;
   font-weight: 800;
   letter-spacing: 0.04em;
   color: var(--primary);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.inquiry-category {
+  margin-left: auto;
+  text-align: right;
+  font-weight: 700;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .inquiry-stock-list {
@@ -930,6 +950,16 @@ td.pre-line { white-space: pre-line; }
 
   .inquiry-pallet {
     padding: 10px 12px;
+  }
+
+  .inquiry-item-header {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 6px 12px;
+  }
+
+  .inquiry-category {
+    font-size: 0.82rem;
   }
 }
 

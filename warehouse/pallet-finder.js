@@ -113,7 +113,9 @@ function buildHierarchy(bayRows, palletRows, stockRows) {
       company: cell(row, 2),
       product: cell(row, 3),
       format: cell(row, 4),
-      units: cell(row, 5)
+      units: cell(row, 5),
+      category: cell(row, 11), // Column L
+      unitType: cell(row, 12)  // Column M
     };
 
     if (!stockByPallet.has(palletId)) stockByPallet.set(palletId, []);
@@ -214,6 +216,22 @@ function palletCountLabel(count) {
   return `${count} PALLETS`;
 }
 
+function getCategoryColor(category) {
+  switch ((category || '').trim().toLowerCase()) {
+    case 'finished product':
+      return '#FFB000';
+
+    case 'packaging':
+      return '#63D8FF';
+
+    case 'ingredients':
+      return '#6EE7B7';
+
+    default:
+      return '#9AA4C1';
+  }
+}
+
 function isActiveTrue(status) {
   return String(status || '').trim().toUpperCase() === 'TRUE';
 }
@@ -235,9 +253,18 @@ function mismatchNote(location) {
 }
 
 function stockSearchText(line) {
-  return [line.runCode, line.company, line.product, line.format, line.units]
+  return [line.runCode, line.company, line.product, line.format, line.units, line.category, line.unitType]
     .join(' ')
     .toLowerCase();
+}
+
+function palletCategory(pallet) {
+  const seen = [];
+  for (const line of pallet.stock || []) {
+    const category = (line.category || '').trim();
+    if (category && !seen.includes(category)) seen.push(category);
+  }
+  return seen[0] || '';
 }
 
 function palletMatches(pallet, q) {
@@ -329,6 +356,12 @@ function renderBay(location, q) {
   return details;
 }
 
+function formatQuantityLabel(quantity, unitType) {
+  const qty = quantity || '—';
+  const label = (unitType || '').trim();
+  return label ? `${qty} ${label}` : qty;
+}
+
 function renderStockLine(line, q) {
   const item = document.createElement('li');
   item.className = 'inquiry-stock-line';
@@ -337,7 +370,7 @@ function renderStockLine(line, q) {
   const company = escapeHTML(line.company || '—');
   const product = escapeHTML(line.product || '—');
   const format = escapeHTML(line.format || '—');
-  const units = escapeHTML(line.units || '—');
+  const qtyText = escapeHTML(formatQuantityLabel(line.units, line.unitType));
   const run = line.runCode
     ? `<span class="inquiry-stock-run">${escapeHTML(line.runCode)}</span>`
     : '';
@@ -346,7 +379,7 @@ function renderStockLine(line, q) {
     `<span class="inquiry-stock-main">` +
       `<span class="inquiry-stock-pair">${company} · ${product}</span>` +
       `<span class="inquiry-stock-sep" aria-hidden="true"> · </span>` +
-      `<span class="inquiry-stock-pair">${format} · ${units} units</span>` +
+      `<span class="inquiry-stock-pair">${format} · ${qtyText}</span>` +
     `</span>${run}`;
   return item;
 }
@@ -356,10 +389,24 @@ function renderPallet(pallet, q) {
   card.className = 'inquiry-pallet';
   if (q && palletMatches(pallet, q)) card.classList.add('is-match');
 
+  const header = document.createElement('div');
+  header.className = 'inquiry-item-header';
+
   const heading = document.createElement('h3');
   heading.className = 'inquiry-pallet-id';
   heading.textContent = pallet.id;
-  card.appendChild(heading);
+  header.appendChild(heading);
+
+  const category = palletCategory(pallet);
+  if (category) {
+    const categoryEl = document.createElement('span');
+    categoryEl.className = 'inquiry-category';
+    categoryEl.textContent = category;
+    categoryEl.style.color = getCategoryColor(category);
+    header.appendChild(categoryEl);
+  }
+
+  card.appendChild(header);
 
   if (!pallet.stock.length) {
     const empty = document.createElement('p');
