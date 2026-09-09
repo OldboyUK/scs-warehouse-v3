@@ -127,6 +127,11 @@ function submitForm() {
     return;
   }
 
+  if (!comments) {
+    alert('Please enter a comment before submitting.');
+    return;
+  }
+
   let isoDate = HRUtils.formatTodayISO();
   if (!workedToday) {
     isoDate = (document.getElementById('dateInput').value || '').trim();
