@@ -17,11 +17,13 @@ const SHEET_INGREDIENTS_ENTRY   = 'PALLET ENTRY [INGREDIENTS]';
 const SHEET_PACKAGING_ENTRY     = 'PALLET ENTRY [PACKAGING]';
 const SHEET_GID_STOCK           = 1879287780;
 const SKIPPED_BBE               = '01/01/3000';
+const DRIVE_INGREDIENTS_PAPERWORK_PARENT = '1LcxWL6yUBoyCmX3vjA_inHwo0VfW-JdJ';
+const PAPERWORK_TYPES = ['Type 1', 'Type 2', 'Type 3'];
 
 /** ====== MAIN ENTRY POINT ====== **/
 function doPost(e) {
   try {
-    const p = (e && e.parameter) ? e.parameter : {};
+    const p = readPostParams(e);
     const token = (p.token || '').trim();
 
     if (token !== API_TOKEN) {
@@ -33,6 +35,7 @@ function doPost(e) {
     // Priority order - be more specific
     if (action === 'packaging_entry')                    return handlePackagingEntry(p);
     if (action === 'ingredients_entry')                  return handleIngredientsEntry(p);
+    if (action === 'ingredients_paperwork')              return handleIngredientsPaperwork(p);
     if (action === 'location_assignment')               return handleLocationAssignment(p);
     if (action === 'add_third_party_product')            return handleAddThirdPartyProduct(p);
     if (action === 'staging')                            return handleStaging(p);
@@ -48,6 +51,27 @@ function doPost(e) {
 }
 
 /** ====== ROUTE HELPERS ====== **/
+function readPostParams(e) {
+  const p = (e && e.parameter) ? e.parameter : {};
+  const type = e && e.postData && e.postData.type ? String(e.postData.type) : '';
+  if (type.indexOf('application/json') !== -1) {
+    try {
+      const parsed = JSON.parse((e.postData.contents || '{}'));
+      const merged = {};
+      for (const key in p) {
+        if (Object.prototype.hasOwnProperty.call(p, key)) merged[key] = p[key];
+      }
+      for (const key in parsed) {
+        if (Object.prototype.hasOwnProperty.call(parsed, key)) merged[key] = parsed[key];
+      }
+      return merged;
+    } catch (err) {
+      return p;
+    }
+  }
+  return p;
+}
+
 function isGoods3P(p)       { return !!(p.helper || p.company || p.product); }
 function isDispatch(p)      { return !!(p.pallet && p.date && p.time && !p.location); }
 function isPalletEntry(p)   { return !!(p.code && p.run && p.units); }
@@ -205,6 +229,61 @@ function handleIngredientsEntry(p) {
   ]]);
 
   return json({ result: 'success' });
+}
+
+// INBOUND INGREDIENTS PAPERWORK — uploads a photo into a Drive folder named after the document type
+function handleIngredientsPaperwork(p) {
+  const documentType = (p.documentType || '').trim();
+  const stockCode = p.stockCode == null ? '' : String(p.stockCode).trim();
+  const lotCode = p.lotCode == null ? '' : String(p.lotCode).trim();
+  const mimeType = (p.mimeType || 'image/jpeg').trim();
+  let ext = String(p.extension || '').trim().toLowerCase();
+  let imageBase64 = p.imageBase64 == null ? '' : String(p.imageBase64);
+  const prefix = imageBase64.indexOf('base64,');
+  if (prefix !== -1) imageBase64 = imageBase64.substring(prefix + 7);
+  imageBase64 = imageBase64.replace(/\s/g, '');
+
+  if (PAPERWORK_TYPES.indexOf(documentType) === -1) {
+    return json({ result: 'error', message: 'Invalid document type' });
+  }
+  if (!imageBase64) {
+    return json({ result: 'error', message: 'Missing image' });
+  }
+
+  if (ext && ext.charAt(0) !== '.') ext = '.' + ext;
+  if (!/^\.(jpg|jpeg|png|webp|gif|heic|heif)$/i.test(ext)) {
+    ext = mimeType.indexOf('png') !== -1 ? '.png' : '.jpg';
+  }
+
+  const parent = DriveApp.getFolderById(DRIVE_INGREDIENTS_PAPERWORK_PARENT);
+  const folders = parent.getFoldersByName(documentType);
+  if (!folders.hasNext()) {
+    return json({ result: 'error', message: 'Destination folder not found: ' + documentType });
+  }
+  const dest = folders.next();
+  const baseName = stockCode + ' | ' + lotCode;
+  const fileName = nextPaperworkFileName(dest, baseName, ext);
+  const blob = Utilities.newBlob(Utilities.base64Decode(imageBase64), mimeType || 'image/jpeg', fileName);
+  dest.createFile(blob);
+
+  return json({
+    result: 'success',
+    fileName: fileName,
+    documentType: documentType,
+    destination: documentType
+  });
+}
+
+function nextPaperworkFileName(folder, baseName, ext) {
+  if (!folder.getFilesByName(baseName + ext).hasNext()) return baseName + ext;
+  let n = 2;
+  while (folder.getFilesByName(baseName + ' (' + n + ')' + ext).hasNext()) {
+    n++;
+    if (n > 999) {
+      throw new Error('Too many files with the same name');
+    }
+  }
+  return baseName + ' (' + n + ')' + ext;
 }
 
 // INBOUND PACKAGING — writes to PALLET ENTRY [PACKAGING]

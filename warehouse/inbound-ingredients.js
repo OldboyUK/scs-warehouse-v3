@@ -8,6 +8,8 @@ const INGREDIENTS_CSV =
 const SCRIPT_URL = '/.netlify/functions/submitIngredients';
 
 const UNIT_OPTIONS = ['Kg', 'g', 'L', 'ml'];
+const PAPERWORK_TYPES = ['Type 1', 'Type 2', 'Type 3'];
+const PAPERWORK_UPLOAD_URL = '/.netlify/functions/uploadIngredientsPaperwork';
 const CONTAINER_OPTIONS = ['Bag', 'Box', 'Carton', 'Bottle', 'Vial', 'Jerrycan', 'Drum', 'Pouch', 'Barrel', 'Keg', 'IBC'];
 const DUTY_OPTIONS = ['Duty Suspended', 'Duty Paid', "Don't Know"];
 const SCS_CUSTOMER_NAME = 'Somerset Cider Solutions';
@@ -73,6 +75,8 @@ let ingredientsError = '';
 let stream = null;
 let scanning = false;
 let lastLoadout = null;
+let paperworkType = '';
+let paperworkImage = null;
 
 function parseCSV(text) {
   const lines = text.replace(/\r/g, '').split('\n').filter(Boolean);
@@ -1266,7 +1270,7 @@ function showSuccess() {
     'Entry submitted successfully.',
     'Would you like to provide any accompanying paperwork',
     `<button class="btn btn-ghost" type="button" onclick="goHome()">No</button>
-     <button class="btn btn-primary" type="button" onclick="showPaperworkSoon()">Yes</button>`
+     <button class="btn btn-primary" type="button" onclick="showPaperwork()">Yes</button>`
   ) + addAnotherActions;
 }
 
@@ -1336,10 +1340,188 @@ function goHome() {
   window.location.href = 'index.html';
 }
 
-function showPaperworkSoon() {
+function paperworkStockCode() {
+  return String(stockCodeF || '').trim();
+}
+
+function paperworkLotCode() {
+  return String(lotCode || '').trim();
+}
+
+function resetPaperworkCapture() {
+  paperworkType = '';
+  paperworkImage = null;
+}
+
+function extensionFromName(name, mimeType) {
+  const m = /\.([a-z0-9]+)$/i.exec(String(name || ''));
+  if (m) return '.' + m[1].toLowerCase();
+  if (String(mimeType || '').indexOf('png') !== -1) return '.png';
+  if (String(mimeType || '').indexOf('webp') !== -1) return '.webp';
+  return '.jpg';
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('Could not read the selected image.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function compressImageFile(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const max = 1920;
+      let w = img.naturalWidth || img.width;
+      let h = img.naturalHeight || img.height;
+      if (w > max || h > max) {
+        const scale = Math.min(max / w, max / h);
+        w = Math.round(w * scale);
+        h = Math.round(h * scale);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/jpeg', 0.8));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('Could not process the selected image.'));
+    };
+    img.src = url;
+  });
+}
+
+async function preparePaperworkImage(file) {
+  const maxDirect = 2.5 * 1024 * 1024;
+  if (file.size > maxDirect) {
+    const dataUrl = await compressImageFile(file);
+    return { dataUrl, mimeType: 'image/jpeg', extension: '.jpg' };
+  }
+  const dataUrl = await readFileAsDataUrl(file);
+  return {
+    dataUrl,
+    mimeType: file.type || 'image/jpeg',
+    extension: extensionFromName(file.name, file.type)
+  };
+}
+
+function showPaperwork() {
+  resetPaperworkCapture();
+  renderPaperworkForm();
+}
+
+function renderPaperworkForm() {
+  const preview = paperworkImage ? `
+    <p class="status">Photo ready to upload.</p>
+    <img src="${paperworkImage.dataUrl}" alt="Document preview" style="width:100%; max-height:280px; object-fit:contain; border-radius: var(--radius-sm); background: var(--bg); margin: 8px 0 16px;" />
+  ` : '';
+  const photoBlock = paperworkType ? `
+    <label class="btn btn-secondary" for="paperworkPhoto" style="width:100%;">${paperworkImage ? 'Retake / Choose another photo' : 'Take / Upload Photo'}</label>
+    <input id="paperworkPhoto" type="file" accept="image/*" capture="environment" hidden />
+    ${preview}
+    <div class="actions mt-3">
+      <button class="btn btn-success" type="button" onclick="uploadPaperwork()" ${paperworkImage ? '' : 'disabled'}>Upload Document</button>
+    </div>
+  ` : '';
+
   app.innerHTML = `
-    <p class="status">This feature has not yet been added. This will be added in a future update</p>
+    <label for="paperworkTypeSelect">Please select the document type</label>
+    <select id="paperworkTypeSelect">
+      <option value="">-- Choose document type --</option>
+      ${PAPERWORK_TYPES.map(opt => `<option value="${escapeHTML(opt)}">${escapeHTML(opt)}</option>`).join('')}
+    </select>
+    ${photoBlock}
+    <div class="actions mt-3">
+      <button class="btn btn-ghost" type="button" onclick="showSuccess()">Back</button>
+    </div>
   `;
+
+  const select = document.getElementById('paperworkTypeSelect');
+  if (paperworkType) select.value = paperworkType;
+  select.addEventListener('change', () => {
+    paperworkType = (select.value || '').trim();
+    paperworkImage = null;
+    renderPaperworkForm();
+  });
+  const input = document.getElementById('paperworkPhoto');
+  if (input) {
+    input.addEventListener('change', async () => {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      try {
+        app.innerHTML = `<p class="status">Preparing photo…</p>`;
+        paperworkImage = await preparePaperworkImage(file);
+        renderPaperworkForm();
+      } catch (err) {
+        console.error(err);
+        alert(err.message || 'Could not read that image.');
+        renderPaperworkForm();
+      }
+    });
+  }
+}
+
+async function uploadPaperwork() {
+  if (!PAPERWORK_TYPES.includes(paperworkType) || !paperworkImage) {
+    alert('Please select a document type and take or choose a photo.');
+    return;
+  }
+
+  app.innerHTML = `<p class="status">Uploading document…</p>`;
+
+  try {
+    const res = await fetch(PAPERWORK_UPLOAD_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        documentType: paperworkType,
+        stockCode: paperworkStockCode(),
+        lotCode: paperworkLotCode(),
+        mimeType: paperworkImage.mimeType,
+        extension: paperworkImage.extension,
+        imageBase64: paperworkImage.dataUrl
+      })
+    });
+    const text = await res.text();
+    let json = null;
+    try { json = JSON.parse(text); } catch (_) {}
+    if (!json || (json.result !== 'ok' && json.result !== 'success')) {
+      throw new Error((json && json.message) || 'Upload failed.');
+    }
+    showPaperworkSuccess(json);
+  } catch (err) {
+    console.error(err);
+    showPaperworkError(err.message || 'Upload failed.');
+  }
+}
+
+function showPaperworkSuccess(json) {
+  const fileName = json.fileName || (paperworkStockCode() + ' | ' + paperworkLotCode());
+  const type = json.documentType || paperworkType;
+  const dest = json.destination || paperworkType;
+  resetPaperworkCapture();
+  app.innerHTML = UI.successScreen(
+    'Document uploaded successfully',
+    `File: ${escapeHTML(fileName)}\nDocument Type: ${escapeHTML(type)}\nDestination: ${escapeHTML(dest)}`,
+    `<button class="btn btn-primary" type="button" onclick="showPaperwork()">Add Another Document</button>
+     <button class="btn btn-success" type="button" onclick="goHome()">Finish</button>`
+  );
+}
+
+function showPaperworkError(message) {
+  app.innerHTML = UI.errorScreen(
+    escapeHTML(message),
+    `<button class="btn btn-ghost" type="button" onclick="renderPaperworkForm()">Back</button>
+     <button class="btn btn-primary" type="button" onclick="uploadPaperwork()">Try Again</button>`,
+    'Upload failed.'
+  );
 }
 
 window.showPallet = showPallet;
@@ -1365,7 +1547,9 @@ window.confirmDetails = confirmDetails;
 window.showSummary = showSummary;
 window.submitEntry = submitEntry;
 window.goHome = goHome;
-window.showPaperworkSoon = showPaperworkSoon;
+window.showPaperwork = showPaperwork;
+window.renderPaperworkForm = renderPaperworkForm;
+window.uploadPaperwork = uploadPaperwork;
 window.addAnother = addAnother;
 window.sameLoadout = sameLoadout;
 window.showSameLoadoutPallet = showSameLoadoutPallet;
