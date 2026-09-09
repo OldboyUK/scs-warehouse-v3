@@ -48,7 +48,7 @@ function renderForm() {
       '<section class="hr-form-section">' +
         '<h2 class="hr-form-section-title">Comments</h2>' +
         '<label for="commentsInput">Would you like to leave any comments?</label>' +
-        '<textarea id="commentsInput" class="hr-comments" rows="5"></textarea>' +
+        '<textarea id="commentsInput" class="hr-comments" rows="5" placeholder="Optional"></textarea>' +
       '</section>' +
       '<div class="actions mt-3">' +
         '<a href="index.html" class="btn btn-ghost">Back</a>' +
@@ -124,11 +124,6 @@ function submitForm() {
 
   if (HRUtils.BREAK_OPTIONS.indexOf(breakValue) === -1) {
     alert('Please choose a valid break duration.');
-    return;
-  }
-
-  if (!comments) {
-    alert('Please enter a comment before submitting.');
     return;
   }
 
