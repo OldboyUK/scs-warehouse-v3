@@ -20,6 +20,20 @@ const SKIPPED_BBE               = '01/01/3000';
 const DRIVE_INGREDIENTS_PAPERWORK_PARENT = '1LcxWL6yUBoyCmX3vjA_inHwo0VfW-JdJ';
 const PAPERWORK_TYPES = ['Type 1', 'Type 2', 'Type 3'];
 
+/**
+ * Run once from the Apps Script editor after adding Drive upload code.
+ * Accept the Drive permission prompt, then update the web app deployment
+ * (Deploy → Manage deployments → Edit → New version → Deploy).
+ * getFolderById needs the full Drive scope, not drive.file.
+ */
+function authorizeDriveAccess() {
+  const parent = DriveApp.getFolderById(DRIVE_INGREDIENTS_PAPERWORK_PARENT);
+  const names = [];
+  const it = parent.getFolders();
+  while (it.hasNext()) names.push(it.next().getName());
+  Logger.log('Drive OK. Child folders: ' + names.join(', '));
+}
+
 /** ====== MAIN ENTRY POINT ====== **/
 function doPost(e) {
   try {
@@ -255,7 +269,19 @@ function handleIngredientsPaperwork(p) {
     ext = mimeType.indexOf('png') !== -1 ? '.png' : '.jpg';
   }
 
-  const parent = DriveApp.getFolderById(DRIVE_INGREDIENTS_PAPERWORK_PARENT);
+  let parent;
+  try {
+    parent = DriveApp.getFolderById(DRIVE_INGREDIENTS_PAPERWORK_PARENT);
+  } catch (err) {
+    const msg = String(err);
+    if (/permission/i.test(msg)) {
+      return json({
+        result: 'error',
+        message: 'Drive access not authorised. In Apps Script run authorizeDriveAccess(), accept Drive access, then update the web app deployment.'
+      });
+    }
+    throw err;
+  }
   const folders = parent.getFoldersByName(documentType);
   if (!folders.hasNext()) {
     return json({ result: 'error', message: 'Destination folder not found: ' + documentType });
