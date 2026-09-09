@@ -72,6 +72,7 @@ let ingredientsError = '';
 
 let stream = null;
 let scanning = false;
+let lastLoadout = null;
 
 function parseCSV(text) {
   const lines = text.replace(/\r/g, '').split('\n').filter(Boolean);
@@ -194,6 +195,80 @@ function resetProductFields() {
   abvSkipped = false;
   lotSkipped = false;
   bbeSkipped = false;
+}
+
+function entryUsedPalletBarcode() {
+  return palletId !== 'NO_BARCODE' && isValidPalletId(palletId);
+}
+
+function snapshotLoadout() {
+  return {
+    scsOwned,
+    customer,
+    customerCode,
+    product,
+    helper,
+    stockCodeF,
+    stockCodeG,
+    selectedProduct,
+    manualEntry,
+    manualContainsAlcohol,
+    manualGroup,
+    lotCode,
+    lotSkipped,
+    abv,
+    abvSkipped,
+    bbe,
+    bbeSkipped,
+    containerType,
+    unitType,
+    value,
+    quantity,
+    duty,
+    comments
+  };
+}
+
+function applyLoadout(loadout) {
+  if (!loadout) return;
+  scsOwned = loadout.scsOwned;
+  customer = loadout.customer;
+  customerCode = loadout.customerCode;
+  product = loadout.product;
+  helper = loadout.helper;
+  stockCodeF = loadout.stockCodeF;
+  stockCodeG = loadout.stockCodeG;
+  selectedProduct = loadout.selectedProduct;
+  manualEntry = loadout.manualEntry;
+  manualContainsAlcohol = loadout.manualContainsAlcohol;
+  manualGroup = loadout.manualGroup;
+  lotCode = loadout.lotCode;
+  lotSkipped = loadout.lotSkipped;
+  abv = loadout.abv;
+  abvSkipped = loadout.abvSkipped;
+  bbe = loadout.bbe;
+  bbeSkipped = loadout.bbeSkipped;
+  containerType = loadout.containerType;
+  unitType = loadout.unitType;
+  value = loadout.value;
+  quantity = loadout.quantity;
+  duty = loadout.duty;
+  comments = loadout.comments;
+}
+
+function resetIngredientEntry() {
+  palletId = '';
+  scsOwned = null;
+  customer = '';
+  customerCode = '';
+  lotCode = '';
+  bbe = '';
+  containerType = '';
+  unitType = '';
+  value = '';
+  quantity = '';
+  comments = '';
+  resetProductFields();
 }
 
 function applyCustomer(match) {
@@ -1180,12 +1255,81 @@ function submitEntry() {
 }
 
 function showSuccess() {
+  if (entryUsedPalletBarcode()) lastLoadout = snapshotLoadout();
+  const addAnotherActions = entryUsedPalletBarcode() ? `
+    <div class="actions actions-stack">
+      <button class="btn btn-primary" type="button" onclick="addAnother()">Add Another</button>
+      <button class="btn btn-success" type="button" onclick="sameLoadout()">Add Another – Same Loadout</button>
+    </div>
+  ` : '';
   app.innerHTML = UI.successScreen(
     'Entry submitted successfully.',
     'Would you like to provide any accompanying paperwork',
     `<button class="btn btn-ghost" type="button" onclick="goHome()">No</button>
      <button class="btn btn-primary" type="button" onclick="showPaperworkSoon()">Yes</button>`
-  );
+  ) + addAnotherActions;
+}
+
+function addAnother() {
+  resetIngredientEntry();
+  showPallet();
+}
+
+function sameLoadout() {
+  if (!lastLoadout) {
+    addAnother();
+    return;
+  }
+  applyLoadout(lastLoadout);
+  palletId = '';
+  showSameLoadoutPallet();
+}
+
+function showSameLoadoutPallet() {
+  stopCamera();
+  app.innerHTML = `
+    <label for="palletInput">Scan Pallet ID.</label>
+    <input id="palletInput" maxlength="15" placeholder="Scan or type 15 digits"
+           inputmode="none" autocomplete="off" autocapitalize="off" />
+    <div class="actions mt-3">
+      <button class="btn btn-success" type="button" onclick="confirmSamePallet()">Confirm Pallet Barcode</button>
+    </div>
+    <hr>
+    <p class="status">This will reuse the last ingredient details.</p>
+    <div class="actions mt-4">
+      ${UI.cameraButton('Use Camera', 'scanSamePallet()')}
+    </div>
+  `;
+  const input = document.getElementById('palletInput');
+  scannerReadyFocus(input);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') confirmSamePallet(); });
+}
+
+function confirmSamePallet() {
+  const v = (document.getElementById('palletInput').value || '').trim();
+  if (!isValidPalletId(v)) {
+    alert('Please enter a valid 15-digit number.');
+    return;
+  }
+  palletId = v;
+  showSummary();
+}
+
+function scanSamePallet() {
+  app.innerHTML = UI.scanCard('') + `
+    <div class="actions mt-3">
+      <button class="btn btn-ghost" type="button" onclick="showSameLoadoutPallet()">Back</button>
+    </div>
+  `;
+  startScan(raw => {
+    if (!isValidPalletId(raw)) {
+      alert('Scanned code is not a valid 15-digit number.');
+      showSameLoadoutPallet();
+      return;
+    }
+    palletId = raw;
+    showSummary();
+  });
 }
 
 function goHome() {
@@ -1222,6 +1366,11 @@ window.showSummary = showSummary;
 window.submitEntry = submitEntry;
 window.goHome = goHome;
 window.showPaperworkSoon = showPaperworkSoon;
+window.addAnother = addAnother;
+window.sameLoadout = sameLoadout;
+window.showSameLoadoutPallet = showSameLoadoutPallet;
+window.confirmSamePallet = confirmSamePallet;
+window.scanSamePallet = scanSamePallet;
 
 loadLookups();
 showPallet();
