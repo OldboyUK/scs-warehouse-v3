@@ -19,12 +19,15 @@ const SHEET_GID_STOCK           = 1879287780;
 const SKIPPED_BBE               = '01/01/3000';
 const DRIVE_INGREDIENTS_PAPERWORK_PARENT = '1LcxWL6yUBoyCmX3vjA_inHwo0VfW-JdJ';
 const PAPERWORK_TYPES = ['Type 1', 'Type 2', 'Type 3'];
+const DRIVE_DISPATCH_VEHICLE_PHOTOS = '1kCFfUt_3WOLGMtQ9c4EAR__7yyswx4B_';
+const DRIVE_DISPATCH_DRIVER_SIGNATURE = '1qJJtJhZbbDNyfHSorMoWfh8esoo2yxw7';
+const DISPATCH_DOC_KINDS = ['vehicle_photo', 'driver_signature'];
 
 /**
  * Run once from the Apps Script editor after adding Drive upload code.
- * Accept the Drive permission prompt, then update the web app deployment
- * (Deploy → Manage deployments → Edit → New version → Deploy).
- * getFolderById needs the full Drive scope, not drive.file.
+ * Accept the Drive and external-request prompts, then update the web app
+ * deployment (Deploy → Manage deployments → Edit → New version → Deploy).
+ * Anonymous web apps cannot call DriveApp.createFile; uploads go through the Drive API.
  */
 function authorizeDriveAccess() {
   const parent = DriveApp.getFolderById(DRIVE_INGREDIENTS_PAPERWORK_PARENT);
@@ -32,6 +35,20 @@ function authorizeDriveAccess() {
   const it = parent.getFolders();
   while (it.hasNext()) names.push(it.next().getName());
   Logger.log('Drive OK. Child folders: ' + names.join(', '));
+
+  const destName = names.indexOf('Type 1') !== -1 ? 'Type 1' : names[0];
+  if (!destName) {
+    throw new Error('No child folders found under paperwork parent');
+  }
+  const dest = parent.getFoldersByName(destName).next();
+  const testName = '_auth_test_' + Date.now() + '.txt';
+  const created = createDriveFileInFolder_(dest.getId(), Utilities.newBlob('ok', 'text/plain', testName), testName);
+  trashDriveFile_(created.id);
+  Logger.log('Drive write OK into ' + destName + ': ' + created.id);
+
+  DriveApp.getFolderById(DRIVE_DISPATCH_VEHICLE_PHOTOS);
+  DriveApp.getFolderById(DRIVE_DISPATCH_DRIVER_SIGNATURE);
+  Logger.log('Dispatch document folders OK');
 }
 
 /** ====== MAIN ENTRY POINT ====== **/
@@ -50,6 +67,7 @@ function doPost(e) {
     if (action === 'packaging_entry')                    return handlePackagingEntry(p);
     if (action === 'ingredients_entry')                  return handleIngredientsEntry(p);
     if (action === 'ingredients_paperwork')              return handleIngredientsPaperwork(p);
+    if (action === 'dispatch_documents')                 return handleDispatchDocuments(p);
     if (action === 'location_assignment')               return handleLocationAssignment(p);
     if (action === 'add_third_party_product')            return handleAddThirdPartyProduct(p);
     if (action === 'staging')                            return handleStaging(p);
@@ -290,7 +308,7 @@ function handleIngredientsPaperwork(p) {
   const baseName = stockCode + ' | ' + lotCode;
   const fileName = nextPaperworkFileName(dest, baseName, ext);
   const blob = Utilities.newBlob(Utilities.base64Decode(imageBase64), mimeType || 'image/jpeg', fileName);
-  dest.createFile(blob);
+  createDriveFileInFolder_(dest.getId(), blob, fileName);
 
   return json({
     result: 'success',
@@ -310,6 +328,124 @@ function nextPaperworkFileName(folder, baseName, ext) {
     }
   }
   return baseName + ' (' + n + ')' + ext;
+}
+
+function sanitizeDriveNamePart(s) {
+  return String(s || '')
+    .replace(/[\\/:*?"<>|]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function driveFolderById_(folderId) {
+  try {
+    return DriveApp.getFolderById(folderId);
+  } catch (err) {
+    const msg = String(err);
+    if (/permission/i.test(msg)) {
+      throw new Error('Drive access not authorised. In Apps Script run authorizeDriveAccess(), accept Drive access, then update the web app deployment.');
+    }
+    throw err;
+  }
+}
+
+// DISPATCH CUSTOMER ORDER — vehicle photos and driver signature
+function handleDispatchDocuments(p) {
+  const documentKind = String(p.documentKind || p.documentType || '').trim().toLowerCase();
+  const reference = sanitizeDriveNamePart(p.reference || p.collectionId || '');
+  const mimeType = (p.mimeType || 'image/jpeg').trim();
+  let ext = String(p.extension || '').trim().toLowerCase();
+  let imageBase64 = p.imageBase64 == null ? '' : String(p.imageBase64);
+  const prefix = imageBase64.indexOf('base64,');
+  if (prefix !== -1) imageBase64 = imageBase64.substring(prefix + 7);
+  imageBase64 = imageBase64.replace(/\s/g, '');
+
+  if (DISPATCH_DOC_KINDS.indexOf(documentKind) === -1) {
+    return json({ result: 'error', message: 'Invalid document kind' });
+  }
+  if (!reference) {
+    return json({ result: 'error', message: 'Missing order reference' });
+  }
+  if (!imageBase64) {
+    return json({ result: 'error', message: 'Missing image' });
+  }
+
+  if (ext && ext.charAt(0) !== '.') ext = '.' + ext;
+  if (!/^\.(jpg|jpeg|png|webp|gif|heic|heif)$/i.test(ext)) {
+    ext = mimeType.indexOf('png') !== -1 ? '.png' : '.jpg';
+  }
+
+  let folderId;
+  let baseName;
+  if (documentKind === 'driver_signature') {
+    folderId = DRIVE_DISPATCH_DRIVER_SIGNATURE;
+    baseName = reference + ' - Driver Signature';
+    ext = '.png';
+  } else {
+    folderId = DRIVE_DISPATCH_VEHICLE_PHOTOS;
+    baseName = reference + ' - Loaded Vehicle';
+  }
+
+  const dest = driveFolderById_(folderId);
+  const fileName = nextPaperworkFileName(dest, baseName, ext);
+  const blob = Utilities.newBlob(
+    Utilities.base64Decode(imageBase64),
+    documentKind === 'driver_signature' ? 'image/png' : (mimeType || 'image/jpeg'),
+    fileName
+  );
+  createDriveFileInFolder_(dest.getId(), blob, fileName);
+
+  return json({
+    result: 'success',
+    fileName: fileName,
+    documentKind: documentKind
+  });
+}
+
+/** Drive API upload — DriveApp.createFile is blocked on anonymous web apps. */
+function createDriveFileInFolder_(folderId, blob, fileName) {
+  const boundary = 'xxxxxxx314159xxxx';
+  const mimeType = blob.getContentType() || 'application/octet-stream';
+  const metadata = { name: fileName, parents: [folderId] };
+  const body =
+    '--' + boundary + '\r\n' +
+    'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+    JSON.stringify(metadata) + '\r\n' +
+    '--' + boundary + '\r\n' +
+    'Content-Type: ' + mimeType + '\r\n' +
+    'Content-Transfer-Encoding: base64\r\n\r\n' +
+    Utilities.base64Encode(blob.getBytes()) + '\r\n' +
+    '--' + boundary + '--';
+
+  const resp = UrlFetchApp.fetch(
+    'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name',
+    {
+      method: 'post',
+      contentType: 'multipart/related; boundary=' + boundary,
+      headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+      payload: body,
+      muteHttpExceptions: true
+    }
+  );
+  const code = resp.getResponseCode();
+  const text = resp.getContentText();
+  if (code < 200 || code >= 300) {
+    throw new Error('Drive upload failed (' + code + '): ' + text);
+  }
+  return JSON.parse(text);
+}
+
+function trashDriveFile_(fileId) {
+  UrlFetchApp.fetch(
+    'https://www.googleapis.com/drive/v3/files/' + fileId + '?supportsAllDrives=true',
+    {
+      method: 'patch',
+      contentType: 'application/json',
+      headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+      payload: JSON.stringify({ trashed: true }),
+      muteHttpExceptions: true
+    }
+  );
 }
 
 // INBOUND PACKAGING — writes to PALLET ENTRY [PACKAGING]

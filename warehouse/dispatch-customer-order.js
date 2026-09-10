@@ -8,6 +8,7 @@ const STOCK_CSV =
   'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGuxb9U0N7OF1Vjf4HTtaWho9VYTGaFShUB0YnGr9MluOYKRbhatjzMob4FUH0ttBJhbpH6t6ZmoGB/pub?gid=1879287780&single=true&output=csv';
 
 const DISPATCH_URL = `${window.location.origin}/.netlify/functions/dispatch`;
+const DISPATCH_DOCS_URL = `${window.location.origin}/.netlify/functions/uploadDispatchDocuments`;
 
 const STAGING_COLS = {
   collectionRef: 0,
@@ -28,6 +29,26 @@ let palletStock = new Map();
 let currentCollection = null;
 let dispatchMode = false;
 let isSubmitting = false;
+let additionalDocs = emptyAdditionalDocs();
+let signaturePad = null;
+
+function emptyAdditionalDocs() {
+  return {
+    photos: [],
+    signature: null,
+    signatureConfirmed: false,
+    signatureUploaded: false,
+    signatureFileName: '',
+    signatureError: '',
+    hasStroke: false,
+    isUploading: false
+  };
+}
+
+function resetAdditionalDocs() {
+  additionalDocs = emptyAdditionalDocs();
+  signaturePad = null;
+}
 
 /* =========================
    CSV parsing (multiline-safe)
@@ -305,6 +326,7 @@ function showSelectStep() {
   dispatchMode = false;
   currentCollection = null;
   isSubmitting = false;
+  resetAdditionalDocs();
 
   const ids = getUniqueCollectionIds();
   if (!ids.length) {
@@ -336,6 +358,7 @@ function openSelectedCollection() {
 }
 
 function openCollection(collectionId) {
+  resetAdditionalDocs();
   currentCollection = buildCollection(collectionId);
   if (!currentCollection) {
     alert('Collection not found.');
@@ -522,9 +545,456 @@ function showCompleteScreen() {
       { label: 'Progress', value: escapeHTML(progressText(currentCollection)) }
     ]),
     `
+      <button class="btn btn-success" type="button" onclick="showAdditionalDocuments()">Provide Additional Documents</button>
       <button class="btn btn-primary" onclick="showSelectStep()">Dispatch Another Collection</button>
       <button class="btn btn-ghost" onclick="showSelectStep()">Change Collection</button>
     `
+  );
+}
+
+/* ===== Additional documents (vehicle photos + driver signature) ===== */
+function uploadedPhotoCount() {
+  return additionalDocs.photos.filter(p => p.uploaded).length;
+}
+
+function canFinishAdditionalDocs() {
+  return uploadedPhotoCount() > 0 || additionalDocs.signatureUploaded;
+}
+
+function extensionFromName(name, mimeType) {
+  const m = /\.([a-z0-9]+)$/i.exec(String(name || ''));
+  if (m) return '.' + m[1].toLowerCase();
+  if (String(mimeType || '').indexOf('png') !== -1) return '.png';
+  if (String(mimeType || '').indexOf('webp') !== -1) return '.webp';
+  return '.jpg';
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('Could not read the selected image.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function compressImageFile(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const max = 1920;
+      let w = img.naturalWidth || img.width;
+      let h = img.naturalHeight || img.height;
+      if (w > max || h > max) {
+        const scale = Math.min(max / w, max / h);
+        w = Math.round(w * scale);
+        h = Math.round(h * scale);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/jpeg', 0.8));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('Could not process the selected image.'));
+    };
+    img.src = url;
+  });
+}
+
+async function prepareDispatchImage(file) {
+  const maxDirect = 2.5 * 1024 * 1024;
+  if (file.size > maxDirect) {
+    const dataUrl = await compressImageFile(file);
+    return { dataUrl, mimeType: 'image/jpeg', extension: '.jpg' };
+  }
+  const dataUrl = await readFileAsDataUrl(file);
+  return {
+    dataUrl,
+    mimeType: file.type || 'image/jpeg',
+    extension: extensionFromName(file.name, file.type)
+  };
+}
+
+async function postDispatchDocument(documentKind, image) {
+  if (!currentCollection || !currentCollection.id) {
+    throw new Error('Missing order reference.');
+  }
+  const res = await fetch(DISPATCH_DOCS_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      documentKind,
+      reference: currentCollection.id,
+      mimeType: image.mimeType,
+      extension: image.extension,
+      imageBase64: image.dataUrl
+    })
+  });
+  const text = await res.text();
+  let json = null;
+  try { json = JSON.parse(text); } catch (_) {}
+  if (!json || (json.result !== 'ok' && json.result !== 'success')) {
+    throw new Error((json && json.message) || 'Upload failed.');
+  }
+  return json;
+}
+
+function vehiclePhotoSectionHTML() {
+  const previews = additionalDocs.photos.map((p, i) => {
+    const status = p.uploaded
+      ? 'Uploaded'
+      : (p.error ? 'Upload failed' : (p.uploading ? 'Uploading…' : 'Ready'));
+    const statusClass = p.error ? 'dispatch-docs-preview-status is-error' : 'dispatch-docs-preview-status';
+    const retry = p.error && !additionalDocs.isUploading
+      ? `<button type="button" class="btn btn-ghost dispatch-docs-retry" onclick="retryVehiclePhoto(${i})">Retry upload</button>`
+      : '';
+    return `
+      <div class="dispatch-docs-preview">
+        <img src="${p.dataUrl}" alt="Loaded vehicle photo ${i + 1}" />
+        <span class="${statusClass}">${escapeHTML(status)}</span>
+        ${retry}
+      </div>
+    `;
+  }).join('');
+
+  const takeLabel = additionalDocs.photos.length ? 'Add Another Photo' : 'Take Photo';
+  const busy = additionalDocs.isUploading;
+
+  return `
+    <h2 class="dispatch-docs-heading">Add Photos of the Loaded Vehicle</h2>
+    <label class="btn btn-secondary btn-block" for="vehiclePhotoInput">
+      <span class="btn-icon">${UI.ICONS.camera}</span>${takeLabel}
+    </label>
+    <input id="vehiclePhotoInput" type="file" accept="image/*" capture="environment" hidden ${busy ? 'disabled' : ''} />
+    <p id="vehiclePhotoStatus" class="status"></p>
+    ${previews ? `<div class="dispatch-docs-previews">${previews}</div>` : ''}
+  `;
+}
+
+function signatureSectionHTML() {
+  if (additionalDocs.signatureUploaded) {
+    return `
+      <h2 class="dispatch-docs-heading">Capture Driver Signature</h2>
+      <p class="status">Driver signature captured</p>
+      ${additionalDocs.signature ? `<img class="dispatch-docs-signature-preview" src="${additionalDocs.signature.dataUrl}" alt="Driver signature" />` : ''}
+    `;
+  }
+
+  if (additionalDocs.signature && (additionalDocs.isUploading || additionalDocs.signatureConfirmed)) {
+    const status = additionalDocs.isUploading
+      ? '<p class="status">Uploading signature…</p>'
+      : (additionalDocs.signatureError
+        ? `<p class="status status-error">${escapeHTML(additionalDocs.signatureError)}</p>`
+        : '');
+    const actions = additionalDocs.isUploading ? '' : `
+      <div class="actions actions-stack">
+        <button class="btn btn-success" type="button" onclick="confirmDriverSignature()">Try Again</button>
+        <button class="btn btn-ghost" type="button" onclick="clearDriverSignature()">Clear Signature</button>
+      </div>
+    `;
+    return `
+      <h2 class="dispatch-docs-heading">Capture Driver Signature</h2>
+      ${status}
+      <img class="dispatch-docs-signature-preview" src="${additionalDocs.signature.dataUrl}" alt="Driver signature" />
+      ${actions}
+    `;
+  }
+
+  const error = additionalDocs.signatureError
+    ? `<p class="status status-error">${escapeHTML(additionalDocs.signatureError)}</p>`
+    : '';
+
+  return `
+    <h2 class="dispatch-docs-heading">Capture Driver Signature</h2>
+    <p class="dispatch-docs-pad-hint">Sign here with your finger</p>
+    <div class="dispatch-docs-pad-wrap">
+      <canvas id="signaturePad" class="dispatch-docs-pad"></canvas>
+    </div>
+    ${error}
+    <div class="actions actions-stack">
+      <button class="btn btn-ghost" type="button" onclick="clearDriverSignature()" ${additionalDocs.isUploading ? 'disabled' : ''}>Clear Signature</button>
+      <button class="btn btn-success" type="button" onclick="confirmDriverSignature()" ${additionalDocs.isUploading ? 'disabled' : ''}>Confirm Signature</button>
+    </div>
+  `;
+}
+
+function additionalDocsActionsHTML() {
+  const canFinish = canFinishAdditionalDocs();
+  return `
+    <div id="additionalDocsActions" class="actions actions-stack">
+      <button class="btn btn-primary" type="button" onclick="finishAdditionalDocuments()" ${canFinish && !additionalDocs.isUploading ? '' : 'disabled'}>Finish</button>
+      <button class="btn btn-ghost" type="button" onclick="showCompleteScreen()" ${additionalDocs.isUploading ? 'disabled' : ''}>Back</button>
+    </div>
+  `;
+}
+
+function showAdditionalDocuments() {
+  if (!currentCollection) return;
+  renderAdditionalDocuments();
+}
+
+function renderAdditionalDocuments() {
+  if (!currentCollection) return;
+
+  app.innerHTML = `
+    <div class="dispatch-docs">
+      <h2 class="dispatch-docs-title">Additional Documents</h2>
+      ${UI.summaryCard([
+        { label: 'Collection ID', value: escapeHTML(currentCollection.id) },
+        { label: 'Customer', value: escapeHTML(currentCollection.company || '-') }
+      ])}
+      <section id="vehiclePhotoSection" class="dispatch-docs-section">
+        ${vehiclePhotoSectionHTML()}
+      </section>
+      <section id="signatureSection" class="dispatch-docs-section">
+        ${signatureSectionHTML()}
+      </section>
+      ${additionalDocsActionsHTML()}
+    </div>
+  `;
+
+  wireVehiclePhotoInput();
+  if (shouldInitSignaturePad()) {
+    requestAnimationFrame(() => initSignaturePad());
+  }
+}
+
+function refreshPhotoSection() {
+  const section = document.getElementById('vehiclePhotoSection');
+  if (!section) {
+    renderAdditionalDocuments();
+    return;
+  }
+  section.innerHTML = vehiclePhotoSectionHTML();
+  wireVehiclePhotoInput();
+  refreshAdditionalDocsActions();
+}
+
+function shouldInitSignaturePad() {
+  return !additionalDocs.signatureUploaded && !additionalDocs.signatureConfirmed;
+}
+
+function refreshSignatureSection() {
+  const section = document.getElementById('signatureSection');
+  if (!section) {
+    renderAdditionalDocuments();
+    return;
+  }
+  section.innerHTML = signatureSectionHTML();
+  if (shouldInitSignaturePad()) {
+    requestAnimationFrame(() => initSignaturePad());
+  }
+  refreshAdditionalDocsActions();
+}
+
+function refreshAdditionalDocsActions() {
+  const existing = document.getElementById('additionalDocsActions');
+  if (!existing) return;
+  existing.outerHTML = additionalDocsActionsHTML();
+}
+
+function wireVehiclePhotoInput() {
+  const input = document.getElementById('vehiclePhotoInput');
+  if (!input) return;
+  input.addEventListener('change', async () => {
+    const file = input.files && input.files[0];
+    input.value = '';
+    if (!file) return;
+    await handleVehiclePhotoFile(file);
+  });
+}
+
+async function handleVehiclePhotoFile(file) {
+  const status = document.getElementById('vehiclePhotoStatus');
+  if (status) status.textContent = 'Preparing photo…';
+  try {
+    const prepared = await prepareDispatchImage(file);
+    additionalDocs.photos.push({
+      dataUrl: prepared.dataUrl,
+      mimeType: prepared.mimeType,
+      extension: prepared.extension,
+      uploaded: false,
+      uploading: false,
+      error: '',
+      fileName: ''
+    });
+    refreshPhotoSection();
+    await uploadVehiclePhoto(additionalDocs.photos.length - 1);
+  } catch (err) {
+    console.error(err);
+    if (status) {
+      status.textContent = err.message || 'Could not read that image.';
+      status.classList.add('status-error');
+    } else {
+      alert(err.message || 'Could not read that image.');
+    }
+  }
+}
+
+async function uploadVehiclePhoto(index) {
+  const photo = additionalDocs.photos[index];
+  if (!photo || photo.uploaded || additionalDocs.isUploading) return;
+
+  additionalDocs.isUploading = true;
+  photo.uploading = true;
+  photo.error = '';
+  refreshPhotoSection();
+
+  try {
+    const json = await postDispatchDocument('vehicle_photo', photo);
+    photo.uploaded = true;
+    photo.fileName = json.fileName || '';
+  } catch (err) {
+    console.error(err);
+    photo.error = err.message || 'Upload failed.';
+  } finally {
+    photo.uploading = false;
+    additionalDocs.isUploading = false;
+    refreshPhotoSection();
+    const next = additionalDocs.photos.findIndex(p => !p.uploaded && !p.uploading && !p.error);
+    if (next !== -1) uploadVehiclePhoto(next);
+  }
+}
+
+function initSignaturePad() {
+  const canvas = document.getElementById('signaturePad');
+  if (!canvas) return;
+
+  const wrap = canvas.parentElement;
+  const cssWidth = Math.max(wrap ? wrap.clientWidth : 0, canvas.clientWidth || 0, 280);
+  const cssHeight = 260;
+  const dpr = window.devicePixelRatio || 1;
+
+  canvas.style.width = cssWidth + 'px';
+  canvas.style.height = cssHeight + 'px';
+  canvas.width = Math.round(cssWidth * dpr);
+  canvas.height = Math.round(cssHeight * dpr);
+
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.scale(dpr, dpr);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, cssWidth, cssHeight);
+  ctx.strokeStyle = '#111827';
+  ctx.lineWidth = 2.75;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  additionalDocs.hasStroke = false;
+  let drawing = false;
+
+  function pos(e) {
+    const r = canvas.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+
+  canvas.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    canvas.setPointerCapture(e.pointerId);
+    drawing = true;
+    additionalDocs.hasStroke = true;
+    const p = pos(e);
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
+  });
+
+  canvas.addEventListener('pointermove', e => {
+    if (!drawing) return;
+    e.preventDefault();
+    const p = pos(e);
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+  });
+
+  function stopDraw(e) {
+    if (!drawing) return;
+    drawing = false;
+    if (e && canvas.hasPointerCapture(e.pointerId)) {
+      canvas.releasePointerCapture(e.pointerId);
+    }
+  }
+
+  canvas.addEventListener('pointerup', stopDraw);
+  canvas.addEventListener('pointercancel', stopDraw);
+  canvas.addEventListener('pointerleave', stopDraw);
+
+  signaturePad = { canvas, ctx, cssWidth, cssHeight };
+}
+
+function clearDriverSignature() {
+  if (additionalDocs.signatureUploaded || additionalDocs.isUploading) return;
+  additionalDocs.signatureError = '';
+  additionalDocs.hasStroke = false;
+  additionalDocs.signature = null;
+  additionalDocs.signatureConfirmed = false;
+  refreshSignatureSection();
+}
+
+async function retryVehiclePhoto(index) {
+  await uploadVehiclePhoto(index);
+}
+
+async function confirmDriverSignature() {
+  if (additionalDocs.signatureUploaded || additionalDocs.isUploading) return;
+
+  if (!additionalDocs.signature) {
+    if (!signaturePad || !signaturePad.canvas) {
+      additionalDocs.signatureError = 'Signature pad is not ready. Please try again.';
+      refreshSignatureSection();
+      return;
+    }
+    if (!additionalDocs.hasStroke) {
+      additionalDocs.signatureError = 'Please sign before confirming.';
+      const err = document.querySelector('#signatureSection .status-error');
+      if (err) err.textContent = additionalDocs.signatureError;
+      else refreshSignatureSection();
+      return;
+    }
+    additionalDocs.signature = {
+      dataUrl: signaturePad.canvas.toDataURL('image/png'),
+      mimeType: 'image/png',
+      extension: '.png'
+    };
+  }
+
+  additionalDocs.signatureConfirmed = true;
+  additionalDocs.signatureError = '';
+  additionalDocs.isUploading = true;
+  refreshSignatureSection();
+
+  try {
+    const json = await postDispatchDocument('driver_signature', additionalDocs.signature);
+    additionalDocs.signatureUploaded = true;
+    additionalDocs.signatureFileName = json.fileName || '';
+    additionalDocs.isUploading = false;
+    refreshSignatureSection();
+    showAdditionalDocsConfirmation();
+  } catch (err) {
+    console.error(err);
+    additionalDocs.signatureError = err.message || 'Signature upload failed.';
+    additionalDocs.isUploading = false;
+    refreshSignatureSection();
+  }
+}
+
+function finishAdditionalDocuments() {
+  if (additionalDocs.isUploading) return;
+  if (!canFinishAdditionalDocs()) return;
+  showAdditionalDocsConfirmation();
+}
+
+function showAdditionalDocsConfirmation() {
+  const photos = uploadedPhotoCount();
+  const signature = additionalDocs.signatureUploaded ? 'Uploaded' : 'Not provided';
+  app.innerHTML = UI.successScreen(
+    'Additional Documents Uploaded',
+    `Vehicle Photos: ${photos}\nDriver Signature: ${signature}`,
+    `<button class="btn btn-primary" type="button" onclick="showSelectStep()">Finish</button>`
   );
 }
 
@@ -686,5 +1156,11 @@ window.stopDispatch = stopDispatch;
 window.confirmScanPallet = confirmScanPallet;
 window.startCameraScan = startCameraScan;
 window.showSelectStep = showSelectStep;
+window.showCompleteScreen = showCompleteScreen;
+window.showAdditionalDocuments = showAdditionalDocuments;
+window.clearDriverSignature = clearDriverSignature;
+window.confirmDriverSignature = confirmDriverSignature;
+window.finishAdditionalDocuments = finishAdditionalDocuments;
+window.retryVehiclePhoto = retryVehiclePhoto;
 
 init();
