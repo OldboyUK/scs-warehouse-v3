@@ -134,3 +134,13 @@
   from = "/hr/record-hours"
   to = "/hr/record-hours.html"
   status = 301
+
+[[redirects]]
+  from = "/health-safety"
+  to = "/health-safety/"
+  status = 301
+
+[[redirects]]
+  from = "/health-safety/create-risk-assessment"
+  to = "/health-safety/create-risk-assessment.html"
+  status = 301

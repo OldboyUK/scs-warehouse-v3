@@ -1,0 +1,96 @@
+/* Health and Safety form layout. Colours come from the shared design tokens. */
+
+body.hs-page textarea {
+  min-height: 120px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+body.hs-page button:disabled,
+body.hs-page .btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.hs-intro {
+  margin: 0 0 16px;
+  color: var(--muted);
+}
+
+.hs-section-title {
+  margin: 0 0 4px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+
+.hs-banner {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--danger);
+  color: var(--text);
+  background: rgba(239, 68, 68, 0.12);
+  white-space: pre-line;
+}
+
+.hs-prompt {
+  margin: 20px 0 8px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.hs-choice-group {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.hs-choice-btn {
+  min-height: 52px;
+}
+
+.hs-action-card {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.hs-action-card:first-of-type {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+.hs-action-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hs-action-head h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.hs-review-block {
+  margin-bottom: 20px;
+}
+
+.hs-review-block h2 {
+  margin: 0 0 10px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+
+@media (max-width: 520px) {
+  .hs-choice-group {
+    grid-template-columns: 1fr;
+  }
+}
