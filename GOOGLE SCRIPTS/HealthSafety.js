@@ -811,23 +811,23 @@ function loadActivitiesFromText_(text) {
 }
 
 function readPostParams_(e) {
-  var p = (e && e.parameter) ? e.parameter : {};
+  var p = {};
+  var source = (e && e.parameter) ? e.parameter : {};
+  for (var key in source) {
+    if (Object.prototype.hasOwnProperty.call(source, key)) p[key] = source[key];
+  }
   var contents = e && e.postData && e.postData.contents ? String(e.postData.contents) : '';
   var type = e && e.postData && e.postData.type ? String(e.postData.type) : '';
   if (contents && (type.indexOf('application/json') !== -1 || contents.trim().charAt(0) === '{')) {
     try {
       var parsed = JSON.parse(contents);
-      var merged = {};
-      for (var key in p) {
-        if (Object.prototype.hasOwnProperty.call(p, key)) merged[key] = p[key];
-      }
       for (var key2 in parsed) {
-        if (Object.prototype.hasOwnProperty.call(parsed, key2)) merged[key2] = parsed[key2];
+        if (Object.prototype.hasOwnProperty.call(parsed, key2)) p[key2] = parsed[key2];
       }
-      return merged;
-    } catch (err) {
-      return p;
-    }
+    } catch (err) {}
+  }
+  if (typeof p.actions === 'string') {
+    try { p.actions = JSON.parse(p.actions); } catch (err2) {}
   }
   return p;
 }

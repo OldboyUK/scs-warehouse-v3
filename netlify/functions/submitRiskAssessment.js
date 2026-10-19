@@ -75,23 +75,39 @@ exports.handler = async function (event) {
       return jsonResponse(400, { result: 'error', retryable: true, message: validated.message });
     }
 
-    const body = Object.assign({}, validated.value, {
-      token: SHARED_TOKEN,
-      action: 'risk_assessment_submit'
-    });
+    const body = new URLSearchParams();
+    body.append('token', SHARED_TOKEN);
+    body.append('action', 'risk_assessment_submit');
+    body.append('submissionId', validated.value.submissionId);
+    body.append('activity', validated.value.activity);
+    body.append('hazardName', validated.value.hazardName);
+    body.append('hazardDescription', validated.value.hazardDescription);
+    body.append('whoMightBeHarmed', validated.value.whoMightBeHarmed);
+    body.append('currentControls', validated.value.currentControls);
+    body.append('likelihood', String(validated.value.likelihood));
+    body.append('severity', String(validated.value.severity));
+    body.append('actions', JSON.stringify(validated.value.actions));
 
     const response = await fetch(scriptURL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body
     });
 
     const text = await response.text();
-    if (/Script function not found/i.test(text) || /^\s*<!DOCTYPE/i.test(text)) {
+    if (/Script function not found/i.test(text)) {
       return jsonResponse(502, {
         result: 'error',
         retryable: true,
-        message: 'Health and Safety script is missing doPost. Copy the latest HealthSafety.js into Apps Script and redeploy.'
+        message: 'The deployed Health and Safety web app does not include doPost. In Apps Script, open Deploy, then Manage deployments, edit the existing deployment, select New version, and deploy again. HS_SCRIPT_URL must be that deployment’s /exec URL.'
+      });
+    }
+    if (/^\s*<!DOCTYPE/i.test(text) || /<html[\s>]/i.test(text)) {
+      console.error('Health and Safety script returned HTML:', text.slice(0, 300));
+      return jsonResponse(502, {
+        result: 'error',
+        retryable: true,
+        message: 'The Health and Safety web app returned a web page instead of a result. Check that the deployment is Execute as: Me, Who has access: Anyone, and that HS_SCRIPT_URL is the /exec URL from that deployment, not the /dev URL.'
       });
     }
 

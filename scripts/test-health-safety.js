@@ -512,6 +512,27 @@ assertEqual(hacked.hazardId, 'RA1016-HZ001', 'client hazard ids are ignored');
 assertEqual(hacked.actionIds[0], 'RA1016-HZ001-AC1', 'client action ids are ignored');
 
 resetWorld();
+const formBody = payload({ submissionId: 'form-submission-0001', hazardName: 'Form post' });
+const formResult = JSON.parse(context.doPost({
+  parameter: {
+    token: 'J4PAN88',
+    action: 'risk_assessment_submit',
+    submissionId: formBody.submissionId,
+    activity: formBody.activity,
+    hazardName: formBody.hazardName,
+    hazardDescription: formBody.hazardDescription,
+    whoMightBeHarmed: formBody.whoMightBeHarmed,
+    currentControls: formBody.currentControls,
+    likelihood: String(formBody.likelihood),
+    severity: String(formBody.severity),
+    actions: JSON.stringify(formBody.actions)
+  }
+})._text);
+assertEqual(formResult.result, 'success', 'form-encoded submission is accepted');
+assertEqual(formResult.hazardId, 'RA1016-HZ001', 'form-encoded submission still allocates the hazard id');
+assertEqual(hazards.cell(2, 2).value, 'Form post', 'form-encoded hazard name is written');
+
+resetWorld();
 actions.failOnWrite = 1;
 const originalHazards = hazards.snapshot();
 const originalActions = actions.snapshot();
