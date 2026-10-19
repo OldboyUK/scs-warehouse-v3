@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/png" href="/assets/app-icon.png" />
+  <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="theme-color" content="#1a2233" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>SCS Quality</title>
+  <link rel="stylesheet" href="../style.css" />
+  <script src="../auth-session.js"></script>
+  <script src="quality-guard.js"></script>
+</head>
+<body>
+  <header class="app-header">
+    <div class="app-header-inner">
+      <a href="index.html" class="brand">
+        <span class="brand-mark">SCS</span>
+        <span class="brand-sub">Quality</span>
+      </a>
+      <div class="page-heading">
+        <h1 class="page-title">Quality</h1>
+        <p class="page-sub">Quality modules</p>
+      </div>
+      <nav class="header-actions">
+        <a href="../menu.html" class="icon-btn" aria-label="Main menu">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg>
+        </a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="home-page fade-in">
+    <div class="home-welcome">
+      <h1>Quality</h1>
+      <p>Select a module to get started.</p>
+    </div>
+
+    <section class="dash-section">
+      <h2 class="dash-section-title">Quality</h2>
+      <div class="dash-grid">
+        <a href="ncrs.html" class="dash-card">
+          <span class="dash-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/><path d="m9 12 2 2 4-4"/></svg></span>
+          <span class="dash-card-title">NCRs</span>
+          <span class="dash-card-desc">Non-conformance reports</span>
+        </a>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

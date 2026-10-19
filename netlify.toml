@@ -144,3 +144,18 @@
   from = "/health-safety/create-risk-assessment"
   to = "/health-safety/create-risk-assessment.html"
   status = 301
+
+[[redirects]]
+  from = "/quality"
+  to = "/quality/"
+  status = 301
+
+[[redirects]]
+  from = "/quality/ncrs"
+  to = "/quality/ncrs.html"
+  status = 301
+
+[[redirects]]
+  from = "/quality/raise-ncr"
+  to = "/quality/raise-ncr.html"
+  status = 301
