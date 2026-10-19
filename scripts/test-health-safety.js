@@ -26,14 +26,15 @@ function assertEqual(actual, expected, message) {
 }
 
 const CSV = [
-  'Activity',
-  'RA1016',
-  'Line check',
-  '"Pack (A)+"',
-  'RA1016-HZ001',
-  '"Quoted, name"',
-  '',
-  'RA1016'
+  'AssessmentID,Title / Activity,HELPER',
+  'DECOY-A,Warehouse movements,RA1016 | Warehouse',
+  'DECOY-B,Line,LN1017 | Line check',
+  'DECOY-C,Pack,"PK1018 | Pack (A)+"',
+  'DECOY-D,Quoted,"QT1019 | Quoted, name"',
+  'DECOY-E,Blank helper,',
+  'DECOY-A,Duplicate,RA1016 | Warehouse',
+  'SHORT,Too short,Bad',
+  'AMBIG,Ambiguous,RA10167 Extra'
 ].join('\n');
 
 let csvText = CSV;
@@ -67,8 +68,43 @@ function createSheet(name, gid, maxRows) {
     seed: function (row, col, data) {
       const cell = sheet.cell(row, col);
       if (data.formula != null) cell.formula = data.formula;
-      if (data.value != null) cell.value = data.value;
+      if (data.value != null) {
+        cell.value = data.value;
+        if (data.formula == null) {
+          cell.formula = '';
+          delete cell.display;
+        }
+      }
+      if (data.display !== undefined) cell.display = data.display;
       if (data.format != null) cell.format = data.format;
+    },
+    computedId: function (row) {
+      if (name === 'Hazards') {
+        const activity = String(sheet.cell(row, 3).value || '').trim();
+        const hazard = String(sheet.cell(row, 4).value || '').trim();
+        if (!activity || !hazard) return '';
+        return activity + '-' + hazard;
+      }
+      if (name === 'Actions') {
+        const activity = String(sheet.cell(row, 2).value || '').trim();
+        const hazard = String(sheet.cell(row, 3).value || '').trim();
+        const action = String(sheet.cell(row, 4).value || '').trim();
+        if (!activity || !hazard || !action) return '';
+        return activity + '-' + hazard + '-' + action;
+      }
+      return '';
+    },
+    shown: function (row, col) {
+      const cell = sheet.cell(row, col);
+      if (col === 1 && cell.formula) {
+        const computed = sheet.computedId(row);
+        if (computed) return computed;
+        if (cell.display !== undefined) return cell.display;
+        return '';
+      }
+      if (cell.display !== undefined) return cell.display;
+      if (cell.formula) return '';
+      return cell.value == null ? '' : cell.value;
     },
     snapshot: function () {
       const snap = {};
@@ -159,6 +195,15 @@ function createSheet(name, gid, maxRows) {
             formulas.push(line);
           }
           return formulas;
+        },
+        getDisplayValues: function () {
+          const values = [];
+          for (let r = row; r <= endRow; r++) {
+            const line = [];
+            for (let c = col; c <= endCol; c++) line.push(sheet.shown(r, c));
+            values.push(line);
+          }
+          return values;
         }
       };
     },
@@ -174,13 +219,18 @@ function createSheet(name, gid, maxRows) {
 }
 
 function columnIds(sheet) {
-  const last = sheet.getLastRow();
   const ids = [];
-  for (let row = 2; row <= last; row++) {
-    const value = String(sheet.cell(row, 1).value || '').trim();
+  for (let row = 2; row <= sheet.getMaxRows(); row++) {
+    const value = String(sheet.shown(row, 1) || '').trim();
     if (value) ids.push(value);
   }
   return ids;
+}
+
+function seedIdFormulas(sheet) {
+  for (let row = 2; row <= sheet.maxRows; row++) {
+    sheet.seed(row, 1, { formula: '=ID', display: '' });
+  }
 }
 
 let hazards;
@@ -196,6 +246,8 @@ function resetWorld() {
   actions = createSheet('Actions', 1408515271, 30);
   hazards.seed(1, 1, { value: 'Hazard ID' });
   actions.seed(1, 1, { value: 'Action ID' });
+  seedIdFormulas(hazards);
+  seedIdFormulas(actions);
   csvText = CSV;
 }
 
@@ -299,7 +351,7 @@ function payload(overrides) {
   seq++;
   const body = {
     submissionId: 'sub-' + String(seq).padStart(8, '0'),
-    activity: 'RA1016',
+    activity: 'RA1016 | Warehouse',
     hazardName: 'Wet floor',
     hazardDescription: 'Water by the tanker bay',
     whoMightBeHarmed: 'Warehouse staff can slip',
@@ -325,7 +377,18 @@ function changedKeys(before, after) {
 
 resetWorld();
 
-assertEqual(core.activitiesFromCsv(CSV).join('|'), ['RA1016', 'Line check', 'Pack (A)+', 'RA1016-HZ001', 'Quoted, name'].join('|'), 'activities keep exact names and drop blanks');
+const activityNames = ['RA1016 | Warehouse', 'LN1017 | Line check', 'PK1018 | Pack (A)+', 'QT1019 | Quoted, name', 'Bad', 'RA10167 Extra'];
+assertEqual(core.activitiesFromCsv(CSV).join('|'), activityNames.join('|'), 'activities come from column C and drop blanks');
+assertEqual(context.loadActivitiesFromText_(CSV).join('|'), activityNames.join('|'), 'script activities come from column C');
+assert(core.activitiesFromCsv(CSV).indexOf('DECOY-A') === -1, 'dropdown does not use column A');
+assertEqual(core.activityCodeFromSelection('RA1016 | Warehouse'), 'RA1016', 'activity code is the first six characters');
+assertEqual(core.activityCodeFromSelection('RA1016'), 'RA1016', 'a bare six-character code is accepted');
+assertEqual(core.activityCodeFromSelection('PK1018 | Pack (A)+'), 'PK1018', 'punctuation after the code stays out of the code');
+assertEqual(core.activityCodeFromSelection('Bad'), '', 'a short label is not turned into a code');
+assertEqual(core.activityCodeFromSelection('RA10167 Extra'), '', 'a seventh alphanumeric character is rejected');
+activityNames.forEach(function (activity) {
+  assertEqual(context.activityCodeFromSelection_(activity), core.activityCodeFromSelection(activity), 'code extraction matches for ' + activity);
+});
 assertEqual(core.parseDueDate('2026-10-19'), '19/10/2026', 'iso date becomes uk date');
 assertEqual(core.parseDueDate('19/10/2026'), '19/10/2026', 'uk date stays uk date');
 assertEqual(core.parseDueDate('2026-02-31'), null, 'invalid calendar date rejected');
@@ -359,6 +422,13 @@ badCases.forEach(function (entry) {
   const scriptResult = context.validateSubmission_(entry[0], activities);
   assert(scriptResult.ok === false, 'script rejects ' + entry[1]);
 });
+const shortCode = core.validateSubmission(payload({ activity: 'Bad' }), activities);
+assert(shortCode.ok === false && shortCode.message.indexOf('6-character') !== -1, 'short activity code explains why it was rejected');
+const ambiguousCode = core.validateSubmission(payload({ activity: 'RA10167 Extra' }), activities);
+assert(ambiguousCode.ok === false && ambiguousCode.message.indexOf('6-character') !== -1, 'ambiguous activity code is rejected');
+const accepted = core.validateSubmission(payload(), activities);
+assertEqual(accepted.value.activity, 'RA1016 | Warehouse', 'selected activity label is preserved');
+assertEqual(accepted.value.activityCode, 'RA1016', 'validation returns the activity code');
 
 assertEqual(context.nextHazardId_('RA1016', ['RA1016-HZ001', 'RA1016-HZ002', 'RA1016-HZ004']), 'RA1016-HZ005', 'gap in suffixes uses the highest number');
 assertEqual(context.nextHazardId_('RA1016', ['RA1016-HZ009', 'OTHER-HZ050', 'RA1016-HZ001']), 'RA1016-HZ010', 'sequence ignores other activities and row position');
@@ -380,11 +450,9 @@ assertEqual(openCount, 0, 'invalid submission does not open the spreadsheet');
 assertEqual(columnIds(hazards).length, 0, 'invalid submission writes no hazard');
 
 resetWorld();
-hazards.seed(2, 3, { formula: '=IF(A2="","pending","done")' });
-hazards.seed(2, 4, { value: 'keep-me' });
 hazards.seed(2, 5, { value: 42 });
 hazards.seed(2, 11, { formula: '=D2' });
-actions.seed(2, 2, { formula: '=A2' });
+actions.seed(2, 5, { formula: '=A2' });
 actions.seed(2, 9, { value: 'leave-me' });
 const beforeHazard = hazards.snapshot();
 const beforeAction = actions.snapshot();
@@ -392,29 +460,38 @@ const saved = post(payload({ hazardDescription: '=1+1' }));
 assertEqual(saved.result, 'success', 'one action saves');
 assertEqual(saved.hazardId, 'RA1016-HZ001', 'first hazard id');
 assertEqual(saved.actionIds.join(','), 'RA1016-HZ001-AC1', 'first action id');
-assertEqual(hazards.cell(2, 1).value, 'RA1016-HZ001', 'hazard id written to column A');
+assertEqual(hazards.cell(2, 1).formula, '=ID', 'hazard column A formula stays in place');
+assertEqual(hazards.cell(2, 1).value, '', 'hazard column A is not written');
+assertEqual(hazards.shown(2, 1), 'RA1016-HZ001', 'hazard column A formula displays the complete id');
 assertEqual(hazards.cell(2, 2).value, 'Wet floor', 'hazard name written to column B');
+assertEqual(hazards.cell(2, 3).value, 'RA1016', 'activity code written to hazard column C');
+assertEqual(hazards.cell(2, 4).value, 'HZ001', 'hazard code written to column D');
 assertEqual(hazards.cell(2, 6).value, '=1+1', 'description stored as text');
 assertEqual(hazards.cell(2, 6).formula, '', 'description was not stored as a formula');
 assertEqual(hazards.cell(2, 7).value, 'Warehouse staff can slip', 'who harmed written to column G');
 assertEqual(hazards.cell(2, 8).value, 'Spill kit in place', 'controls written to column H');
 assertEqual(hazards.cell(2, 9).value, 3, 'likelihood stored as a number');
 assertEqual(hazards.cell(2, 10).value, 4, 'severity stored as a number');
-assertEqual(hazards.cell(2, 3).formula, '=IF(A2="","pending","done")', 'column C formula untouched');
-assertEqual(hazards.cell(2, 4).value, 'keep-me', 'column D value untouched');
 assertEqual(hazards.cell(2, 5).value, 42, 'column E value untouched');
 assertEqual(hazards.cell(2, 11).formula, '=D2', 'column K formula untouched');
-assertEqual(actions.cell(2, 1).value, 'RA1016-HZ001-AC1', 'action id written');
+assertEqual(hazards.cell(30, 3).value, '', 'the write does not append below the formula area');
+assertEqual(hazards.insertCount, 0, 'an earlier blank column A row does not insert rows');
+assertEqual(actions.cell(2, 1).formula, '=ID', 'action column A formula stays in place');
+assertEqual(actions.cell(2, 1).value, '', 'action column A is not written');
+assertEqual(actions.shown(2, 1), 'RA1016-HZ001-AC1', 'action column A formula displays the complete id');
+assertEqual(actions.cell(2, 2).value, 'RA1016', 'activity code written to action column B');
+assertEqual(actions.cell(2, 3).value, 'HZ001', 'hazard code written to action column C');
+assertEqual(actions.cell(2, 4).value, 'AC1', 'action code written to column D');
 assertEqual(actions.cell(2, 6).value, 'Refresh the spill procedure', 'action description written to column F');
 assertEqual(actions.cell(2, 7).value, 'Warehouse Manager', 'owner written to column G');
 assertEqual(actions.cell(2, 8).value, '19/10/2026', 'due date written as dd/MM/yyyy');
-assertEqual(actions.cell(2, 2).formula, '=A2', 'action column B formula untouched');
+assertEqual(actions.cell(2, 5).formula, '=A2', 'action column E formula untouched');
 assertEqual(actions.cell(2, 9).value, 'leave-me', 'action column I untouched');
 assertEqual(hazards.cell(1, 1).value, 'Hazard ID', 'header row untouched');
 const hazardChanges = changedKeys(beforeHazard, hazards.snapshot());
-assertEqual(hazardChanges.join('|'), ['2,1', '2,10', '2,2', '2,6', '2,7', '2,8', '2,9'].join('|'), 'only hazard destination cells changed');
+assertEqual(hazardChanges.join('|'), ['2,10', '2,2', '2,3', '2,4', '2,6', '2,7', '2,8', '2,9'].join('|'), 'only hazard destination cells changed');
 const actionChanges = changedKeys(beforeAction, actions.snapshot());
-assertEqual(actionChanges.join('|'), ['2,1', '2,6', '2,7', '2,8'].join('|'), 'only action destination cells changed');
+assertEqual(actionChanges.join('|'), ['2,2', '2,3', '2,4', '2,6', '2,7', '2,8'].join('|'), 'only action destination cells changed');
 
 resetWorld();
 
@@ -432,6 +509,16 @@ assertEqual(three.hazardId, 'RA1016-HZ001', 'one hazard id for three actions');
 assertEqual(three.actionIds.join(','), 'RA1016-HZ001-AC1,RA1016-HZ001-AC2,RA1016-HZ001-AC3', 'action ids share the hazard and increment');
 assertEqual(columnIds(hazards).length, 1, 'three actions do not create three hazards');
 assertEqual(columnIds(actions).join(','), three.actionIds.join(','), 'each action has its own row');
+assertEqual(actions.cell(2, 2).value, 'RA1016', 'first action reuses the activity code');
+assertEqual(actions.cell(3, 2).value, 'RA1016', 'second action reuses the activity code');
+assertEqual(actions.cell(4, 2).value, 'RA1016', 'third action reuses the activity code');
+assertEqual(actions.cell(2, 3).value, 'HZ001', 'first action reuses the hazard code');
+assertEqual(actions.cell(3, 3).value, 'HZ001', 'second action reuses the hazard code');
+assertEqual(actions.cell(4, 3).value, 'HZ001', 'third action reuses the hazard code');
+assertEqual(actions.cell(2, 4).value, 'AC1', 'first action code');
+assertEqual(actions.cell(3, 4).value, 'AC2', 'second action code');
+assertEqual(actions.cell(4, 4).value, 'AC3', 'third action code');
+assertEqual(actions.cell(2, 1).formula, '=ID', 'shared actions do not write column A');
 assertEqual(actions.cell(2, 8).value, '05/01/2026', 'single digit day is padded');
 const duplicate = post(same);
 assertEqual(duplicate.result, 'success', 'repeat submission returns success');
@@ -442,12 +529,13 @@ assertEqual(openCount, 1, 'repeat submission does not open the spreadsheet again
 
 const second = post(payload({ hazardName: 'Second hazard' }));
 assertEqual(second.hazardId, 'RA1016-HZ002', 'second hazard for the same activity increments');
-const other = post(payload({ activity: 'Line check', hazardName: 'Line hazard' }));
-assertEqual(other.hazardId, 'Line check-HZ001', 'a different activity starts its own sequence');
-const special = post(payload({ activity: 'Pack (A)+', hazardName: 'Special' }));
-assertEqual(special.hazardId, 'Pack (A)+-HZ001', 'special characters are preserved in the id');
-const quoted = post(payload({ activity: 'Quoted, name', hazardName: 'Comma' }));
-assertEqual(quoted.hazardId, 'Quoted, name-HZ001', 'comma in the activity is preserved');
+const other = post(payload({ activity: 'LN1017 | Line check', hazardName: 'Line hazard' }));
+assertEqual(other.hazardId, 'LN1017-HZ001', 'a different activity starts its own sequence');
+assertEqual(hazards.cell(4, 3).value, 'LN1017', 'the other activity code is written from its label');
+const special = post(payload({ activity: 'PK1018 | Pack (A)+', hazardName: 'Special' }));
+assertEqual(special.hazardId, 'PK1018-HZ001', 'punctuation in the label is not copied into the id');
+const quoted = post(payload({ activity: 'QT1019 | Quoted, name', hazardName: 'Comma' }));
+assertEqual(quoted.hazardId, 'QT1019-HZ001', 'a comma in the label stays out of the activity code');
 
 resetWorld();
 hazards.seed(2, 1, { value: 'RA1016-HZ009' });
@@ -456,18 +544,32 @@ hazards.seed(3, 1, { value: 'OTHER-HZ003' });
 const gapped = post(payload());
 assertEqual(gapped.hazardId, 'RA1016-HZ010', 'next id follows the highest suffix, not the last row');
 assertEqual(hazards.cell(2, 1).value, 'RA1016-HZ009', 'existing higher id is not overwritten');
-assertEqual(hazards.cell(4, 1).value, 'RA1016-HZ010', 'new id uses the first safe row');
+assertEqual(hazards.cell(4, 1).formula, '=ID', 'the blank column A formula is not replaced');
+assertEqual(hazards.cell(4, 3).value, 'RA1016', 'the first blank column A row receives the activity code');
+assertEqual(hazards.cell(4, 4).value, 'HZ010', 'the first blank column A row receives the hazard code');
+assertEqual(hazards.shown(4, 1), 'RA1016-HZ010', 'the blank formula displays the new hazard id');
 
 resetWorld();
+hazards.seed(2, 1, { value: 'RA1016-HZ001' });
 hazards.seed(2, 6, { formula: '=1+1' });
-hazards.seed(3, 3, { formula: '=A3' });
-hazards.seed(3, 4, { value: 'still-here' });
+hazards.seed(3, 1, { formula: '=IF(C3="","",C3&"-"&D3)', display: '' });
+hazards.seed(3, 5, { formula: '=A3' });
+hazards.seed(3, 11, { value: 'still-here' });
+hazards.seed(8, 1, { formula: '=C8&"-"&D8', display: 'RA1016-HZ014' });
 const skipped = post(payload());
-assertEqual(hazards.cell(2, 6).formula, '=1+1', 'occupied destination cell is skipped');
-assertEqual(hazards.cell(3, 1).value, skipped.hazardId, 'next safe row is used');
-assertEqual(hazards.cell(3, 3).formula, '=A3', 'non-destination formula on the written row stays');
-assertEqual(hazards.cell(3, 4).value, 'still-here', 'non-destination value on the written row stays');
-assertEqual(hazards.insertCount, 0, 'an internal safe row does not insert rows');
+assertEqual(skipped.hazardId, 'RA1016-HZ015', 'a formula-displayed id counts toward the next suffix');
+assertEqual(hazards.cell(2, 1).value, 'RA1016-HZ001', 'a visible id is not overwritten');
+assertEqual(hazards.cell(2, 6).formula, '=1+1', 'a row with a visible id is not used');
+assertEqual(hazards.cell(2, 3).value, '', 'component columns on a visible id row stay empty');
+assertEqual(hazards.cell(3, 1).formula, '=IF(C3="","",C3&"-"&D3)', 'an empty formula result stays in column A');
+assertEqual(hazards.cell(3, 3).value, 'RA1016', 'the empty formula row receives the activity code');
+assertEqual(hazards.cell(3, 4).value, 'HZ015', 'the empty formula row receives the hazard code');
+assertEqual(hazards.shown(3, 1), 'RA1016-HZ015', 'the empty formula then displays the complete id');
+assertEqual(hazards.cell(3, 5).formula, '=A3', 'unrelated formula on the written row stays');
+assertEqual(hazards.cell(3, 11).value, 'still-here', 'unrelated value on the written row stays');
+assertEqual(hazards.cell(8, 1).formula, '=C8&"-"&D8', 'a formula-only id is not overwritten');
+assertEqual(hazards.cell(8, 3).value, '', 'a formula-only id row does not receive new components');
+assertEqual(hazards.insertCount, 0, 'an earlier blank display row does not append below the formulas');
 
 resetWorld();
 hazards.seed(1, 6, { formula: '=ARRAYFORMULA(A2:A)' });
@@ -476,6 +578,13 @@ const arrayResult = post(payload());
 assertEqual(arrayResult.result, 'error', 'array formula blocks the save');
 assert(arrayResult.result !== 'success', 'array formula does not report success');
 assertEqual(JSON.stringify(hazards.snapshot()), JSON.stringify(blockedFormula), 'array formula sheet is unchanged');
+
+resetWorld();
+hazards.seed(1, 1, { formula: '=ARRAYFORMULA(IF(C2:C="","",C2:C&"-"&D2:D))' });
+const arrayOwned = post(payload());
+assertEqual(arrayOwned.result, 'success', 'an array formula in column A does not block the save');
+assertEqual(hazards.cell(1, 1).formula, '=ARRAYFORMULA(IF(C2:C="","",C2:C&"-"&D2:D))', 'the column A array formula is not overwritten');
+assertEqual(hazards.cell(2, 3).value, 'RA1016', 'component values are still written beside a column A array formula');
 
 resetWorld();
 actions.seed(2, 1, { value: 'RA1016-HZ001-AC1' });
@@ -489,7 +598,13 @@ const continued = post(payload({
 }));
 assertEqual(continued.actionIds.join(','), 'RA1016-HZ001-AC3,RA1016-HZ001-AC4', 'existing action ids are not reused');
 assertEqual(actions.cell(2, 6).value, 'old action', 'existing action description stays');
-assertEqual(actions.cell(4, 1).value, 'RA1016-HZ001-AC3', 'new actions start after occupied rows');
+assertEqual(actions.cell(2, 1).value, 'RA1016-HZ001-AC1', 'existing action id stays in place');
+assertEqual(actions.cell(4, 1).formula, '=ID', 'new action rows leave column A to the formula');
+assertEqual(actions.cell(4, 2).value, 'RA1016', 'continued action keeps the activity code');
+assertEqual(actions.cell(4, 3).value, 'HZ001', 'continued action keeps the hazard code');
+assertEqual(actions.cell(4, 4).value, 'AC3', 'continued action code follows the existing suffix');
+assertEqual(actions.cell(5, 4).value, 'AC4', 'the next continued action increments');
+assertEqual(actions.shown(4, 1), 'RA1016-HZ001-AC3', 'continued action id is displayed by column A');
 
 resetWorld();
 const narrow = createSheet('Hazards', 1159021811, 3);
@@ -502,7 +617,9 @@ hazards.seed(3, 1, { value: 'RA1016-HZ002' });
 actions.seed(1, 1, { value: 'Action ID' });
 const inserted = post(payload());
 assertEqual(inserted.hazardId, 'RA1016-HZ003', 'full sheet still allocates the next id');
-assertEqual(hazards.cell(4, 1).value, 'RA1016-HZ003', 'a row is added at the bottom');
+assertEqual(hazards.cell(4, 1).value, '', 'the inserted row does not receive a written id');
+assertEqual(hazards.cell(4, 3).value, 'RA1016', 'the inserted row receives the activity code');
+assertEqual(hazards.cell(4, 4).value, 'HZ003', 'the inserted row receives the hazard code');
 assertEqual(hazards.cell(2, 1).value, 'RA1016-HZ001', 'inserted row does not shift existing ids');
 assert(hazards.insertCount > 0, 'rows are inserted only when the grid is full');
 
@@ -594,7 +711,14 @@ assertEqual(resumed.result, 'success', 'pending submission can be finished');
 assertEqual(resumed.hazardId, 'RA1016-HZ005', 'resume keeps the reserved hazard id');
 assertEqual(resumed.actionIds.join(','), 'RA1016-HZ005-AC1', 'resume uses the reserved action id');
 assertEqual(columnIds(hazards).filter(function (id) { return id === 'RA1016-HZ005'; }).length, 1, 'resume does not create a second copy of the hazard');
-assertEqual(actions.cell(2, 1).value, 'RA1016-HZ005-AC1', 'missing action is written on resume');
+assertEqual(hazards.cell(6, 3).value, 'RA1016', 'resume writes the activity code onto the reserved hazard row');
+assertEqual(hazards.cell(6, 4).value, 'HZ005', 'resume writes only the hazard code');
+assertEqual(hazards.cell(6, 1).value, 'RA1016-HZ005', 'resume does not replace the displayed hazard id');
+assertEqual(actions.cell(2, 1).formula, '=ID', 'resume leaves the action id formula alone');
+assertEqual(actions.cell(2, 2).value, 'RA1016', 'resumed action uses the reserved activity code');
+assertEqual(actions.cell(2, 3).value, 'HZ005', 'resumed action uses the reserved hazard code');
+assertEqual(actions.cell(2, 4).value, 'AC1', 'resumed action uses the reserved action code');
+assertEqual(actions.shown(2, 1), 'RA1016-HZ005-AC1', 'resumed action id is displayed by column A');
 
 resetWorld();
 let secondResult = null;

@@ -13,8 +13,9 @@
  *
  * Writes one Hazards row and one Actions row per control measure.
  * Only the listed columns are written, one cell at a time.
- * Hazards gid 1159021811: A, B, F, G, H, I, J
- * Actions gid 1408515271: A, F, G, H
+ * Column A is formula-owned on both sheets and is never written.
+ * Hazards gid 1159021811: B name, C activity code, D hazard code, F, G, H, I, J
+ * Actions gid 1408515271: B activity code, C hazard code, D action code, F, G, H
  */
 
 var API_TOKEN = 'J4PAN88';
@@ -36,8 +37,8 @@ var RISK_OWNERS = [
   'N/A'
 ];
 
-var HAZARD_WRITE_COLUMNS = [1, 2, 6, 7, 8, 9, 10];
-var ACTION_WRITE_COLUMNS = [1, 6, 7, 8];
+var HAZARD_WRITE_COLUMNS = [2, 3, 4, 6, 7, 8, 9, 10];
+var ACTION_WRITE_COLUMNS = [2, 3, 4, 6, 7, 8];
 var MAX_TEXT = 8000;
 var MAX_ACTIONS = 50;
 var SUBMISSION_INDEX_KEY = 'HS_RISK_SUBMISSION_INDEX';
@@ -135,12 +136,21 @@ function saveAssessment_(value) {
     });
   }
 
+  if (!value.activityCode) {
+    return json({
+      result: 'error',
+      retryable: false,
+      message: 'The selected activity does not start with a 6-character activity code. Nothing was written.'
+    });
+  }
+
   var ss = SpreadsheetApp.openById(SSID_HS);
   var hazards = requireSheet_(ss, SHEET_HAZARDS, GID_HAZARDS);
   var actionsSheet = requireSheet_(ss, SHEET_ACTIONS, GID_ACTIONS);
   assertNoArrayFormula_(hazards, HAZARD_WRITE_COLUMNS, 'Hazards');
   assertNoArrayFormula_(actionsSheet, ACTION_WRITE_COLUMNS, 'Actions');
 
+  var activityCode = value.activityCode;
   var hazardId;
   var actionIds;
   if (existing && existing.status === 'pending') {
@@ -156,8 +166,8 @@ function saveAssessment_(value) {
       });
     }
   } else {
-    hazardId = nextHazardId_(value.activity, readColumnIds_(hazards));
-    actionIds = nextActionIds_(hazardId, value.actions.length, readColumnIds_(actionsSheet));
+    hazardId = nextHazardId_(activityCode, hazardIdentityIds_(hazards));
+    actionIds = nextActionIds_(hazardId, value.actions.length, actionIdentityIds_(actionsSheet));
     saveRecord_(value.submissionId, {
       status: 'pending',
       fingerprint: fingerprint,
@@ -166,32 +176,36 @@ function saveAssessment_(value) {
     });
   }
 
+  var hazardCode = hazardCodeFromId_(hazardId);
   var written = [];
+  var hazardRow = 0;
+  var actionRows = [];
   try {
-    var hazardRow = findIdRow_(hazards, hazardId);
-    if (!hazardRow) {
-      hazardRow = findSafeRows_(hazards, HAZARD_WRITE_COLUMNS, 1)[0];
-    }
-    alignRow_(hazards, hazardRow, hazardCells_(hazardId, value), written);
+    if (!hazardCode) throw new Error('Could not determine the hazard code.');
+    hazardRow = findHazardRow_(hazards, hazardId, activityCode, hazardCode);
+    if (!hazardRow) hazardRow = findSafeRows_(hazards, 1)[0];
+    alignRow_(hazards, hazardRow, hazardCells_(activityCode, hazardCode, value), written);
 
     var missing = [];
     for (var j = 0; j < actionIds.length; j++) {
-      if (!findIdRow_(actionsSheet, actionIds[j])) missing.push(j);
+      var existingActionRow = findActionRow_(actionsSheet, actionIds[j], activityCode, hazardCode, actionCodeFromId_(actionIds[j]));
+      if (existingActionRow) actionRows[j] = existingActionRow;
+      else missing.push(j);
     }
     if (missing.length) {
-      var freeRows = findSafeRows_(actionsSheet, ACTION_WRITE_COLUMNS, missing.length);
+      var freeRows = findSafeRows_(actionsSheet, missing.length);
       for (var m = 0; m < missing.length; m++) {
         var index = missing[m];
-        alignRow_(actionsSheet, freeRows[m], actionCells_(actionIds[index], value.actions[index]), written);
+        actionRows[index] = freeRows[m];
+        alignRow_(actionsSheet, freeRows[m], actionCells_(activityCode, hazardCode, actionCodeFromId_(actionIds[index]), value.actions[index]), written);
       }
     }
 
     SpreadsheetApp.flush();
-    verifyRow_(hazards, hazardRow, hazardCells_(hazardId, value));
+    verifyRow_(hazards, hazardRow, hazardCells_(activityCode, hazardCode, value));
     for (var k = 0; k < actionIds.length; k++) {
-      var row = findIdRow_(actionsSheet, actionIds[k]);
-      if (!row) throw new Error('Action ' + actionIds[k] + ' could not be confirmed.');
-      verifyRow_(actionsSheet, row, actionCells_(actionIds[k], value.actions[k]));
+      if (!actionRows[k]) throw new Error('Action ' + actionIds[k] + ' could not be confirmed.');
+      verifyRow_(actionsSheet, actionRows[k], actionCells_(activityCode, hazardCode, actionCodeFromId_(actionIds[k]), value.actions[k]));
     }
 
     var success = {
@@ -247,10 +261,10 @@ function saveAssessment_(value) {
       return json(partialResult);
     }
 
-    var stillThere = findIdRow_(hazards, hazardId) > 0;
+    var stillThere = findHazardRow_(hazards, hazardId, activityCode, hazardCode) > 0;
     if (!stillThere) {
       for (var r = 0; r < actionIds.length; r++) {
-        if (findIdRow_(actionsSheet, actionIds[r])) stillThere = true;
+        if (findActionRow_(actionsSheet, actionIds[r], activityCode, hazardCode, actionCodeFromId_(actionIds[r]))) stillThere = true;
       }
     }
 
@@ -279,10 +293,11 @@ function saveAssessment_(value) {
   }
 }
 
-function hazardCells_(hazardId, value) {
+function hazardCells_(activityCode, hazardCode, value) {
   return [
-    { col: 1, value: hazardId, type: 'text' },
     { col: 2, value: value.hazardName, type: 'text' },
+    { col: 3, value: activityCode, type: 'text' },
+    { col: 4, value: hazardCode, type: 'text' },
     { col: 6, value: value.hazardDescription, type: 'text' },
     { col: 7, value: value.whoMightBeHarmed, type: 'text' },
     { col: 8, value: value.currentControls, type: 'text' },
@@ -291,9 +306,11 @@ function hazardCells_(hazardId, value) {
   ];
 }
 
-function actionCells_(actionId, action) {
+function actionCells_(activityCode, hazardCode, actionCode, action) {
   return [
-    { col: 1, value: actionId, type: 'text' },
+    { col: 2, value: activityCode, type: 'text' },
+    { col: 3, value: hazardCode, type: 'text' },
+    { col: 4, value: actionCode, type: 'text' },
     { col: 6, value: action.description, type: 'text' },
     { col: 7, value: action.owner, type: 'text' },
     { col: 8, value: action.dueDate, type: 'text' }
@@ -332,6 +349,7 @@ function verifyRow_(sheet, row, cells) {
 }
 
 function writeCell_(sheet, row, col, value, type, written) {
+  if (col === 1) throw new Error('Refusing to write column A on ' + sheet.getName() + '.');
   if (row < 2) throw new Error('Refusing to write on the header row.');
   var range = sheet.getRange(row, col);
   var formula = range.getFormula();
@@ -382,60 +400,27 @@ function cellIsEmpty_(value, formula) {
   return String(value).trim() === '';
 }
 
-function findSafeRows_(sheet, columns, count) {
-  var startRow = 2;
-  var lastRow = sheet.getLastRow();
+function findSafeRows_(sheet, count) {
   var found = [];
-
-  if (lastRow >= startRow) {
-    var numRows = lastRow - startRow + 1;
-    var maps = [];
-    for (var c = 0; c < columns.length; c++) {
-      maps.push({
-        values: sheet.getRange(startRow, columns[c], numRows, 1).getValues(),
-        formulas: sheet.getRange(startRow, columns[c], numRows, 1).getFormulas()
-      });
-    }
-    for (var i = 0; i < numRows && found.length < count; i++) {
-      var safe = true;
-      for (var c2 = 0; c2 < columns.length; c2++) {
-        if (!cellIsEmpty_(maps[c2].values[i][0], maps[c2].formulas[i][0])) {
-          safe = false;
-          break;
-        }
-      }
-      if (safe) found.push(startRow + i);
-    }
+  var maxRows = sheet.getMaxRows();
+  var displays = [];
+  if (maxRows >= 2) {
+    displays = sheet.getRange(2, 1, maxRows - 1, 1).getDisplayValues();
   }
-
-  var next = Math.max(lastRow + 1, startRow);
+  for (var i = 0; i < displays.length && found.length < count; i++) {
+    if (String(displays[i][0] == null ? '' : displays[i][0]).trim() === '') found.push(i + 2);
+  }
   var guard = 0;
   while (found.length < count) {
     guard++;
     if (guard > 10000) throw new Error('No safe row was available on ' + sheet.getName() + '. Nothing was overwritten.');
-    if (found.indexOf(next) !== -1) {
-      next++;
-      continue;
-    }
-    if (next > sheet.getMaxRows()) {
-      var need = count - found.length;
-      sheet.insertRowsAfter(sheet.getMaxRows(), need);
-    }
+    var next = sheet.getMaxRows() + 1;
+    sheet.insertRowsAfter(sheet.getMaxRows(), 1);
     if (next > sheet.getMaxRows()) {
       throw new Error('No safe row was available on ' + sheet.getName() + '. Nothing was overwritten.');
     }
-    var rowSafe = true;
-    for (var c3 = 0; c3 < columns.length; c3++) {
-      var range = sheet.getRange(next, columns[c3]);
-      if (!cellIsEmpty_(range.getValue(), range.getFormula())) {
-        rowSafe = false;
-        break;
-      }
-    }
-    if (rowSafe) found.push(next);
-    next++;
+    found.push(next);
   }
-
   return found;
 }
 
@@ -452,10 +437,10 @@ function assertNoArrayFormula_(sheet, columns, label) {
   }
 }
 
-function readColumnIds_(sheet) {
-  var last = sheet.getLastRow();
-  if (last < 2) return [];
-  var values = sheet.getRange(2, 1, last - 1, 1).getValues();
+function readColumnDisplays_(sheet) {
+  var maxRows = sheet.getMaxRows();
+  if (maxRows < 2) return [];
+  var values = sheet.getRange(2, 1, maxRows - 1, 1).getDisplayValues();
   var ids = [];
   for (var i = 0; i < values.length; i++) {
     var text = String(values[i][0] == null ? '' : values[i][0]).trim();
@@ -464,16 +449,104 @@ function readColumnIds_(sheet) {
   return ids;
 }
 
+function hazardIdentityIds_(sheet) {
+  var ids = readColumnDisplays_(sheet);
+  var maxRows = sheet.getMaxRows();
+  if (maxRows < 2) return ids;
+  var num = maxRows - 1;
+  var activityValues = sheet.getRange(2, 3, num, 1).getValues();
+  var hazardValues = sheet.getRange(2, 4, num, 1).getValues();
+  for (var i = 0; i < num; i++) {
+    var activity = String(activityValues[i][0] == null ? '' : activityValues[i][0]).trim();
+    var hazard = String(hazardValues[i][0] == null ? '' : hazardValues[i][0]).trim();
+    if (/^[A-Za-z0-9]{6}$/.test(activity) && /^HZ\d+$/.test(hazard)) {
+      ids.push(activity + '-' + hazard);
+    }
+  }
+  return ids;
+}
+
+function actionIdentityIds_(sheet) {
+  var ids = readColumnDisplays_(sheet);
+  var maxRows = sheet.getMaxRows();
+  if (maxRows < 2) return ids;
+  var num = maxRows - 1;
+  var activityValues = sheet.getRange(2, 2, num, 1).getValues();
+  var hazardValues = sheet.getRange(2, 3, num, 1).getValues();
+  var actionValues = sheet.getRange(2, 4, num, 1).getValues();
+  for (var i = 0; i < num; i++) {
+    var activity = String(activityValues[i][0] == null ? '' : activityValues[i][0]).trim();
+    var hazard = String(hazardValues[i][0] == null ? '' : hazardValues[i][0]).trim();
+    var action = String(actionValues[i][0] == null ? '' : actionValues[i][0]).trim();
+    if (/^[A-Za-z0-9]{6}$/.test(activity) && /^HZ\d+$/.test(hazard) && /^AC\d+$/.test(action)) {
+      ids.push(activity + '-' + hazard + '-' + action);
+    }
+  }
+  return ids;
+}
+
 function findIdRow_(sheet, id) {
   var wanted = String(id || '').trim();
   if (!wanted) return 0;
-  var last = sheet.getLastRow();
-  if (last < 2) return 0;
-  var values = sheet.getRange(2, 1, last - 1, 1).getValues();
+  var maxRows = sheet.getMaxRows();
+  if (maxRows < 2) return 0;
+  var values = sheet.getRange(2, 1, maxRows - 1, 1).getDisplayValues();
   for (var i = 0; i < values.length; i++) {
     if (String(values[i][0] == null ? '' : values[i][0]).trim() === wanted) return i + 2;
   }
   return 0;
+}
+
+function findHazardRow_(sheet, fullId, activityCode, hazardCode) {
+  var byDisplay = findIdRow_(sheet, fullId);
+  if (byDisplay) return byDisplay;
+  var maxRows = sheet.getMaxRows();
+  if (maxRows < 2) return 0;
+  var num = maxRows - 1;
+  var displays = sheet.getRange(2, 1, num, 1).getDisplayValues();
+  var activityValues = sheet.getRange(2, 3, num, 1).getValues();
+  var hazardValues = sheet.getRange(2, 4, num, 1).getValues();
+  for (var i = 0; i < num; i++) {
+    var shown = String(displays[i][0] == null ? '' : displays[i][0]).trim();
+    if (shown) continue;
+    if (String(activityValues[i][0] == null ? '' : activityValues[i][0]).trim() === activityCode &&
+        String(hazardValues[i][0] == null ? '' : hazardValues[i][0]).trim() === hazardCode) {
+      return i + 2;
+    }
+  }
+  return 0;
+}
+
+function findActionRow_(sheet, fullId, activityCode, hazardCode, actionCode) {
+  var byDisplay = findIdRow_(sheet, fullId);
+  if (byDisplay) return byDisplay;
+  var maxRows = sheet.getMaxRows();
+  if (maxRows < 2) return 0;
+  var num = maxRows - 1;
+  var displays = sheet.getRange(2, 1, num, 1).getDisplayValues();
+  var activityValues = sheet.getRange(2, 2, num, 1).getValues();
+  var hazardValues = sheet.getRange(2, 3, num, 1).getValues();
+  var actionValues = sheet.getRange(2, 4, num, 1).getValues();
+  for (var i = 0; i < num; i++) {
+    var shown = String(displays[i][0] == null ? '' : displays[i][0]).trim();
+    if (shown) continue;
+    if (String(activityValues[i][0] == null ? '' : activityValues[i][0]).trim() === activityCode &&
+        String(hazardValues[i][0] == null ? '' : hazardValues[i][0]).trim() === hazardCode &&
+        String(actionValues[i][0] == null ? '' : actionValues[i][0]).trim() === actionCode) {
+      return i + 2;
+    }
+  }
+  return 0;
+}
+
+function hazardCodeFromId_(hazardId) {
+  var match = String(hazardId || '').match(/-(HZ\d+)$/);
+  return match ? match[1] : '';
+}
+
+function actionCodeFromId_(actionId) {
+  var match = String(actionId || '').match(/-(AC\d+)$/);
+  return match ? match[1] : '';
 }
 
 function nextHazardId_(activity, ids) {
@@ -626,12 +699,21 @@ function activitiesFromCsv_(text) {
   var list = [];
   var seen = {};
   for (var i = 1; i < rows.length; i++) {
-    var value = String(rows[i] && rows[i][0] != null ? rows[i][0] : '').trim();
+    var value = String(rows[i] && rows[i][2] != null ? rows[i][2] : '').trim();
     if (!value || seen[value]) continue;
     seen[value] = true;
     list.push(value);
   }
   return list;
+}
+
+function activityCodeFromSelection_(activity) {
+  var value = String(activity || '');
+  if (value.length < 6) return '';
+  var code = value.substring(0, 6);
+  if (!/^[A-Za-z0-9]{6}$/.test(code)) return '';
+  if (value.length > 6 && /[A-Za-z0-9]/.test(value.charAt(6))) return '';
+  return code;
 }
 
 function parseScore_(value) {
@@ -689,6 +771,10 @@ function validateSubmission_(payload, activities) {
       message: 'This activity cannot be used as a hazard ID prefix because it contains a line break or is too long. The activity name has not been changed.'
     };
   }
+  var activityCode = activityCodeFromSelection_(activity);
+  if (!activityCode) {
+    return { ok: false, message: 'The selected activity does not start with a 6-character activity code.' };
+  }
 
   var hazardName = requireText_(data.hazardName, 'Enter a name for the hazard.');
   if (!hazardName.ok) return hazardName;
@@ -731,6 +817,7 @@ function validateSubmission_(payload, activities) {
     value: {
       submissionId: submissionId,
       activity: activity,
+      activityCode: activityCode,
       hazardName: hazardName.value,
       hazardDescription: hazardDescription.value,
       whoMightBeHarmed: whoMightBeHarmed.value,

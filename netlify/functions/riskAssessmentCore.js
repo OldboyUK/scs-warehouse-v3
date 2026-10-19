@@ -69,13 +69,22 @@ function activitiesFromCsv(text) {
   var seen = {};
 
   for (var i = 1; i < rows.length; i++) {
-    var value = String(rows[i] && rows[i][0] != null ? rows[i][0] : '').trim();
+    var value = String(rows[i] && rows[i][2] != null ? rows[i][2] : '').trim();
     if (!value || seen[value]) continue;
     seen[value] = true;
     list.push(value);
   }
 
   return list;
+}
+
+function activityCodeFromSelection(activity) {
+  var value = String(activity || '');
+  if (value.length < 6) return '';
+  var code = value.substring(0, 6);
+  if (!/^[A-Za-z0-9]{6}$/.test(code)) return '';
+  if (value.length > 6 && /[A-Za-z0-9]/.test(value.charAt(6))) return '';
+  return code;
 }
 
 function parseScore(value) {
@@ -147,6 +156,10 @@ function validateSubmission(payload, activities) {
       message: 'This activity cannot be used as a hazard ID prefix because it contains a line break or is too long. The activity name has not been changed.'
     };
   }
+  var activityCode = activityCodeFromSelection(activity);
+  if (!activityCode) {
+    return { ok: false, message: 'The selected activity does not start with a 6-character activity code.' };
+  }
 
   var hazardName = requireText(data.hazardName, 'Enter a name for the hazard.');
   if (!hazardName.ok) return hazardName;
@@ -195,6 +208,7 @@ function validateSubmission(payload, activities) {
     value: {
       submissionId: submissionId,
       activity: activity,
+      activityCode: activityCode,
       hazardName: hazardName.value,
       hazardDescription: hazardDescription.value,
       whoMightBeHarmed: whoMightBeHarmed.value,
@@ -212,6 +226,7 @@ module.exports = {
   MAX_ACTIONS: MAX_ACTIONS,
   parseCsv: parseCsv,
   activitiesFromCsv: activitiesFromCsv,
+  activityCodeFromSelection: activityCodeFromSelection,
   parseScore: parseScore,
   parseDueDate: parseDueDate,
   validateSubmission: validateSubmission
