@@ -504,11 +504,18 @@
   color: var(--text);
 }
 
-.schedule-app .sch-modal input[type="number"] {
+.schedule-app .sch-modal input[type="number"],
+.schedule-app .sch-modal input[type="text"] {
   width: 100%;
   margin: 6px 0 0;
   min-height: 40px;
   font-family: inherit;
+}
+
+.schedule-app .sch-modal input[readonly] {
+  cursor: default;
+  color: var(--text);
+  background: rgba(17, 24, 39, 0.45);
 }
 
 .sch-volume-hint {

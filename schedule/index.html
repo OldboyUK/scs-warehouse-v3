@@ -83,13 +83,19 @@
       <h2 id="editorTitle">Production block</h2>
       <p class="sch-editor-lane" id="editorLane"></p>
       <p class="sch-form-error" id="editorError" hidden></p>
-      <label class="sch-question" for="editorProduct">Please enter a Product
+      <label class="sch-question" for="editorCustomer">Customer
+        <select id="editorCustomer"></select>
+      </label>
+      <label class="sch-question" for="editorProduct">Product
         <select id="editorProduct"></select>
       </label>
-      <label class="sch-question" for="editorFormat">Please enter a packing format
+      <label class="sch-question" for="editorLiquid">Liquid Code
+        <input id="editorLiquid" type="text" readonly tabindex="-1" />
+      </label>
+      <label class="sch-question" for="editorFormat">Packing Format
         <select id="editorFormat"></select>
       </label>
-      <label class="sch-question" for="editorVolume">Please enter the required packing volume for this format
+      <label class="sch-question" for="editorVolume">Volume
         <input id="editorVolume" type="number" inputmode="decimal" min="100" max="1000000" step="any" />
       </label>
       <p class="sch-volume-hint" id="editorVolumeHint">Between 100 and 1,000,000 litres.</p>

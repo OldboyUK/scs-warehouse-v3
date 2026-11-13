@@ -4,8 +4,7 @@
  *
  * Stored block shape (ready for a later database):
  *   id, day, category, startTime, endTime, backgroundColour,
- *   productSelection, packingFormat, volume,
- *   companyName, productName, liquidCode
+ *   customer, product, liquidCode, packingFormat, volume
  * Older free-text blocks keep legacyText so they can still be shown.
  *
  * startTime and endTime are whole-hour clock times, "HH:MM".
@@ -159,10 +158,10 @@
   }
 
   function displayText(block) {
-    var structured = block.companyName || block.productName || block.liquidCode ||
+    var structured = block.customer || block.product || block.liquidCode ||
       block.packingFormat || block.volume != null;
     if (!structured) return block.legacyText || '';
-    var lines = [block.companyName, block.productName, block.packingFormat, block.liquidCode];
+    var lines = [block.customer, block.product, block.liquidCode, block.packingFormat];
     if (block.volume != null) lines.push(formatVolume(block.volume));
     return lines.filter(function (line) { return String(line || '').trim(); }).join('\n');
   }
@@ -176,12 +175,11 @@
       endTime: block.endTime,
       startOffset: clockToOffset(block.startTime, false),
       endOffset: clockToOffset(block.endTime, true),
-      productSelection: block.productSelection,
+      customer: block.customer,
+      product: block.product,
+      liquidCode: block.liquidCode,
       packingFormat: block.packingFormat,
       volume: block.volume,
-      companyName: block.companyName,
-      productName: block.productName,
-      liquidCode: block.liquidCode,
       legacyText: block.legacyText,
       text: displayText(block),
       backgroundColour: block.backgroundColour
@@ -197,13 +195,12 @@
     var id = String(item.id || '');
     if (!/^[A-Za-z0-9_-]{8,80}$/.test(id) || seen[id]) id = newId();
     seen[id] = true;
-    var productSelection = cleanLine(item.productSelection, 500);
-    var companyName = cleanLine(item.companyName, 500);
-    var productName = cleanLine(item.productName, 500);
+    var customer = cleanLine(item.customer, 500) || cleanLine(item.companyName, 500);
+    var product = cleanLine(item.product, 500) || cleanLine(item.productName, 500);
     var liquidCode = cleanLine(item.liquidCode, 80);
     var packingFormat = cleanLine(item.packingFormat, 200);
     var volume = storedVolume(item.volume);
-    var structured = productSelection || companyName || productName || liquidCode || packingFormat || volume != null;
+    var structured = customer || product || liquidCode || packingFormat || volume != null;
     var legacyText = '';
     if (!structured) {
       if (typeof item.legacyText === 'string') legacyText = item.legacyText.slice(0, 2000);
@@ -215,12 +212,11 @@
       category: item.category,
       startTime: offsetToClock(start),
       endTime: offsetToClock(end),
-      productSelection: productSelection,
+      customer: customer,
+      product: product,
+      liquidCode: liquidCode,
       packingFormat: packingFormat,
       volume: volume,
-      companyName: companyName,
-      productName: productName,
-      liquidCode: liquidCode,
       legacyText: legacyText,
       backgroundColour: normaliseColour(item.backgroundColour)
     };
@@ -303,12 +299,11 @@
       category: input.category,
       startTime: offsetToClock(input.startOffset),
       endTime: offsetToClock(input.endOffset),
-      productSelection: cleanLine(input.productSelection, 500),
+      customer: cleanLine(input.customer, 500),
+      product: cleanLine(input.product, 500),
+      liquidCode: cleanLine(input.liquidCode, 80),
       packingFormat: cleanLine(input.packingFormat, 200),
       volume: storedVolume(input.volume),
-      companyName: cleanLine(input.companyName, 500),
-      productName: cleanLine(input.productName, 500),
-      liquidCode: cleanLine(input.liquidCode, 80),
       legacyText: '',
       backgroundColour: normaliseColour(input.backgroundColour)
     };
@@ -322,12 +317,11 @@
       if (state.blocks[i].id === id) block = state.blocks[i];
     }
     if (!block || !patch) return null;
-    if (patch.productSelection !== undefined) block.productSelection = cleanLine(patch.productSelection, 500);
+    if (patch.customer !== undefined) block.customer = cleanLine(patch.customer, 500);
+    if (patch.product !== undefined) block.product = cleanLine(patch.product, 500);
+    if (patch.liquidCode !== undefined) block.liquidCode = cleanLine(patch.liquidCode, 80);
     if (patch.packingFormat !== undefined) block.packingFormat = cleanLine(patch.packingFormat, 200);
     if (patch.volume !== undefined) block.volume = storedVolume(patch.volume);
-    if (patch.companyName !== undefined) block.companyName = cleanLine(patch.companyName, 500);
-    if (patch.productName !== undefined) block.productName = cleanLine(patch.productName, 500);
-    if (patch.liquidCode !== undefined) block.liquidCode = cleanLine(patch.liquidCode, 80);
     if (patch.legacyText !== undefined) block.legacyText = String(patch.legacyText).slice(0, 2000);
     if (patch.backgroundColour !== undefined) block.backgroundColour = normaliseColour(patch.backgroundColour);
     if (patch.day !== undefined && dayIds[patch.day]) block.day = patch.day;

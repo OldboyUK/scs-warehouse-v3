@@ -6,12 +6,11 @@
 (function (root) {
   var RANGES_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vThaK38XWYKd8tXJ0g9BzOxjGVooeeNbpz4A5W4eJ6DSWoPFZOaSkaHipAS2pwXU2_L-QyeMyy7Fnsf/pub?gid=621719663&single=true&output=csv';
   var DATABASE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vThaK38XWYKd8tXJ0g9BzOxjGVooeeNbpz4A5W4eJ6DSWoPFZOaSkaHipAS2pwXU2_L-QyeMyy7Fnsf/pub?gid=1422053003&single=true&output=csv';
-  var FORMAT_COLUMN = 3;
-  var PRODUCT_COLUMN = 5;
   var LIQUID_COLUMN = 0;
-  var COMPANY_COLUMN = 2;
-  var NAME_COLUMN = 3;
-  var LOOKUP_COLUMN = 33;
+  var CUSTOMER_COLUMN = 1;
+  var PRODUCT_COLUMN = 3;
+  var STATUS_COLUMN = 32;
+  var FORMAT_COLUMN = 3;
 
   var catalogue = null;
   var loadError = '';
@@ -76,33 +75,67 @@
     return values;
   }
 
+  function pairKey(customer, product) {
+    return String(customer || '').trim().toLowerCase() + '\u0000' + String(product || '').trim().toLowerCase();
+  }
+
   function indexDatabase(rows) {
-    var byKey = {};
+    var customers = uniqueColumn(rows, CUSTOMER_COLUMN);
+    var productsByCustomer = {};
+    var seenProduct = {};
+    var byPair = {};
     for (var i = 1; i < rows.length; i++) {
       var record = rows[i] || [];
-      var key = String(record[LOOKUP_COLUMN] || '').trim().toLowerCase();
-      if (!key || byKey[key]) continue;
-      var details = {
-        liquidCode: String(record[LIQUID_COLUMN] || '').trim(),
-        companyName: String(record[COMPANY_COLUMN] || '').trim(),
-        productName: String(record[NAME_COLUMN] || '').trim()
-      };
-      if (!details.liquidCode && !details.companyName && !details.productName) continue;
-      byKey[key] = details;
+      var status = String(record[STATUS_COLUMN] || '').trim().toLowerCase();
+      if (status !== 'active') continue;
+      var customer = String(record[CUSTOMER_COLUMN] || '').trim();
+      var product = String(record[PRODUCT_COLUMN] || '').trim();
+      if (!customer || !product) continue;
+      var customerKey = customer.toLowerCase();
+      var productKey = product.toLowerCase();
+      if (!productsByCustomer[customerKey]) productsByCustomer[customerKey] = [];
+      if (!seenProduct[customerKey + '\u0000' + productKey]) {
+        seenProduct[customerKey + '\u0000' + productKey] = true;
+        productsByCustomer[customerKey].push(product);
+      }
+      var key = pairKey(customer, product);
+      var code = String(record[LIQUID_COLUMN] || '').trim();
+      if (!byPair[key]) {
+        byPair[key] = { customer: customer, product: product, codes: [], seen: {} };
+      }
+      if (!byPair[key].seen[code]) {
+        byPair[key].seen[code] = true;
+        byPair[key].codes.push(code);
+      }
     }
-    return byKey;
+    Object.keys(productsByCustomer).forEach(function (key) {
+      productsByCustomer[key].sort(function (a, b) {
+        return a.localeCompare(b, 'en', { sensitivity: 'base' });
+      });
+    });
+    Object.keys(byPair).forEach(function (key) {
+      var entry = byPair[key];
+      entry.ambiguous = entry.codes.length > 1;
+      entry.liquidCode = entry.codes[0] || '';
+      delete entry.seen;
+    });
+    return { customers: customers, productsByCustomer: productsByCustomer, byPair: byPair };
   }
 
   function buildCatalogue(rangesText, databaseText) {
     var ranges = parseCsv(rangesText);
     var database = parseCsv(databaseText);
-    var products = uniqueColumn(ranges, PRODUCT_COLUMN);
     var formats = uniqueColumn(ranges, FORMAT_COLUMN);
-    var byKey = indexDatabase(database);
-    if (!products.length || !formats.length || !Object.keys(byKey).length) {
+    var indexed = indexDatabase(database);
+    if (!indexed.customers.length || !formats.length || !Object.keys(indexed.byPair).length) {
       throw new Error('The published sheets did not contain the product lists.');
     }
-    return { products: products, formats: formats, byKey: byKey };
+    return {
+      customers: indexed.customers,
+      productsByCustomer: indexed.productsByCustomer,
+      byPair: indexed.byPair,
+      formats: formats
+    };
   }
 
   function status() {
@@ -153,11 +186,18 @@
     return pending;
   }
 
-  function lookup(product) {
+  function lookup(customer, product) {
     if (!catalogue) return null;
-    var key = String(product || '').trim().toLowerCase();
-    if (!key) return null;
-    return catalogue.byKey[key] || null;
+    var key = pairKey(customer, product);
+    if (key.charAt(0) === '\u0000' || key.slice(-1) === '\u0000') return null;
+    var entry = catalogue.byPair[key];
+    if (!entry) return null;
+    if (entry.ambiguous) return { ambiguous: true, codes: entry.codes.slice() };
+    return {
+      customer: entry.customer,
+      product: entry.product,
+      liquidCode: entry.liquidCode
+    };
   }
 
   var api = {
@@ -170,7 +210,12 @@
       listeners.push(listener);
       listener(status());
     },
-    products: function () { return catalogue ? catalogue.products.slice() : []; },
+    customers: function () { return catalogue ? catalogue.customers.slice() : []; },
+    productsFor: function (customer) {
+      if (!catalogue) return [];
+      var list = catalogue.productsByCustomer[String(customer || '').trim().toLowerCase()];
+      return list ? list.slice() : [];
+    },
     formats: function () { return catalogue ? catalogue.formats.slice() : []; },
     ready: function () { return !!catalogue; }
   };

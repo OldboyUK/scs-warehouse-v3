@@ -9,6 +9,7 @@
   var editorMode = null;
   var editorSnapshot = null;
   var draft = null;
+  var currentMatch = null;
   var filling = false;
   var drag = null;
 
@@ -21,7 +22,9 @@
   var editorTitle = document.getElementById('editorTitle');
   var editorLane = document.getElementById('editorLane');
   var editorError = document.getElementById('editorError');
+  var editorCustomer = document.getElementById('editorCustomer');
   var editorProduct = document.getElementById('editorProduct');
+  var editorLiquid = document.getElementById('editorLiquid');
   var editorFormat = document.getElementById('editorFormat');
   var editorVolume = document.getElementById('editorVolume');
   var editorVolumeError = document.getElementById('editorVolumeError');
@@ -244,12 +247,11 @@
       category: block.category,
       startOffset: block.startOffset,
       endOffset: block.endOffset,
-      productSelection: block.productSelection,
+      customer: block.customer,
+      product: block.product,
+      liquidCode: block.liquidCode,
       packingFormat: block.packingFormat,
       volume: block.volume,
-      companyName: block.companyName,
-      productName: block.productName,
-      liquidCode: block.liquidCode,
       legacyText: block.legacyText,
       backgroundColour: block.backgroundColour
     };
@@ -270,12 +272,11 @@
       category: editorSnapshot.category,
       startOffset: editorSnapshot.startOffset,
       endOffset: editorSnapshot.endOffset,
-      productSelection: editorSnapshot.productSelection,
+      customer: editorSnapshot.customer,
+      product: editorSnapshot.product,
+      liquidCode: editorSnapshot.liquidCode,
       packingFormat: editorSnapshot.packingFormat,
       volume: editorSnapshot.volume,
-      companyName: editorSnapshot.companyName,
-      productName: editorSnapshot.productName,
-      liquidCode: editorSnapshot.liquidCode,
       legacyText: editorSnapshot.legacyText,
       backgroundColour: editorSnapshot.backgroundColour
     });
@@ -322,6 +323,9 @@
 
   function formReady() {
     return products.ready() &&
+      currentMatch &&
+      !currentMatch.ambiguous &&
+      editorCustomer.value &&
       editorProduct.value &&
       editorFormat.value &&
       readVolume() != null;
@@ -356,9 +360,40 @@
     select.disabled = !products.ready();
   }
 
-  function populateDropdowns(product, format) {
-    fillSelect(editorProduct, products.products(), 'Select a product', product);
+  function applyLiquid() {
+    currentMatch = null;
+    editorLiquid.value = '';
+    if (!products.ready() || !editorCustomer.value || !editorProduct.value) {
+      if (products.ready()) showFormError('');
+      return;
+    }
+    var result = products.lookup(editorCustomer.value, editorProduct.value);
+    if (!result) {
+      showFormError('The selected customer and product could not be found among active products in PRODUCT DATABASE.');
+      return;
+    }
+    if (result.ambiguous) {
+      showFormError('This customer and product have more than one liquid code (' + result.codes.join(', ') + '). Check PRODUCT DATABASE before continuing.');
+      return;
+    }
+    currentMatch = result;
+    editorLiquid.value = result.liquidCode;
+    showFormError('');
+  }
+
+  function fillForm(customer, product, format) {
+    fillSelect(editorCustomer, products.customers(), 'Select a customer', customer);
+    var chosenCustomer = editorCustomer.value;
+    var list = chosenCustomer ? products.productsFor(chosenCustomer) : [];
+    fillSelect(
+      editorProduct,
+      list,
+      chosenCustomer ? 'Select a product' : 'Select a customer first',
+      product
+    );
+    editorProduct.disabled = !products.ready() || !chosenCustomer;
     fillSelect(editorFormat, products.formats(), 'Select a packing format', format);
+    applyLiquid();
   }
 
   function selectedColour() {
@@ -368,12 +403,11 @@
 
   function productPatch(match, volume) {
     return {
-      productSelection: editorProduct.value,
+      customer: match.customer,
+      product: match.product,
+      liquidCode: match.liquidCode,
       packingFormat: editorFormat.value,
       volume: volume,
-      companyName: match.companyName,
-      productName: match.productName,
-      liquidCode: match.liquidCode,
       legacyText: '',
       backgroundColour: selectedColour(),
       startOffset: Number(editorStart.value),
@@ -388,10 +422,11 @@
       return;
     }
     var volume = readVolume();
-    var match = products.lookup(editorProduct.value);
-    if (!match) {
+    var match = products.lookup(editorCustomer.value, editorProduct.value);
+    if (!match || match.ambiguous) {
       if (editorMode === 'edit') restoreSnapshot();
-      showFormError('The selected product could not be found in PRODUCT DATABASE. Choose another product and try again.');
+      applyLiquid();
+      refreshSubmit();
       return;
     }
     showFormError('');
@@ -403,12 +438,11 @@
         startOffset: Number(editorStart.value),
         endOffset: Number(editorEnd.value),
         backgroundColour: selectedColour(),
-        productSelection: editorProduct.value,
+        customer: match.customer,
+        product: match.product,
+        liquidCode: match.liquidCode,
         packingFormat: editorFormat.value,
-        volume: volume,
-        companyName: match.companyName,
-        productName: match.productName,
-        liquidCode: match.liquidCode
+        volume: volume
       });
       if (!created) {
         showFormError('The production block could not be created.');
@@ -453,18 +487,17 @@
     if (node) node.classList.add('is-editing');
     filling = true;
     editorLane.textContent = dayLabel(block.day) + ' · ' + categoryLabel(block.category);
-    populateDropdowns(block.productSelection, block.packingFormat);
+    fillForm(block.customer, block.product, block.packingFormat);
     editorVolume.value = block.volume == null ? '' : String(block.volume);
     fillStartOptions(block.startOffset);
     fillEndOptions(block.startOffset, block.endOffset);
     refreshDuration(block);
     markSwatch(block.backgroundColour);
     filling = false;
-    showFormError('');
     refreshVolumeMessage();
     refreshSubmit();
     modal.hidden = false;
-    if (products.ready()) editorProduct.focus();
+    if (products.ready()) editorCustomer.focus();
   }
 
   function openCreate(day, category, hour) {
@@ -482,7 +515,7 @@
     setEditorMode('add');
     filling = true;
     editorLane.textContent = dayLabel(day) + ' · ' + categoryLabel(category);
-    populateDropdowns('', '');
+    fillForm('', '', '');
     editorVolume.value = '';
     fillStartOptions(draft.startOffset);
     fillEndOptions(draft.startOffset, draft.endOffset);
@@ -493,7 +526,7 @@
     refreshVolumeMessage();
     refreshSubmit();
     modal.hidden = false;
-    if (products.ready()) editorProduct.focus();
+    if (products.ready()) editorCustomer.focus();
   }
 
   function applyTimes(start, end) {
@@ -749,17 +782,34 @@
       editorSwatches.appendChild(swatch);
     });
 
-    function onProductFieldChange() {
+    editorCustomer.addEventListener('change', function () {
       if (filling) return;
-      showFormError('');
+      filling = true;
+      fillSelect(
+        editorProduct,
+        products.productsFor(editorCustomer.value),
+        editorCustomer.value ? 'Select a product' : 'Select a customer first',
+        ''
+      );
+      editorProduct.disabled = !products.ready() || !editorCustomer.value;
+      filling = false;
+      applyLiquid();
       refreshSubmit();
-    }
+    });
 
-    editorProduct.addEventListener('change', onProductFieldChange);
-    editorFormat.addEventListener('change', onProductFieldChange);
+    editorProduct.addEventListener('change', function () {
+      if (filling) return;
+      applyLiquid();
+      refreshSubmit();
+    });
+
+    editorFormat.addEventListener('change', function () {
+      if (filling) return;
+      refreshSubmit();
+    });
+
     editorVolume.addEventListener('input', function () {
       if (filling) return;
-      showFormError('');
       refreshVolumeMessage();
       refreshSubmit();
     });
@@ -834,7 +884,7 @@
     sourceRetry.hidden = !failed;
     if (!modal.hidden) {
       if (current.state === 'ready') {
-        populateDropdowns(editorProduct.value, editorFormat.value);
+        fillForm(editorCustomer.value, editorProduct.value, editorFormat.value);
         if (sourceNotice && editorError.textContent === sourceNotice) showFormError('');
       } else if (editorMode === 'add' || editorMode === 'edit') {
         sourceNotice = current.message;
