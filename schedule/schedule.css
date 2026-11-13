@@ -1,0 +1,566 @@
+/* Schedule module. Kept separate from the shared application stylesheet. */
+
+.schedule-app {
+  --sch-hour: 36px;
+  --sch-time: 58px;
+  --sch-lane: 78px;
+  --sch-day-h: 28px;
+  --sch-cat-h: 34px;
+  overflow: hidden;
+}
+
+.schedule-app .app-header-inner {
+  max-width: none;
+}
+
+.sch-page {
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px 10px;
+}
+
+.sch-legend {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: repeat(9, minmax(128px, 1fr));
+  gap: 3px;
+  overflow-x: auto;
+}
+
+.sch-legend-item {
+  min-height: 46px;
+  padding: 3px 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: #111;
+  background: #fff;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+}
+
+.sch-heading {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr) minmax(180px, 240px);
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.schedule-app .sch-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.schedule-app .sch-field input {
+  width: 132px;
+  min-height: 34px;
+  margin: 0;
+  padding: 4px 8px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.schedule-app .sch-field input[type="date"] {
+  width: 154px;
+}
+
+.sch-heading-title {
+  min-width: 0;
+  text-align: center;
+}
+
+.sch-heading-title h1 {
+  margin: 0;
+  color: var(--text);
+  font-size: clamp(1.05rem, 2vw, 1.35rem);
+  font-weight: 800;
+  letter-spacing: 0.03em;
+}
+
+.sch-heading-title p {
+  margin: 1px 0 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.sch-heading .sch-field:last-child {
+  justify-content: flex-end;
+}
+
+.sch-workspace {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+}
+
+.sch-scroll {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  background: #3a3a3a;
+  border: 1px solid #111;
+  border-radius: 8px;
+  overscroll-behavior: contain;
+}
+
+/* Reserved for a later Booking Generator. Width stays zero until that panel is built. */
+.sch-booking {
+  flex: 0 0 0;
+  width: 0;
+  overflow: hidden;
+}
+
+.sch-grid {
+  display: grid;
+  grid-template-columns: var(--sch-time) repeat(30, minmax(var(--sch-lane), 1fr));
+  grid-template-rows: var(--sch-day-h) var(--sch-cat-h) calc(var(--sch-hour) * 24);
+  width: max(100%, calc(var(--sch-time) + (var(--sch-lane) * 30)));
+  min-width: 100%;
+  user-select: none;
+  background: #434343;
+}
+
+.sch-corner,
+.sch-day,
+.sch-cat,
+.sch-time {
+  user-select: none;
+}
+
+.sch-corner {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 8;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: 0 7px 6px 0;
+  background: #f3f4f6;
+  color: #111;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-right: 2px solid #111;
+  border-bottom: 2px solid #111;
+}
+
+.sch-day {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f3f4f6;
+  color: #111;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-bottom: 1px solid #111;
+  border-right: 1px solid #d1d5db;
+}
+
+.sch-cat {
+  position: sticky;
+  top: var(--sch-day-h);
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 3px;
+  background: #e5e7eb;
+  color: #111;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: 0.03em;
+  text-align: center;
+  text-transform: uppercase;
+  border-bottom: 2px solid #111;
+  border-right: 1px solid #d1d5db;
+}
+
+.sch-day.is-day-end,
+.sch-cat.is-day-end {
+  border-right: 2px solid #111;
+}
+
+.sch-time {
+  position: sticky;
+  left: 0;
+  z-index: 5;
+  background: #e8e8e8;
+  border-right: 2px solid #111;
+}
+
+.sch-tick {
+  position: absolute;
+  right: 6px;
+  transform: translateY(-50%);
+  color: #1f2937;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.sch-tick.is-start {
+  transform: translateY(3px);
+}
+
+.sch-tick.is-end {
+  transform: translateY(calc(-100% - 2px));
+}
+
+.sch-lane {
+  position: relative;
+  background-color: #434343;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.45) 0,
+    rgba(0, 0, 0, 0.45) 1px,
+    transparent 1px,
+    transparent var(--sch-hour)
+  );
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: cell;
+  overflow: hidden;
+}
+
+.sch-lane.is-day-end {
+  border-right: 2px solid #d6d6d6;
+}
+
+.sch-midnight {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(var(--sch-hour) * 18);
+  border-top: 1px solid rgba(255, 255, 255, 0.28);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.prod-block {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 8px 3px;
+  overflow: hidden;
+  border: 1px solid rgba(0, 0, 0, 0.55);
+  border-radius: 2px;
+  cursor: grab;
+  text-align: center;
+  touch-action: none;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+.prod-block:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+
+.prod-block.is-active,
+.prod-block.is-editing {
+  z-index: 4;
+  outline: 2px solid #f59e0b;
+  outline-offset: -2px;
+}
+
+.prod-block.is-active {
+  cursor: grabbing;
+}
+
+.prod-text {
+  width: 100%;
+  max-height: 100%;
+  margin: 0;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  word-break: break-word;
+  pointer-events: none;
+}
+
+.prod-handle {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 8px;
+  cursor: ns-resize;
+  z-index: 3;
+}
+
+.prod-handle-n { top: 0; }
+.prod-handle-s { bottom: 0; }
+
+.prod-handle::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  width: 18px;
+  height: 3px;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0.5;
+  transform: translateX(-50%);
+}
+
+.prod-handle-n::after { top: 2px; }
+.prod-handle-s::after { bottom: 2px; }
+
+.schedule-app.sch-dragging,
+.schedule-app.sch-dragging * {
+  cursor: ns-resize !important;
+  user-select: none !important;
+}
+
+.schedule-app.sch-moving,
+.schedule-app.sch-moving * {
+  cursor: grabbing !important;
+  user-select: none !important;
+}
+
+.sch-notes {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.schedule-app .sch-notes label {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.schedule-app .sch-notes textarea {
+  width: 100%;
+  min-height: 42px;
+  height: 42px;
+  max-height: 88px;
+  margin: 0;
+  padding: 8px 10px;
+  resize: vertical;
+  font-size: 0.9rem;
+}
+
+.sch-modal[hidden] {
+  display: none !important;
+}
+
+.sch-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(17, 24, 39, 0.72);
+}
+
+.sch-modal-card {
+  width: min(420px, 100%);
+  max-height: min(640px, calc(100dvh - 32px));
+  overflow: auto;
+  padding: 18px 18px 16px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.sch-modal-card h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 1.05rem;
+}
+
+.sch-editor-lane {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.schedule-app .sch-modal label {
+  display: block;
+  margin: 14px 0 6px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.schedule-app .sch-modal textarea,
+.schedule-app .sch-modal select {
+  width: 100%;
+  margin: 0;
+  font-family: inherit;
+}
+
+.schedule-app .sch-modal textarea {
+  min-height: 96px;
+  padding: 10px 12px;
+}
+
+.schedule-app .sch-modal select {
+  min-height: 40px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.sch-times {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.sch-times label {
+  margin: 0;
+}
+
+.sch-duration {
+  margin: 8px 0 0;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.sch-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.schedule-app .sch-swatch {
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  border-radius: 4px;
+  border: 2px solid rgba(255, 255, 255, 0.28);
+  cursor: pointer;
+}
+
+.schedule-app .sch-swatch.is-selected {
+  border-color: #fff;
+  box-shadow: 0 0 0 2px var(--primary);
+}
+
+.schedule-app .sch-swatch:hover {
+  transform: translateY(-1px);
+}
+
+.sch-editor-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.schedule-app .sch-editor-actions .btn {
+  min-height: 40px;
+  font-family: inherit;
+}
+
+.schedule-app .sch-editor-actions .btn-ghost {
+  margin-left: auto;
+}
+
+.sch-scroll::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+.sch-scroll::-webkit-scrollbar-thumb {
+  background: #6b7280;
+  border-radius: 999px;
+  border: 2px solid #2a2a2a;
+}
+
+.sch-scroll::-webkit-scrollbar-track {
+  background: #2a2a2a;
+}
+
+@media (max-width: 800px) {
+  .sch-heading {
+    grid-template-columns: 1fr;
+    justify-items: start;
+  }
+
+  .sch-heading-title,
+  .sch-heading-title h1 {
+    text-align: left;
+  }
+
+  .sch-heading .sch-field:last-child {
+    justify-content: flex-start;
+  }
+
+  .sch-notes {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+}
+
+@media (max-height: 700px) {
+  .schedule-app {
+    overflow: auto;
+  }
+
+  .sch-page {
+    height: auto;
+    min-height: 100%;
+  }
+
+  .sch-workspace {
+    min-height: 560px;
+  }
+}

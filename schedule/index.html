@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/png" href="/assets/app-icon.png" />
+  <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="theme-color" content="#1a2233" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>SCS Schedule</title>
+  <link rel="stylesheet" href="../style.css" />
+  <link rel="stylesheet" href="schedule.css" />
+  <script src="../auth-session.js"></script>
+  <script src="schedule-guard.js"></script>
+</head>
+<body class="schedule-app">
+  <header class="app-header">
+    <div class="app-header-inner">
+      <a href="index.html" class="brand">
+        <span class="brand-mark">SCS</span>
+        <span class="brand-sub">Production Schedule</span>
+      </a>
+      <div class="page-heading">
+        <h1 class="page-title">Schedule</h1>
+        <p class="page-sub">Click an empty hour to add a block</p>
+      </div>
+      <nav class="header-actions">
+        <a href="../menu.html" class="icon-btn" aria-label="Main menu">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg>
+        </a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="sch-page">
+    <div class="sch-legend" aria-label="Production status">
+      <div class="sch-legend-item" style="background:#ff0000">Production space scheduled but not confirmed</div>
+      <div class="sch-legend-item" style="background:#ff9900">Production approval document sent to customer</div>
+      <div class="sch-legend-item" style="background:#fff2cc">All production paperwork produced and printed &amp; stock deducted.</div>
+      <div class="sch-legend-item" style="background:#9fc5e8">Blending / run report complete</div>
+      <div class="sch-legend-item" style="background:#c27ba0">Stock count complete &amp; passed to office for invoicing</div>
+      <div class="sch-legend-item" style="background:#b7b7b7">Invoiced</div>
+      <div class="sch-legend-item" style="background:#93c47d">Invoice paid / release</div>
+      <div class="sch-legend-item" style="background:#ffff00">Stock collected</div>
+      <div class="sch-legend-item" style="background:#00ffff">Marc to do</div>
+    </div>
+
+    <header class="sch-heading">
+      <label class="sch-field" for="runSuffix">Run suffix
+        <input id="runSuffix" type="text" maxlength="40" placeholder="e.g. 532" autocomplete="off" />
+      </label>
+      <div class="sch-heading-title">
+        <h1>Production Schedule</h1>
+        <p>Monday 06:00 to Sunday 06:00</p>
+      </div>
+      <label class="sch-field" for="weekCommencing">WC
+        <input id="weekCommencing" type="date" />
+      </label>
+    </header>
+
+    <div class="sch-workspace">
+      <div class="sch-scroll" id="scheduleScroll" aria-label="Production schedule">
+        <div class="sch-grid" id="scheduleGrid"></div>
+      </div>
+      <aside class="sch-booking" id="bookingPanel" aria-hidden="true"></aside>
+    </div>
+
+    <section class="sch-notes" aria-label="Important notes">
+      <label for="importantNotes">Important</label>
+      <textarea id="importantNotes" maxlength="4000" placeholder="Notes for this production week"></textarea>
+    </section>
+  </div>
+
+  <div class="sch-modal" id="blockEditor" hidden>
+    <div class="sch-modal-card" role="dialog" aria-modal="true" aria-labelledby="editorTitle">
+      <h2 id="editorTitle">Production block</h2>
+      <p class="sch-editor-lane" id="editorLane"></p>
+      <label for="editorText">Details</label>
+      <textarea id="editorText" maxlength="2000" placeholder="Describe this production run"></textarea>
+      <div class="sch-times">
+        <label for="editorStart">Start
+          <select id="editorStart"></select>
+        </label>
+        <label for="editorEnd">End
+          <select id="editorEnd"></select>
+        </label>
+      </div>
+      <p class="sch-duration" id="editorDuration"></p>
+      <label id="editorColourLabel">Colour</label>
+      <div class="sch-swatches" id="editorSwatches" role="listbox" aria-labelledby="editorColourLabel"></div>
+      <div class="sch-editor-actions">
+        <button type="button" class="btn btn-danger" id="editorDelete">Delete</button>
+        <button type="button" class="btn btn-ghost" id="editorClose">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="schedule-data.js"></script>
+  <script src="schedule.js"></script>
+</body>
+</html>

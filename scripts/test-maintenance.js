@@ -607,7 +607,7 @@ function testPages() {
   const re = /<span class="module-name">([^<]+)<\/span>/g;
   let match;
   while ((match = re.exec(menu))) names.push(match[1]);
-  assertEqual(names.join('|'), 'Warehouse|HR|Quality|Maintenance|Health and Safety', 'menu order places Maintenance between Quality and Health and Safety');
+  assertEqual(names.join('|'), 'Warehouse|Schedule|HR|Quality|Maintenance|Health and Safety', 'menu order places Schedule after Warehouse and Maintenance between Quality and Health and Safety');
   assert(menu.indexOf('href="/quality/"') !== -1, 'Quality menu link remains');
   assert(menu.indexOf('href="/warehouse/"') !== -1 && menu.indexOf('href="/hr/"') !== -1, 'Warehouse and HR links remain');
   assert(menu.indexOf('href="/health-safety/"') !== -1, 'Health and Safety link remains');

@@ -121,6 +121,11 @@
   status = 301
 
 [[redirects]]
+  from = "/schedule"
+  to = "/schedule/"
+  status = 301
+
+[[redirects]]
   from = "/hr"
   to = "/hr/"
   status = 301
