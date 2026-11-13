@@ -188,7 +188,8 @@ exports.handler = async function (event) {
     body.append('action', 'fault_create');
     body.append('submissionId', value.submissionId);
     body.append('reporterMode', value.reporterMode);
-    body.append('operator', value.operator);
+    body.append('user', value.user);
+    body.append('reporter', value.reporter);
     body.append('area', String(payload.area || '').trim());
     body.append('areaOther', String(payload.areaOther || '').trim());
     body.append('equipment', String(payload.equipment || '').trim());

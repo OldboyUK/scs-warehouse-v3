@@ -185,6 +185,25 @@ function namedText(value, emptyMessage, label) {
   return { ok: true, value: text };
 }
 
+function reportPeople(data, lists) {
+  var mode = String(data.reporterMode || '').trim().toLowerCase();
+  if (mode !== 'self' && mode !== 'other') {
+    return { ok: false, message: 'Choose Self or Another Operator.' };
+  }
+  var user = namedText(data.user, 'The signed-in user is missing. Nothing was saved.', 'The user name');
+  if (!user.ok) return user;
+  var reporter = '';
+  if (mode === 'other') {
+    var chosen = namedText(data.reporter, 'Select an operator from the list.', 'The reporter name');
+    if (!chosen.ok) return chosen;
+    if (lists.operators.indexOf(chosen.value) === -1) {
+      return { ok: false, message: 'Select an operator from the list.' };
+    }
+    if (chosen.value !== user.value) reporter = chosen.value;
+  }
+  return { ok: true, reporterMode: mode, user: user.value, reporter: reporter };
+}
+
 function validateFault(data, lists) {
   data = data || {};
   lists = lists || { operators: [], areas: [], equipmentByArea: {} };
@@ -193,15 +212,8 @@ function validateFault(data, lists) {
     return { ok: false, message: 'The report could not be identified. Reload the page and try again. Nothing was saved.' };
   }
 
-  var mode = String(data.reporterMode || '').trim().toLowerCase();
-  if (mode !== 'self' && mode !== 'other') {
-    return { ok: false, message: 'Choose Self or Another Operator.' };
-  }
-  var operator = namedText(data.operator, 'The reporting operator is missing. Nothing was saved.', 'The operator name');
-  if (!operator.ok) return operator;
-  if (mode === 'other' && lists.operators.indexOf(operator.value) === -1) {
-    return { ok: false, message: 'Select an operator from the list.' };
-  }
+  var people = reportPeople(data, lists);
+  if (!people.ok) return people;
 
   var areaChoice = String(data.area || '').trim();
   var lineArea;
@@ -250,8 +262,9 @@ function validateFault(data, lists) {
     ok: true,
     value: {
       submissionId: submissionId,
-      reporterMode: mode,
-      operator: operator.value,
+      reporterMode: people.reporterMode,
+      user: people.user,
+      reporter: people.reporter,
       lineArea: lineArea,
       equipment: equipment,
       priority: priority,

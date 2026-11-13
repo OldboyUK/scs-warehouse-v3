@@ -167,12 +167,6 @@ function clearDraft() {
   try { sessionStorage.removeItem(DRAFT_KEY); } catch (err) {}
 }
 
-function currentOperator() {
-  if (state.reporterMode === 'self') return state.loggedInUser;
-  if (state.reporterMode === 'other') return state.otherOperator;
-  return '';
-}
-
 function equipmentChoices() {
   if (!state.area) return [];
   if (state.area === OTHER) return [OTHER];
@@ -457,9 +451,9 @@ function clientError() {
   }
   if (state.reporterMode !== 'self' && state.reporterMode !== 'other') {
     fail('reporter', 'Choose Self or Another Operator.');
-  } else if (!currentOperator().trim()) {
-    fail(state.reporterMode === 'other' ? 'operator' : 'reporter', 'The reporting operator is missing. Nothing was saved.');
-  } else if (state.reporterMode === 'other' && state.lists.operators.indexOf(currentOperator().trim()) === -1) {
+  } else if (!state.loggedInUser.trim()) {
+    fail('reporter', 'The signed-in user is missing. Nothing was saved.');
+  } else if (state.reporterMode === 'other' && state.lists.operators.indexOf(state.otherOperator.trim()) === -1) {
     fail('operator', 'Select an operator from the list.');
   }
   if (!state.area.trim()) fail('area', 'Select the operating line or area.');
@@ -481,7 +475,8 @@ function payload() {
   return {
     submissionId: state.submissionId,
     reporterMode: state.reporterMode,
-    operator: currentOperator().trim(),
+    user: state.loggedInUser.trim(),
+    reporter: state.reporterMode === 'other' ? state.otherOperator.trim() : '',
     area: state.area.trim(),
     areaOther: state.areaOther.trim(),
     equipment: state.equipment.trim(),

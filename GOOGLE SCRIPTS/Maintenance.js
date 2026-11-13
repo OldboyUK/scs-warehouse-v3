@@ -19,12 +19,12 @@
  * Do not put that URL in the frontend.
  *
  * One new Submission Log row is written, one cell at a time:
- * A maintenance ID, B submission date, C line/area, D machine/equipment,
- * E priority category, F description, G parts, H Yes or No.
- * The reporting operator is written only to an existing column after H whose header
- * already names that person (Operator, Reported By, and the other accepted headers).
- * Columns A–H are never used for the operator. No column or header is added.
- * A formula in column A that displays nothing is an available ID cell.
+ * A maintenance ID, B submission date, C signed-in user, D reporter when that
+ * person is different from the user, E line/area, F machine/equipment,
+ * G priority category, H description, I parts, J Yes or No.
+ * Column D stays blank when the report is for the signed-in user.
+ * No column or header is added. A formula in column A that displays nothing
+ * is an available ID cell.
  * Other formulas, the header row, and unrelated cells are left alone.
  */
 
@@ -40,25 +40,7 @@ var PRIORITY_OPTIONS = [
   { value: 'Stock Request', label: 'Stock Request - Used for requesting spare parts' },
   { value: 'Unsure', label: 'Unsure - Please Allocate the Priority for Me' }
 ];
-var OPERATOR_HEADERS = [
-  'operator',
-  'operators',
-  'reporting operator',
-  'reported by',
-  'reporter',
-  'raised by',
-  'requested by',
-  'requester',
-  'requestor',
-  'who is reporting',
-  'reporting person',
-  'person reporting',
-  'operator name',
-  'operator id',
-  'operator name/id',
-  'reported by operator'
-];
-var NO_OPERATOR_MESSAGE = 'Submission Log has no column for the person reporting the fault. Columns A to H are already used by the maintenance record, and no later column has a header such as Operator or Reported By. Nothing was written and the sheet was not changed. Your answers are still here.';
+var LAST_DATA_COL = 10;
 var MAINTENANCE_ID_RE = /^MA(\d{4})$/;
 var MAX_TEXT = 8000;
 var MAX_NAME = 200;
@@ -154,8 +136,6 @@ function createFault_(value) {
 
   var ss = SpreadsheetApp.openById(SSID_MAINTENANCE);
   var sheet = requireSheet_(ss);
-  var operatorCol = findOperatorColumn_(sheet);
-  if (!operatorCol.ok) return json({ result: 'error', retryable: false, message: operatorCol.message });
 
   var maintenanceId;
   var submittedOn;
@@ -169,7 +149,7 @@ function createFault_(value) {
     if (!allocated.ok) return json({ result: 'error', retryable: false, message: allocated.message });
     maintenanceId = allocated.maintenanceId;
     submittedOn = londonParts_(londonNow_()).uk;
-    row = findCreateRow_(sheet, operatorCol.col);
+    row = findCreateRow_(sheet);
     saveRecord_(value.submissionId, {
       status: 'pending',
       fingerprint: fingerprint,
@@ -190,9 +170,9 @@ function createFault_(value) {
     });
   }
   if (already.length === 1) row = already[0];
-  else if (!rowIsSafeForCreate_(sheet, row, operatorCol.col)) row = findCreateRow_(sheet, operatorCol.col);
+  else if (!rowIsSafeForCreate_(sheet, row)) row = findCreateRow_(sheet);
 
-  var cells = faultCells_(maintenanceId, submittedOn, value, operatorCol.col);
+  var cells = faultCells_(maintenanceId, submittedOn, value);
   var written = [];
   try {
     saveRecord_(value.submissionId, {
@@ -202,7 +182,7 @@ function createFault_(value) {
       submittedOn: submittedOn,
       row: row
     });
-    alignFault_(sheet, row, cells, written, operatorCol.col);
+    alignFault_(sheet, row, cells, written);
     SpreadsheetApp.flush();
     verifyTextCells_(sheet, row, cells);
     if (findIdRows_(sheet, maintenanceId).length !== 1) {
@@ -211,8 +191,7 @@ function createFault_(value) {
     var success = {
       result: 'success',
       maintenanceId: maintenanceId,
-      submittedOn: submittedOn,
-      operatorColumn: columnLetter_(operatorCol.col)
+      submittedOn: submittedOn
     };
     saveRecord_(value.submissionId, {
       status: 'success',
@@ -255,26 +234,26 @@ function createFault_(value) {
   }
 }
 
-function faultCells_(maintenanceId, submittedOn, value, operatorCol) {
+function faultCells_(maintenanceId, submittedOn, value) {
   return [
     { col: 1, value: maintenanceId },
     { col: 2, value: submittedOn },
-    { col: 3, value: value.lineArea },
-    { col: 4, value: value.equipment },
-    { col: 5, value: value.priority },
-    { col: 6, value: value.description },
-    { col: 7, value: value.parts },
-    { col: 8, value: value.maintenanceRequest },
-    { col: operatorCol, value: value.operator }
+    { col: 3, value: value.user },
+    { col: 4, value: value.reporter },
+    { col: 5, value: value.lineArea },
+    { col: 6, value: value.equipment },
+    { col: 7, value: value.priority },
+    { col: 8, value: value.description },
+    { col: 9, value: value.parts },
+    { col: 10, value: value.maintenanceRequest }
   ];
 }
 
-function alignFault_(sheet, row, cells, written, operatorCol) {
+function alignFault_(sheet, row, cells, written) {
   if (row < 2) throw new Error('Refusing to write on the header row.');
-  if (operatorCol < 9) throw new Error('Refusing to store the operator in columns A to H.');
   for (var i = 0; i < cells.length; i++) {
     var cell = cells[i];
-    if (!((cell.col >= 1 && cell.col <= 8) || cell.col === operatorCol)) {
+    if (cell.col < 1 || cell.col > LAST_DATA_COL) {
       throw new Error('Refusing to write outside the maintenance record.');
     }
     var range = sheet.getRange(row, cell.col);
@@ -287,14 +266,14 @@ function alignFault_(sheet, row, cells, written, operatorCol) {
         throw new Error('Column ' + columnLetter_(cell.col) + ' contains an array formula. Nothing was overwritten.');
       }
       if (cell.col === 1 && String(range.getDisplayValue() || '').trim() === '' && expected !== '') {
-        writeTextCell_(sheet, row, cell.col, expected, written, operatorCol);
+        writeTextCell_(sheet, row, cell.col, expected, written);
         continue;
       }
       throw new Error('Column ' + columnLetter_(cell.col) + ' on row ' + row + ' contains a formula. It was not overwritten.');
     }
     if (currentText === expected) continue;
     if (currentText === '' && expected !== '') {
-      writeTextCell_(sheet, row, cell.col, expected, written, operatorCol);
+      writeTextCell_(sheet, row, cell.col, expected, written);
       continue;
     }
     if (currentText === '' && expected === '') continue;
@@ -317,10 +296,9 @@ function verifyTextCells_(sheet, row, cells) {
   }
 }
 
-function writeTextCell_(sheet, row, col, value, written, operatorCol) {
+function writeTextCell_(sheet, row, col, value, written) {
   if (row < 2) throw new Error('Refusing to write on the header row.');
-  if (operatorCol < 9) throw new Error('Refusing to store the operator in columns A to H.');
-  if (!((col >= 1 && col <= 8) || col === operatorCol)) {
+  if (col < 1 || col > LAST_DATA_COL) {
     throw new Error('Refusing to write outside the maintenance record.');
   }
   var range = sheet.getRange(row, col);
@@ -390,14 +368,13 @@ function findIdRows_(sheet, maintenanceId) {
   return rows;
 }
 
-function rowIsSafeForCreate_(sheet, row, operatorCol) {
+function rowIsSafeForCreate_(sheet, row) {
   if (row < 2 || row > sheet.getMaxRows()) return false;
   if (columnADisplay_(sheet, row) !== '') return false;
   var aFormula = String(sheet.getRange(row, 1).getFormula() || '');
   if (aFormula.toUpperCase().replace(/\s/g, '').indexOf('ARRAYFORMULA(') !== -1) return false;
-  var cols = [2, 3, 4, 5, 6, 7, 8, operatorCol];
-  for (var i = 0; i < cols.length; i++) {
-    var range = sheet.getRange(row, cols[i]);
+  for (var col = 2; col <= LAST_DATA_COL; col++) {
+    var range = sheet.getRange(row, col);
     if (String(range.getFormula() || '').trim() !== '') return false;
     if (normalizeStored_(range.getValue()) !== '') return false;
   }
@@ -409,46 +386,19 @@ function columnADisplay_(sheet, row) {
   return String(sheet.getRange(row, 1).getDisplayValue() || '').trim();
 }
 
-function findCreateRow_(sheet, operatorCol) {
+function findCreateRow_(sheet) {
   var displays = columnADisplays_(sheet);
   for (var i = 0; i < displays.length; i++) {
     if (displays[i] !== '') continue;
     var row = i + 2;
-    if (rowIsSafeForCreate_(sheet, row, operatorCol)) return row;
+    if (rowIsSafeForCreate_(sheet, row)) return row;
   }
   var next = sheet.getMaxRows() + 1;
   sheet.insertRowsAfter(sheet.getMaxRows(), 1);
-  if (sheet.getMaxRows() < next || !rowIsSafeForCreate_(sheet, next, operatorCol)) {
+  if (sheet.getMaxRows() < next || !rowIsSafeForCreate_(sheet, next)) {
     throw new Error('No safe row was available on Submission Log. Nothing was written.');
   }
   return next;
-}
-
-function findOperatorColumn_(sheet) {
-  var maxColumns = sheet.getMaxColumns();
-  var last = sheet.getLastColumn();
-  var width = Math.max(last || 0, 20);
-  if (width > maxColumns) width = maxColumns;
-  if (width < 9) return { ok: false, message: NO_OPERATOR_MESSAGE };
-  var headers = sheet.getRange(1, 1, 1, width).getDisplayValues()[0];
-  var found = 0;
-  for (var i = 8; i < headers.length; i++) {
-    var key = headerKey_(headers[i]);
-    if (!key || OPERATOR_HEADERS.indexOf(key) === -1) continue;
-    if (found) {
-      return {
-        ok: false,
-        message: 'Submission Log has more than one column that could store the reporting operator. Nothing was written and the sheet was not changed.'
-      };
-    }
-    found = i + 1;
-  }
-  if (!found || found < 9) return { ok: false, message: NO_OPERATOR_MESSAGE };
-  return { ok: true, col: found };
-}
-
-function headerKey_(value) {
-  return String(value == null ? '' : value).trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
 function normalizeStored_(value) {
@@ -628,6 +578,23 @@ function namedText_(value, emptyMessage, label) {
   return { ok: true, value: text };
 }
 
+function reportPeople_(data, lists) {
+  var mode = String(data.reporterMode || '').trim().toLowerCase();
+  if (mode !== 'self' && mode !== 'other') return { ok: false, message: 'Choose Self or Another Operator.' };
+  var user = namedText_(data.user, 'The signed-in user is missing. Nothing was saved.', 'The user name');
+  if (!user.ok) return user;
+  var reporter = '';
+  if (mode === 'other') {
+    var chosen = namedText_(data.reporter, 'Select an operator from the list.', 'The reporter name');
+    if (!chosen.ok) return chosen;
+    if (lists.operators.indexOf(chosen.value) === -1) {
+      return { ok: false, message: 'Select an operator from the list.' };
+    }
+    if (chosen.value !== user.value) reporter = chosen.value;
+  }
+  return { ok: true, reporterMode: mode, user: user.value, reporter: reporter };
+}
+
 function validateFault_(data, lists) {
   data = data || {};
   lists = lists || { operators: [], areas: [], equipmentByArea: {} };
@@ -635,13 +602,8 @@ function validateFault_(data, lists) {
   if (!submissionIdOk_(submissionId)) {
     return { ok: false, message: 'The report could not be identified. Reload the page and try again. Nothing was saved.' };
   }
-  var mode = String(data.reporterMode || '').trim().toLowerCase();
-  if (mode !== 'self' && mode !== 'other') return { ok: false, message: 'Choose Self or Another Operator.' };
-  var operator = namedText_(data.operator, 'The reporting operator is missing. Nothing was saved.', 'The operator name');
-  if (!operator.ok) return operator;
-  if (mode === 'other' && lists.operators.indexOf(operator.value) === -1) {
-    return { ok: false, message: 'Select an operator from the list.' };
-  }
+  var people = reportPeople_(data, lists);
+  if (!people.ok) return people;
 
   var areaChoice = String(data.area || '').trim();
   var lineArea;
@@ -688,8 +650,9 @@ function validateFault_(data, lists) {
     ok: true,
     value: {
       submissionId: submissionId,
-      reporterMode: mode,
-      operator: operator.value,
+      reporterMode: people.reporterMode,
+      user: people.user,
+      reporter: people.reporter,
       lineArea: lineArea,
       equipment: equipment,
       priority: priority,
@@ -703,7 +666,8 @@ function validateFault_(data, lists) {
 function fingerprint_(value) {
   var canonical = JSON.stringify({
     submissionId: value.submissionId,
-    operator: value.operator,
+    user: value.user,
+    reporter: value.reporter,
     lineArea: value.lineArea,
     equipment: value.equipment,
     priority: value.priority,

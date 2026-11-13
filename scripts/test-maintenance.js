@@ -169,10 +169,8 @@ function createSheet(maxRows) {
   return sheet;
 }
 
-function seedHeaders(sheet, includeOperator) {
-  const headers = ['Maintenance ID', 'Date', 'Line / Area', 'Machine / Equipment', 'Priority', 'Description', 'Parts', 'Maintenance Request'];
-  if (includeOperator !== false) headers.push('Operator');
-  headers.forEach(function (text, index) {
+function seedHeaders(sheet) {
+  ['Maintenance ID', 'Date', 'User', 'Reporter', 'Line / Area', 'Machine / Equipment', 'Priority', 'Description of issue', 'Parts requested', 'Raise request'].forEach(function (text, index) {
     sheet.seed(1, index + 1, { value: text });
   });
 }
@@ -265,9 +263,9 @@ vm.createContext(context);
 vm.runInContext(fs.readFileSync(path.join(__dirname, '../GOOGLE SCRIPTS/Maintenance.js'), 'utf8'), context);
 context.londonNow_ = function () { return world.now; };
 
-function fresh(includeOperator) {
+function fresh() {
   world.sheet = createSheet(8);
-  seedHeaders(world.sheet, includeOperator);
+  seedHeaders(world.sheet);
   world.props = {};
   world.locked = false;
   world.now = new Date('2026-06-15T12:00:00Z');
@@ -300,7 +298,8 @@ function post(extra) {
     action: 'fault_create',
     submissionId: 'sub-00000001',
     reporterMode: 'self',
-    operator: 'Test User',
+    user: 'Test User',
+    reporter: '',
     area: 'Laboratory',
     areaOther: '',
     equipment: 'DMA',
@@ -358,7 +357,8 @@ function testLists() {
   const other = core.validateFault({
     submissionId: 'sub-00000001',
     reporterMode: 'self',
-    operator: 'Someone Signed In',
+    user: 'Someone Signed In',
+    reporter: '',
     area: 'Other',
     areaOther: 'Mezzanine',
     equipment: 'Other',
@@ -373,12 +373,14 @@ function testLists() {
   assertEqual(other.value.equipment, 'Loose cable', 'free-text equipment is stored');
   assertEqual(other.value.priority, 'High Priority', 'validated priority is short');
   assertEqual(other.value.maintenanceRequest, 'No', 'maintenance answer is No');
-  assertEqual(other.value.operator, 'Someone Signed In', 'self identity does not have to be in the dropdown');
+  assertEqual(other.value.user, 'Someone Signed In', 'signed-in user does not have to be in the dropdown');
+  assertEqual(other.value.reporter, '', 'self report stores no separate reporter');
 
   const wrongMachine = core.validateFault({
     submissionId: 'sub-00000001',
     reporterMode: 'other',
-    operator: 'Jody R',
+    user: 'Test User',
+    reporter: 'Jody R',
     area: 'Laboratory',
     equipment: 'Depalletiser',
     priority: 'Low Priority',
@@ -391,7 +393,8 @@ function testLists() {
   const longRequest = core.validateFault({
     submissionId: 'sub-00000001',
     reporterMode: 'other',
-    operator: 'Jody R',
+    user: 'Test User',
+    reporter: 'Jody R',
     area: 'Laboratory',
     equipment: 'DMA',
     priority: 'Low Priority',
@@ -405,13 +408,14 @@ function testSheetWrites() {
   fresh();
   world.sheet.seed(2, 1, { value: 'MA0009' });
   world.sheet.seed(2, 2, { value: '01/01/2026' });
-  world.sheet.seed(2, 3, { value: 'Old Area' });
-  world.sheet.seed(2, 4, { value: 'Old Machine' });
-  world.sheet.seed(2, 5, { value: 'Low Priority' });
-  world.sheet.seed(2, 6, { value: 'Old fault' });
-  world.sheet.seed(2, 7, { value: 'Old part' });
-  world.sheet.seed(2, 8, { value: 'No' });
-  world.sheet.seed(2, 9, { value: 'Old Person' });
+  world.sheet.seed(2, 3, { value: 'Old User' });
+  world.sheet.seed(2, 4, { value: 'Old Reporter' });
+  world.sheet.seed(2, 5, { value: 'Old Area' });
+  world.sheet.seed(2, 6, { value: 'Old Machine' });
+  world.sheet.seed(2, 7, { value: 'Low Priority' });
+  world.sheet.seed(2, 8, { value: 'Old fault' });
+  world.sheet.seed(2, 9, { value: 'Old part' });
+  world.sheet.seed(2, 10, { value: 'No' });
   world.sheet.seed(2, 12, { formula: '=1+1', value: 2, display: '2' });
   world.sheet.seed(3, 12, { formula: '=2+2', value: 4, display: '4' });
   world.sheet.seed(5, 1, { formula: '=""', display: '', value: '' });
@@ -423,25 +427,28 @@ function testSheetWrites() {
   assertEqual(saved.result, 'success', 'first occupied-sheet save succeeds');
   assertEqual(saved.maintenanceId, 'MA0010', 'next id follows the highest existing id');
   assertEqual(saved.submittedOn, '15/06/2026', 'date is generated on the server in London');
-  assertEqual(saved.operatorColumn, 'I', 'operator is stored in the Operator column');
   assertEqual(cell(3, 1), 'MA0010', 'id is written to column A');
   assertEqual(cell(3, 2), '15/06/2026', 'date is written to column B');
-  assertEqual(cell(3, 3), 'Laboratory', 'area is written to column C');
-  assertEqual(cell(3, 4), 'DMA', 'equipment is written to column D');
-  assertEqual(cell(3, 5), 'High Priority', 'priority category only is written to column E');
-  assert(String(cell(3, 5)).indexOf('Urgent') === -1, 'priority explanation is not stored');
-  assertEqual(cell(3, 6), 'Guard missing from the filler', 'description is written to column F');
-  assertEqual(cell(3, 7), 'Guard', 'parts are written to column G');
-  assertEqual(cell(3, 8), 'Yes', 'Yes is written to column H');
-  assertEqual(cell(3, 9), 'Test User', 'signed-in operator is written beside the record');
+  assertEqual(cell(3, 3), 'Test User', 'signed-in user is written to column C');
+  assertEqual(cell(3, 4), '', 'self report leaves Reporter blank');
+  assert(!world.sheet.writeLog.some(function (entry) { return entry.row === 3 && entry.col === 4; }), 'blank reporter cell is not written');
+  assertEqual(cell(3, 5), 'Laboratory', 'area is written to column E');
+  assertEqual(cell(3, 6), 'DMA', 'equipment is written to column F');
+  assertEqual(cell(3, 7), 'High Priority', 'priority category only is written to column G');
+  assert(String(cell(3, 7)).indexOf('Urgent') === -1, 'priority explanation is not stored');
+  assertEqual(cell(3, 8), 'Guard missing from the filler', 'description is written to column H');
+  assertEqual(cell(3, 9), 'Guard', 'parts are written to column I');
+  assertEqual(cell(3, 10), 'Yes', 'Yes is written to column J');
   assertEqual(cell(2, 1), 'MA0009', 'existing id is not overwritten');
-  assertEqual(cell(2, 6), 'Old fault', 'existing description is not overwritten');
-  assertEqual(cell(2, 9), 'Old Person', 'existing operator is not overwritten');
+  assertEqual(cell(2, 3), 'Old User', 'existing user is not overwritten');
+  assertEqual(cell(2, 4), 'Old Reporter', 'existing reporter is not overwritten');
+  assertEqual(cell(2, 8), 'Old fault', 'existing description is not overwritten');
   assertEqual(formula(2, 12), '=1+1', 'unrelated formula is preserved');
   assertEqual(formula(3, 12), '=2+2', 'formula beside the new row is preserved');
   assertEqual(formula(5, 1), '=""', 'later blank formula is not the first row used');
   assertEqual(cell(1, 1), 'Maintenance ID', 'header row is not overwritten');
-  assertEqual(cell(1, 9), 'Operator', 'operator header is not overwritten');
+  assertEqual(cell(1, 3), 'User', 'user header is not overwritten');
+  assertEqual(cell(1, 4), 'Reporter', 'reporter header is not overwritten');
   assertEqual(display(8, 1), '', 'a later empty row is not used while an earlier row is free');
   assertEqual(idRows().length, 2, 'existing and new ids both remain');
 
@@ -453,14 +460,14 @@ function testSheetWrites() {
   const changed = post({ description: 'A different fault' });
   assertEqual(changed.result, 'error', 'changed retry is not saved as a new report');
   assert(String(changed.maintenanceId) === 'MA0010', 'changed retry names the original id');
-  assertEqual(cell(3, 6), 'Guard missing from the filler', 'original description stays in place');
+  assertEqual(cell(3, 8), 'Guard missing from the filler', 'original description stays in place');
   assertEqual(idRows().length, 2, 'changed retry does not add a row');
 
   fresh();
   const first = post({ submissionId: 'sub-00000011', parts: '' });
   assertEqual(first.maintenanceId, 'MA0001', 'empty log starts at MA0001');
-  assertEqual(cell(2, 7), '', 'blank parts stay blank');
-  assert(!world.sheet.writeLog.some(function (entry) { return entry.col === 7; }), 'blank parts cell is not written');
+  assertEqual(cell(2, 9), '', 'blank parts stay blank');
+  assert(!world.sheet.writeLog.some(function (entry) { return entry.col === 9; }), 'blank parts cell is not written');
   const second = post({ submissionId: 'sub-00000012', description: 'Second fault', parts: 'Seal' });
   assertEqual(second.maintenanceId, 'MA0002', 'second report increments');
   assertEqual(cell(3, 1), 'MA0002', 'second report uses the next row');
@@ -500,26 +507,12 @@ function testSheetWrites() {
   assertEqual(cell(2, 1), 'MA9999', 'full sequence does not overwrite the last id');
   assertEqual(idRows().length, 1, 'full sequence adds no id');
 
-  fresh(false);
-  const missing = post({ submissionId: 'sub-nocol-0001' });
-  assertEqual(missing.result, 'error', 'missing operator column refuses the save');
-  assert(missing.message.indexOf('no column') !== -1, 'missing operator column explains why');
-  assertEqual(world.sheet.writeLog.length, 0, 'missing operator column writes nothing');
-  assertEqual(world.sheet.clearLog.length, 0, 'missing operator column clears nothing');
-  assertEqual(cell(1, 9), '', 'no operator header is created');
-  assertEqual(display(2, 1), '', 'no id is written when the operator cannot be stored');
-
-  fresh();
-  world.sheet.seed(1, 10, { value: 'Reporter' });
-  const ambiguous = post({ submissionId: 'sub-ambig-001' });
-  assertEqual(ambiguous.result, 'error', 'two operator headers refuse the save');
-  assertEqual(world.sheet.writeLog.length, 0, 'ambiguous operator headers write nothing');
-
   fresh();
   const other = post({
     submissionId: 'sub-other-001',
     reporterMode: 'other',
-    operator: 'Jody R',
+    user: 'Test User',
+    reporter: 'Jody R',
     area: 'Other',
     areaOther: 'Mezzanine',
     equipment: 'Other',
@@ -530,12 +523,24 @@ function testSheetWrites() {
     maintenanceRequest: 'No'
   });
   assertEqual(other.result, 'success', 'other area and equipment save');
-  assertEqual(cell(2, 3), 'Mezzanine', 'free-text area is saved');
-  assertEqual(cell(2, 4), 'Loose cable', 'free-text equipment is saved');
-  assertEqual(cell(2, 5), 'Unsure', 'unsure priority is shortened');
-  assertEqual(cell(2, 8), 'No', 'No is saved rather than the button label');
-  assertEqual(cell(2, 9), 'Jody R', 'dropdown operator is saved');
-  assert(cell(2, 3) !== 'Other' && cell(2, 4) !== 'Other', 'the word Other is not saved');
+  assertEqual(cell(2, 3), 'Test User', 'signed-in user is column C');
+  assertEqual(cell(2, 4), 'Jody R', 'a different reporter is column D');
+  assertEqual(cell(2, 5), 'Mezzanine', 'free-text area is saved');
+  assertEqual(cell(2, 6), 'Loose cable', 'free-text equipment is saved');
+  assertEqual(cell(2, 7), 'Unsure', 'unsure priority is shortened');
+  assertEqual(cell(2, 10), 'No', 'No is saved rather than the button label');
+  assert(cell(2, 5) !== 'Other' && cell(2, 6) !== 'Other', 'the word Other is not saved');
+
+  fresh();
+  const samePerson = post({
+    submissionId: 'sub-same-0001',
+    reporterMode: 'other',
+    user: 'Jody R',
+    reporter: 'Jody R'
+  });
+  assertEqual(samePerson.result, 'success', 'a reporter who is the signed-in user still saves');
+  assertEqual(cell(2, 3), 'Jody R', 'that person is stored as the user');
+  assertEqual(cell(2, 4), '', 'Reporter stays blank when it is the same person');
 
   fresh();
   const wrong = post({ submissionId: 'sub-wrong-001', area: 'Laboratory', equipment: 'Depalletiser' });
@@ -543,7 +548,7 @@ function testSheetWrites() {
   assertEqual(world.sheet.writeLog.length, 0, 'rejected equipment writes nothing');
 
   fresh();
-  const unknown = post({ submissionId: 'sub-unknown-01', reporterMode: 'other', operator: 'Not A Person', area: 'Laboratory', equipment: 'DMA' });
+  const unknown = post({ submissionId: 'sub-unknown-01', reporterMode: 'other', user: 'Test User', reporter: 'Not A Person', area: 'Laboratory', equipment: 'DMA' });
   assertEqual(unknown.result, 'error', 'unknown operator is rejected');
   assertEqual(world.sheet.writeLog.length, 0, 'unknown operator writes nothing');
 
@@ -674,7 +679,8 @@ async function testHandlerAndLiveCsv() {
     body: JSON.stringify({
       submissionId: 'sub-00000001',
       reporterMode: 'other',
-      operator: 'Jody R',
+      user: 'Test User',
+      reporter: 'Jody R',
       area: 'Laboratory',
       equipment: 'DMA',
       priority: 'High Priority',
