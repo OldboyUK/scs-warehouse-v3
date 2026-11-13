@@ -5,6 +5,8 @@
   var MOVE_SLOP = 4;
   var laneMap = {};
   var editingId = null;
+  var editorMode = null;
+  var editorSnapshot = null;
   var filling = false;
   var drag = null;
 
@@ -22,7 +24,9 @@
   var editorDuration = document.getElementById('editorDuration');
   var editorSwatches = document.getElementById('editorSwatches');
   var editorDelete = document.getElementById('editorDelete');
-  var editorClose = document.getElementById('editorClose');
+  var editorDismiss = document.getElementById('editorDismiss');
+  var editorConfirm = document.getElementById('editorConfirm');
+  var editorActions = document.getElementById('editorActions');
 
   function el(className, text) {
     var node = document.createElement('div');
@@ -140,9 +144,8 @@
     var time = el('sch-time');
     time.style.gridColumn = '1';
     time.style.gridRow = '3';
-    for (var hour = 0; hour <= 24; hour++) {
-      var classes = 'sch-tick' + (hour === 0 ? ' is-start' : hour === 24 ? ' is-end' : '');
-      var tick = el(classes, data.minutesToLabel(hour * 60));
+    for (var hour = 0; hour < 24; hour++) {
+      var tick = el(hour === 0 ? 'sch-tick is-start' : 'sch-tick', data.minutesToLabel(hour * 60));
       tick.style.top = 'calc(var(--sch-hour) * ' + hour + ')';
       time.appendChild(tick);
     }
@@ -219,10 +222,75 @@
       if (node) node.classList.remove('is-editing');
     }
     editingId = null;
+    editorMode = null;
+    editorSnapshot = null;
     modal.hidden = true;
+    editorActions.classList.remove('is-adding');
   }
 
-  function openEditor(id) {
+  function copyBlock(block) {
+    return {
+      day: block.day,
+      category: block.category,
+      startOffset: block.startOffset,
+      endOffset: block.endOffset,
+      text: block.text,
+      backgroundColour: block.backgroundColour
+    };
+  }
+
+  function placeBlock(block) {
+    var node = blockElement(block.id);
+    var lane = laneMap[laneKey(block.day, block.category)];
+    if (node && lane && node.parentElement !== lane) lane.appendChild(node);
+    paint(node, block);
+    return node;
+  }
+
+  function restoreSnapshot() {
+    if (!editingId || !editorSnapshot) return;
+    var restored = data.updateBlock(editingId, {
+      day: editorSnapshot.day,
+      category: editorSnapshot.category,
+      startOffset: editorSnapshot.startOffset,
+      endOffset: editorSnapshot.endOffset,
+      text: editorSnapshot.text,
+      backgroundColour: editorSnapshot.backgroundColour
+    });
+    if (restored) placeBlock(restored);
+  }
+
+  function dismissEditor() {
+    if (!editingId) return;
+    if (editorMode === 'add') {
+      var id = editingId;
+      closeEditor();
+      data.removeBlock(id);
+      var node = blockElement(id);
+      if (node) node.remove();
+      return;
+    }
+    restoreSnapshot();
+    closeEditor();
+  }
+
+  function confirmEditor() {
+    if (!editingId) return;
+    data.persist();
+    closeEditor();
+  }
+
+  function setEditorMode(mode) {
+    editorMode = mode;
+    var adding = mode === 'add';
+    editorActions.classList.toggle('is-adding', adding);
+    editorDelete.tabIndex = adding ? -1 : 0;
+    editorDismiss.textContent = adding ? 'Cancel' : 'Back';
+    editorConfirm.textContent = adding ? 'Add' : 'Save changes';
+    editorTitle.textContent = adding ? 'Add production block' : 'Edit production block';
+  }
+
+  function openEditor(id, mode) {
     var block = data.getBlock(id);
     if (!block) return;
     if (editingId && editingId !== id) {
@@ -230,10 +298,11 @@
       if (previous) previous.classList.remove('is-editing');
     }
     editingId = id;
+    editorSnapshot = copyBlock(block);
+    setEditorMode(mode);
     var node = blockElement(id);
     if (node) node.classList.add('is-editing');
     filling = true;
-    editorTitle.textContent = 'Production block';
     editorLane.textContent = dayLabel(block.day) + ' · ' + categoryLabel(block.category);
     editorText.value = block.text;
     fillStartOptions(block.startOffset);
@@ -249,7 +318,6 @@
     if (!editingId) return;
     var updated = data.updateBlock(editingId, { startOffset: start, endOffset: end });
     if (!updated) return;
-    data.persist();
     paint(blockElement(editingId), updated);
     filling = true;
     fillEndOptions(updated.startOffset, updated.endOffset);
@@ -268,10 +336,9 @@
       backgroundColour: data.DEFAULT_COLOUR
     });
     if (!block) return;
-    data.persist();
     var lane = laneMap[laneKey(day, category)];
     if (lane) lane.appendChild(renderBlock(block));
-    openEditor(block.id);
+    openEditor(block.id, 'add');
   }
 
   function finishDrag(commit) {
@@ -285,11 +352,17 @@
 
     var node = info.id ? blockElement(info.id) : null;
     if (node) node.classList.remove('is-active');
+    clearDropTarget();
 
     if (!commit) {
       if (info.kind !== 'create' && info.id) {
-        data.updateBlock(info.id, { startOffset: info.startOffset, endOffset: info.endOffset });
-        paint(node, data.getBlock(info.id));
+        var restored = data.updateBlock(info.id, {
+          day: info.day,
+          category: info.category,
+          startOffset: info.startOffset,
+          endOffset: info.endOffset
+        });
+        if (restored) placeBlock(restored);
       }
       return;
     }
@@ -301,9 +374,36 @@
 
     var block = data.getBlock(info.id);
     if (!block) return;
-    var changed = block.startOffset !== info.startOffset || block.endOffset !== info.endOffset;
+    var changed = block.startOffset !== info.startOffset ||
+      block.endOffset !== info.endOffset ||
+      block.day !== info.day ||
+      block.category !== info.category;
     if (changed) data.persist();
-    else openEditor(info.id);
+    else openEditor(info.id, 'edit');
+  }
+
+  function clearDropTarget() {
+    grid.querySelectorAll('.sch-lane.is-drop-target').forEach(function (lane) {
+      lane.classList.remove('is-drop-target');
+    });
+  }
+
+  function laneUnderPoint(clientX, clientY) {
+    var stack = document.elementsFromPoint(clientX, clientY);
+    for (var i = 0; i < stack.length; i++) {
+      if (!stack[i].closest) continue;
+      var lane = stack[i].closest('.sch-lane');
+      if (lane && scroll.contains(lane)) return lane;
+    }
+    return null;
+  }
+
+  function nudgeScroll(clientX, clientY) {
+    var rect = scroll.getBoundingClientRect();
+    if (clientX > rect.right - 48) scroll.scrollLeft += 28;
+    else if (clientX < rect.left + 24) scroll.scrollLeft -= 28;
+    if (clientY > rect.bottom - 36) scroll.scrollTop += 18;
+    else if (clientY < rect.top + 28) scroll.scrollTop -= 18;
   }
 
   function trackMove(clientX, clientY) {
@@ -314,11 +414,13 @@
     drag.moved = true;
     if (drag.kind === 'create') return;
 
+    nudgeScroll(clientX, clientY);
     document.body.classList.add(drag.kind === 'move' ? 'sch-moving' : 'sch-dragging');
     var hourHeight = drag.lane.getBoundingClientRect().height / 24;
     var delta = Math.round(dy / hourHeight) * 60;
     var start = drag.startOffset;
     var end = drag.endOffset;
+    var patch = {};
     if (drag.kind === 'move') {
       var length = end - start;
       start = drag.startOffset + delta;
@@ -331,13 +433,23 @@
         end = data.DAY_LENGTH;
         start = end - length;
       }
+      var lane = laneUnderPoint(clientX, clientY);
+      clearDropTarget();
+      if (lane) {
+        patch.day = lane.dataset.day;
+        patch.category = lane.dataset.category;
+        drag.lane = lane;
+        lane.classList.add('is-drop-target');
+      }
     } else if (drag.kind === 'start') {
       start = clamp(drag.startOffset + delta, 0, drag.endOffset - 60);
     } else if (drag.kind === 'end') {
       end = clamp(drag.endOffset + delta, drag.startOffset + 60, data.DAY_LENGTH);
     }
-    var updated = data.updateBlock(drag.id, { startOffset: start, endOffset: end });
-    paint(blockElement(drag.id), updated);
+    patch.startOffset = start;
+    patch.endOffset = end;
+    var updated = data.updateBlock(drag.id, patch);
+    if (updated) placeBlock(updated);
   }
 
   function onPointerMove(event) {
@@ -455,7 +567,6 @@
       swatch.addEventListener('click', function () {
         if (!editingId) return;
         var updated = data.updateBlock(editingId, { backgroundColour: colour });
-        data.persist();
         paint(blockElement(editingId), updated);
         markSwatch(updated.backgroundColour);
       });
@@ -465,12 +576,7 @@
     editorText.addEventListener('input', function () {
       if (filling || !editingId) return;
       var updated = data.updateBlock(editingId, { text: editorText.value });
-      data.persist();
-      var node = blockElement(editingId);
-      if (node && updated) {
-        node.querySelector('.prod-text').textContent = updated.text;
-        node.title = updated.text || 'Empty block';
-      }
+      paint(blockElement(editingId), updated);
     });
 
     editorStart.addEventListener('change', function () {
@@ -488,7 +594,7 @@
     });
 
     editorDelete.addEventListener('click', function () {
-      if (!editingId) return;
+      if (!editingId || editorMode !== 'edit') return;
       var id = editingId;
       closeEditor();
       data.removeBlock(id);
@@ -497,9 +603,10 @@
       if (node) node.remove();
     });
 
-    editorClose.addEventListener('click', closeEditor);
+    editorDismiss.addEventListener('click', dismissEditor);
+    editorConfirm.addEventListener('click', confirmEditor);
     modal.addEventListener('pointerdown', function (event) {
-      if (event.target === modal) closeEditor();
+      if (event.target === modal) dismissEditor();
     });
   }
 
@@ -509,7 +616,7 @@
       endPointer({ pointerId: drag.pointerId }, false);
       return;
     }
-    if (!modal.hidden) closeEditor();
+    if (!modal.hidden) dismissEditor();
   });
 
   scroll.addEventListener('pointerdown', onPointerDown);

@@ -264,6 +264,8 @@
     if (!block || !patch) return null;
     if (patch.text !== undefined) block.text = String(patch.text).slice(0, 2000);
     if (patch.backgroundColour !== undefined) block.backgroundColour = normaliseColour(patch.backgroundColour);
+    if (patch.day !== undefined && dayIds[patch.day]) block.day = patch.day;
+    if (patch.category !== undefined && categoryIds[patch.category]) block.category = patch.category;
     if (patch.startOffset !== undefined || patch.endOffset !== undefined) {
       var current = present(block);
       var start = patch.startOffset !== undefined ? patch.startOffset : current.startOffset;

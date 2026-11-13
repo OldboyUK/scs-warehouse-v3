@@ -23,7 +23,7 @@
       </a>
       <div class="page-heading">
         <h1 class="page-title">Schedule</h1>
-        <p class="page-sub">Click an empty hour to add a block</p>
+        <p class="page-sub">Click an empty hour to add a block, or drag one into another column</p>
       </div>
       <nav class="header-actions">
         <a href="../menu.html" class="icon-btn" aria-label="Main menu">
@@ -43,7 +43,8 @@
       <div class="sch-legend-item" style="background:#b7b7b7">Invoiced</div>
       <div class="sch-legend-item" style="background:#93c47d">Invoice paid / release</div>
       <div class="sch-legend-item" style="background:#ffff00">Stock collected</div>
-      <div class="sch-legend-item" style="background:#00ffff">Marc to do</div>
+      <div class="sch-legend-item" style="background:#00ffff">Onboarding</div>
+      <div class="sch-legend-item" style="background:#ff00ff">Recipe/Pricing required</div>
     </div>
 
     <header class="sch-heading">
@@ -89,9 +90,10 @@
       <p class="sch-duration" id="editorDuration"></p>
       <label id="editorColourLabel">Colour</label>
       <div class="sch-swatches" id="editorSwatches" role="listbox" aria-labelledby="editorColourLabel"></div>
-      <div class="sch-editor-actions">
+      <div class="sch-editor-actions" id="editorActions">
         <button type="button" class="btn btn-danger" id="editorDelete">Delete</button>
-        <button type="button" class="btn btn-ghost" id="editorClose">Close</button>
+        <button type="button" class="btn btn-secondary" id="editorDismiss">Cancel</button>
+        <button type="button" class="btn btn-success" id="editorConfirm">Add</button>
       </div>
     </div>
   </div>
