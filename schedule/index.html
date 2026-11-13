@@ -34,6 +34,11 @@
   </header>
 
   <div class="sch-page">
+    <div class="sch-source" id="sourceStatus" role="status">
+      <span class="sch-source-spinner" id="sourceSpinner" aria-hidden="true"></span>
+      <p id="sourceMessage">Loading product lists…</p>
+      <button type="button" class="btn btn-secondary" id="sourceRetry" hidden>Retry</button>
+    </div>
     <div class="sch-legend" aria-label="Production status">
       <div class="sch-legend-item" style="background:#ff0000">Production space scheduled but not confirmed</div>
       <div class="sch-legend-item" style="background:#ff9900">Production approval document sent to customer</div>
@@ -77,8 +82,18 @@
     <div class="sch-modal-card" role="dialog" aria-modal="true" aria-labelledby="editorTitle">
       <h2 id="editorTitle">Production block</h2>
       <p class="sch-editor-lane" id="editorLane"></p>
-      <label for="editorText">Details</label>
-      <textarea id="editorText" maxlength="2000" placeholder="Describe this production run"></textarea>
+      <p class="sch-form-error" id="editorError" hidden></p>
+      <label class="sch-question" for="editorProduct">Please enter a Product
+        <select id="editorProduct"></select>
+      </label>
+      <label class="sch-question" for="editorFormat">Please enter a packing format
+        <select id="editorFormat"></select>
+      </label>
+      <label class="sch-question" for="editorVolume">Please enter the required packing volume for this format
+        <input id="editorVolume" type="number" inputmode="decimal" min="100" max="1000000" step="any" />
+      </label>
+      <p class="sch-volume-hint" id="editorVolumeHint">Between 100 and 1,000,000 litres.</p>
+      <p class="sch-field-error" id="editorVolumeError" hidden></p>
       <div class="sch-times">
         <label for="editorStart">Start
           <select id="editorStart"></select>
@@ -99,6 +114,7 @@
   </div>
 
   <script src="schedule-data.js"></script>
+  <script src="schedule-products.js"></script>
   <script src="schedule.js"></script>
 </body>
 </html>

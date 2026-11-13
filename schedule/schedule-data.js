@@ -3,7 +3,10 @@
  * Blocks live in memory and localStorage only. No network calls.
  *
  * Stored block shape (ready for a later database):
- *   id, day, category, startTime, endTime, text, backgroundColour
+ *   id, day, category, startTime, endTime, backgroundColour,
+ *   productSelection, packingFormat, volume,
+ *   companyName, productName, liquidCode
+ * Older free-text blocks keep legacyText so they can still be shown.
  *
  * startTime and endTime are whole-hour clock times, "HH:MM".
  * The production day runs 06:00 to 06:00 the next morning, so an
@@ -138,6 +141,32 @@
     return COLOURS.indexOf(colour) !== -1 ? colour : DEFAULT_COLOUR;
   }
 
+  function cleanLine(value, max) {
+    return typeof value === 'string' ? value.trim().slice(0, max || 500) : '';
+  }
+
+  function storedVolume(value) {
+    if (value == null || value === '') return null;
+    var number = typeof value === 'number' ? value : Number(String(value).trim());
+    if (!isFinite(number)) return null;
+    return number;
+  }
+
+  function formatVolume(volume) {
+    var value = Number(volume);
+    if (!isFinite(value)) return '';
+    return value.toLocaleString('en-GB', { maximumFractionDigits: 4, useGrouping: true }) + ' L';
+  }
+
+  function displayText(block) {
+    var structured = block.companyName || block.productName || block.liquidCode ||
+      block.packingFormat || block.volume != null;
+    if (!structured) return block.legacyText || '';
+    var lines = [block.companyName, block.productName, block.packingFormat, block.liquidCode];
+    if (block.volume != null) lines.push(formatVolume(block.volume));
+    return lines.filter(function (line) { return String(line || '').trim(); }).join('\n');
+  }
+
   function present(block) {
     return {
       id: block.id,
@@ -147,7 +176,14 @@
       endTime: block.endTime,
       startOffset: clockToOffset(block.startTime, false),
       endOffset: clockToOffset(block.endTime, true),
-      text: block.text,
+      productSelection: block.productSelection,
+      packingFormat: block.packingFormat,
+      volume: block.volume,
+      companyName: block.companyName,
+      productName: block.productName,
+      liquidCode: block.liquidCode,
+      legacyText: block.legacyText,
+      text: displayText(block),
       backgroundColour: block.backgroundColour
     };
   }
@@ -161,13 +197,31 @@
     var id = String(item.id || '');
     if (!/^[A-Za-z0-9_-]{8,80}$/.test(id) || seen[id]) id = newId();
     seen[id] = true;
+    var productSelection = cleanLine(item.productSelection, 500);
+    var companyName = cleanLine(item.companyName, 500);
+    var productName = cleanLine(item.productName, 500);
+    var liquidCode = cleanLine(item.liquidCode, 80);
+    var packingFormat = cleanLine(item.packingFormat, 200);
+    var volume = storedVolume(item.volume);
+    var structured = productSelection || companyName || productName || liquidCode || packingFormat || volume != null;
+    var legacyText = '';
+    if (!structured) {
+      if (typeof item.legacyText === 'string') legacyText = item.legacyText.slice(0, 2000);
+      else if (typeof item.text === 'string') legacyText = item.text.slice(0, 2000);
+    }
     return {
       id: id,
       day: item.day,
       category: item.category,
       startTime: offsetToClock(start),
       endTime: offsetToClock(end),
-      text: typeof item.text === 'string' ? item.text.slice(0, 2000) : '',
+      productSelection: productSelection,
+      packingFormat: packingFormat,
+      volume: volume,
+      companyName: companyName,
+      productName: productName,
+      liquidCode: liquidCode,
+      legacyText: legacyText,
       backgroundColour: normaliseColour(item.backgroundColour)
     };
   }
@@ -249,7 +303,13 @@
       category: input.category,
       startTime: offsetToClock(input.startOffset),
       endTime: offsetToClock(input.endOffset),
-      text: typeof input.text === 'string' ? input.text.slice(0, 2000) : '',
+      productSelection: cleanLine(input.productSelection, 500),
+      packingFormat: cleanLine(input.packingFormat, 200),
+      volume: storedVolume(input.volume),
+      companyName: cleanLine(input.companyName, 500),
+      productName: cleanLine(input.productName, 500),
+      liquidCode: cleanLine(input.liquidCode, 80),
+      legacyText: '',
       backgroundColour: normaliseColour(input.backgroundColour)
     };
     state.blocks.push(block);
@@ -262,7 +322,13 @@
       if (state.blocks[i].id === id) block = state.blocks[i];
     }
     if (!block || !patch) return null;
-    if (patch.text !== undefined) block.text = String(patch.text).slice(0, 2000);
+    if (patch.productSelection !== undefined) block.productSelection = cleanLine(patch.productSelection, 500);
+    if (patch.packingFormat !== undefined) block.packingFormat = cleanLine(patch.packingFormat, 200);
+    if (patch.volume !== undefined) block.volume = storedVolume(patch.volume);
+    if (patch.companyName !== undefined) block.companyName = cleanLine(patch.companyName, 500);
+    if (patch.productName !== undefined) block.productName = cleanLine(patch.productName, 500);
+    if (patch.liquidCode !== undefined) block.liquidCode = cleanLine(patch.liquidCode, 80);
+    if (patch.legacyText !== undefined) block.legacyText = String(patch.legacyText).slice(0, 2000);
     if (patch.backgroundColour !== undefined) block.backgroundColour = normaliseColour(patch.backgroundColour);
     if (patch.day !== undefined && dayIds[patch.day]) block.day = patch.day;
     if (patch.category !== undefined && categoryIds[patch.category]) block.category = patch.category;
@@ -293,6 +359,7 @@
     COLOURS: COLOURS.slice(),
     mondayISO: mondayISO,
     minutesToLabel: minutesToLabel,
+    formatVolume: formatVolume,
     textColour: textColour,
     clockToOffset: clockToOffset,
     offsetToClock: offsetToClock,

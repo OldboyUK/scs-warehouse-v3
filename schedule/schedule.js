@@ -1,12 +1,14 @@
 (function () {
-  if (!window.SCSAuth || !SCSAuth.isAuthenticated() || !window.ScheduleData) return;
+  if (!window.SCSAuth || !SCSAuth.isAuthenticated() || !window.ScheduleData || !window.ScheduleProducts) return;
 
   var data = window.ScheduleData;
+  var products = window.ScheduleProducts;
   var MOVE_SLOP = 4;
   var laneMap = {};
   var editingId = null;
   var editorMode = null;
   var editorSnapshot = null;
+  var draft = null;
   var filling = false;
   var drag = null;
 
@@ -18,7 +20,11 @@
   var modal = document.getElementById('blockEditor');
   var editorTitle = document.getElementById('editorTitle');
   var editorLane = document.getElementById('editorLane');
-  var editorText = document.getElementById('editorText');
+  var editorError = document.getElementById('editorError');
+  var editorProduct = document.getElementById('editorProduct');
+  var editorFormat = document.getElementById('editorFormat');
+  var editorVolume = document.getElementById('editorVolume');
+  var editorVolumeError = document.getElementById('editorVolumeError');
   var editorStart = document.getElementById('editorStart');
   var editorEnd = document.getElementById('editorEnd');
   var editorDuration = document.getElementById('editorDuration');
@@ -27,6 +33,9 @@
   var editorDismiss = document.getElementById('editorDismiss');
   var editorConfirm = document.getElementById('editorConfirm');
   var editorActions = document.getElementById('editorActions');
+  var sourceStatus = document.getElementById('sourceStatus');
+  var sourceMessage = document.getElementById('sourceMessage');
+  var sourceRetry = document.getElementById('sourceRetry');
 
   function el(className, text) {
     var node = document.createElement('div');
@@ -75,8 +84,9 @@
     node.style.height = 'calc(var(--sch-hour) * ' + ((block.endOffset - block.startOffset) / 60) + ')';
     node.style.background = block.backgroundColour;
     node.style.color = data.textColour(block.backgroundColour);
-    node.querySelector('.prod-text').textContent = block.text;
-    var label = (block.text || 'Empty block') + ', ' +
+    node.querySelector('.prod-text').textContent = block.text || '';
+    var spoken = (block.text || 'Empty block').replace(/\s*\n\s*/g, ', ');
+    var label = spoken + ', ' +
       data.minutesToLabel(block.startOffset) + ' to ' + endOptionLabel(block.endOffset);
     node.title = label;
     node.setAttribute('aria-label', label);
@@ -234,7 +244,13 @@
       category: block.category,
       startOffset: block.startOffset,
       endOffset: block.endOffset,
-      text: block.text,
+      productSelection: block.productSelection,
+      packingFormat: block.packingFormat,
+      volume: block.volume,
+      companyName: block.companyName,
+      productName: block.productName,
+      liquidCode: block.liquidCode,
+      legacyText: block.legacyText,
       backgroundColour: block.backgroundColour
     };
   }
@@ -254,28 +270,160 @@
       category: editorSnapshot.category,
       startOffset: editorSnapshot.startOffset,
       endOffset: editorSnapshot.endOffset,
-      text: editorSnapshot.text,
+      productSelection: editorSnapshot.productSelection,
+      packingFormat: editorSnapshot.packingFormat,
+      volume: editorSnapshot.volume,
+      companyName: editorSnapshot.companyName,
+      productName: editorSnapshot.productName,
+      liquidCode: editorSnapshot.liquidCode,
+      legacyText: editorSnapshot.legacyText,
       backgroundColour: editorSnapshot.backgroundColour
     });
     if (restored) placeBlock(restored);
   }
 
   function dismissEditor() {
-    if (!editingId) return;
     if (editorMode === 'add') {
-      var id = editingId;
+      draft = null;
       closeEditor();
-      data.removeBlock(id);
-      var node = blockElement(id);
-      if (node) node.remove();
       return;
     }
+    if (!editingId) return;
     restoreSnapshot();
     closeEditor();
   }
 
+  function showFormError(message) {
+    editorError.textContent = message || '';
+    editorError.hidden = !message;
+  }
+
+  function volumeProblem(raw) {
+    var text = String(raw == null ? '' : raw).trim();
+    if (!text) return 'Enter the packing volume in litres.';
+    if (!/^\d+(\.\d+)?$/.test(text)) return 'Enter a number of litres.';
+    var value = Number(text);
+    if (value < 100 || value > 1000000) return 'Volume must be between 100 and 1,000,000 litres.';
+    return '';
+  }
+
+  function readVolume() {
+    var problem = volumeProblem(editorVolume.value);
+    return problem ? null : Number(editorVolume.value.trim());
+  }
+
+  function refreshVolumeMessage() {
+    var text = String(editorVolume.value || '').trim();
+    var problem = text ? volumeProblem(text) : '';
+    editorVolumeError.textContent = problem;
+    editorVolumeError.hidden = !problem;
+    editorVolume.setAttribute('aria-invalid', problem ? 'true' : 'false');
+  }
+
+  function formReady() {
+    return products.ready() &&
+      editorProduct.value &&
+      editorFormat.value &&
+      readVolume() != null;
+  }
+
+  function refreshSubmit() {
+    editorConfirm.disabled = !formReady();
+  }
+
+  function fillSelect(select, values, placeholder, current) {
+    var chosen = current || '';
+    select.innerHTML = '';
+    var blank = document.createElement('option');
+    blank.value = '';
+    blank.textContent = placeholder;
+    select.appendChild(blank);
+    var seen = false;
+    values.forEach(function (value) {
+      var option = document.createElement('option');
+      option.value = value;
+      option.textContent = value;
+      if (value === chosen) seen = true;
+      select.appendChild(option);
+    });
+    if (chosen && !seen) {
+      var extra = document.createElement('option');
+      extra.value = chosen;
+      extra.textContent = chosen;
+      select.appendChild(extra);
+    }
+    select.value = chosen;
+    select.disabled = !products.ready();
+  }
+
+  function populateDropdowns(product, format) {
+    fillSelect(editorProduct, products.products(), 'Select a product', product);
+    fillSelect(editorFormat, products.formats(), 'Select a packing format', format);
+  }
+
+  function selectedColour() {
+    var swatch = editorSwatches.querySelector('.sch-swatch.is-selected');
+    return swatch ? swatch.dataset.colour : data.DEFAULT_COLOUR;
+  }
+
+  function productPatch(match, volume) {
+    return {
+      productSelection: editorProduct.value,
+      packingFormat: editorFormat.value,
+      volume: volume,
+      companyName: match.companyName,
+      productName: match.productName,
+      liquidCode: match.liquidCode,
+      legacyText: '',
+      backgroundColour: selectedColour(),
+      startOffset: Number(editorStart.value),
+      endOffset: Number(editorEnd.value)
+    };
+  }
+
   function confirmEditor() {
+    if (!formReady()) {
+      refreshVolumeMessage();
+      refreshSubmit();
+      return;
+    }
+    var volume = readVolume();
+    var match = products.lookup(editorProduct.value);
+    if (!match) {
+      if (editorMode === 'edit') restoreSnapshot();
+      showFormError('The selected product could not be found in PRODUCT DATABASE. Choose another product and try again.');
+      return;
+    }
+    showFormError('');
+    if (editorMode === 'add') {
+      if (!draft) return;
+      var created = data.addBlock({
+        day: draft.day,
+        category: draft.category,
+        startOffset: Number(editorStart.value),
+        endOffset: Number(editorEnd.value),
+        backgroundColour: selectedColour(),
+        productSelection: editorProduct.value,
+        packingFormat: editorFormat.value,
+        volume: volume,
+        companyName: match.companyName,
+        productName: match.productName,
+        liquidCode: match.liquidCode
+      });
+      if (!created) {
+        showFormError('The production block could not be created.');
+        return;
+      }
+      var lane = laneMap[laneKey(created.day, created.category)];
+      if (lane) lane.appendChild(renderBlock(created));
+      data.persist();
+      draft = null;
+      closeEditor();
+      return;
+    }
     if (!editingId) return;
+    var updated = data.updateBlock(editingId, productPatch(match, volume));
+    if (updated) placeBlock(updated);
     data.persist();
     closeEditor();
   }
@@ -286,8 +434,8 @@
     editorActions.classList.toggle('is-adding', adding);
     editorDelete.tabIndex = adding ? -1 : 0;
     editorDismiss.textContent = adding ? 'Cancel' : 'Back';
-    editorConfirm.textContent = adding ? 'Add' : 'Save changes';
-    editorTitle.textContent = adding ? 'Add production block' : 'Edit production block';
+    editorConfirm.textContent = adding ? 'Create Production Block' : 'Save changes';
+    editorTitle.textContent = adding ? 'Create production block' : 'Edit production block';
   }
 
   function openEditor(id, mode) {
@@ -298,20 +446,54 @@
       if (previous) previous.classList.remove('is-editing');
     }
     editingId = id;
+    draft = null;
     editorSnapshot = copyBlock(block);
     setEditorMode(mode);
     var node = blockElement(id);
     if (node) node.classList.add('is-editing');
     filling = true;
     editorLane.textContent = dayLabel(block.day) + ' · ' + categoryLabel(block.category);
-    editorText.value = block.text;
+    populateDropdowns(block.productSelection, block.packingFormat);
+    editorVolume.value = block.volume == null ? '' : String(block.volume);
     fillStartOptions(block.startOffset);
     fillEndOptions(block.startOffset, block.endOffset);
     refreshDuration(block);
     markSwatch(block.backgroundColour);
     filling = false;
+    showFormError('');
+    refreshVolumeMessage();
+    refreshSubmit();
     modal.hidden = false;
-    editorText.focus();
+    if (products.ready()) editorProduct.focus();
+  }
+
+  function openCreate(day, category, hour) {
+    if (editorMode === 'edit') dismissEditor();
+    else if (editorMode === 'add') closeEditor();
+    draft = {
+      day: day,
+      category: category,
+      startOffset: hour * 60,
+      endOffset: hour * 60 + 60,
+      backgroundColour: data.DEFAULT_COLOUR
+    };
+    editingId = null;
+    editorSnapshot = null;
+    setEditorMode('add');
+    filling = true;
+    editorLane.textContent = dayLabel(day) + ' · ' + categoryLabel(category);
+    populateDropdowns('', '');
+    editorVolume.value = '';
+    fillStartOptions(draft.startOffset);
+    fillEndOptions(draft.startOffset, draft.endOffset);
+    refreshDuration(draft);
+    markSwatch(draft.backgroundColour);
+    filling = false;
+    showFormError(products.ready() ? '' : (products.status().message || 'Product lists are still loading.'));
+    refreshVolumeMessage();
+    refreshSubmit();
+    modal.hidden = false;
+    if (products.ready()) editorProduct.focus();
   }
 
   function applyTimes(start, end) {
@@ -327,18 +509,7 @@
   }
 
   function createBlock(day, category, hour) {
-    var block = data.addBlock({
-      day: day,
-      category: category,
-      startOffset: hour * 60,
-      endOffset: hour * 60 + 60,
-      text: '',
-      backgroundColour: data.DEFAULT_COLOUR
-    });
-    if (!block) return;
-    var lane = laneMap[laneKey(day, category)];
-    if (lane) lane.appendChild(renderBlock(block));
-    openEditor(block.id, 'add');
+    openCreate(day, category, hour);
   }
 
   function finishDrag(commit) {
@@ -565,6 +736,11 @@
       swatch.setAttribute('aria-label', 'Colour ' + colour);
       swatch.setAttribute('aria-pressed', 'false');
       swatch.addEventListener('click', function () {
+        if (editorMode === 'add' && draft) {
+          draft.backgroundColour = colour;
+          markSwatch(colour);
+          return;
+        }
         if (!editingId) return;
         var updated = data.updateBlock(editingId, { backgroundColour: colour });
         paint(blockElement(editingId), updated);
@@ -573,23 +749,52 @@
       editorSwatches.appendChild(swatch);
     });
 
-    editorText.addEventListener('input', function () {
-      if (filling || !editingId) return;
-      var updated = data.updateBlock(editingId, { text: editorText.value });
-      paint(blockElement(editingId), updated);
+    function onProductFieldChange() {
+      if (filling) return;
+      showFormError('');
+      refreshSubmit();
+    }
+
+    editorProduct.addEventListener('change', onProductFieldChange);
+    editorFormat.addEventListener('change', onProductFieldChange);
+    editorVolume.addEventListener('input', function () {
+      if (filling) return;
+      showFormError('');
+      refreshVolumeMessage();
+      refreshSubmit();
     });
 
     editorStart.addEventListener('change', function () {
-      if (filling || !editingId) return;
+      if (filling) return;
+      if (editorMode === 'add' && draft) {
+        var start = Number(editorStart.value);
+        var end = Number(editorEnd.value);
+        if (end <= start) end = Math.min(start + 60, data.DAY_LENGTH);
+        draft.startOffset = start;
+        draft.endOffset = end;
+        filling = true;
+        fillEndOptions(start, end);
+        filling = false;
+        refreshDuration(draft);
+        return;
+      }
+      if (!editingId) return;
       var block = data.getBlock(editingId);
-      var start = Number(editorStart.value);
-      var end = block.endOffset;
-      if (end <= start) end = Math.min(start + 60, data.DAY_LENGTH);
-      applyTimes(start, end);
+      var nextStart = Number(editorStart.value);
+      var nextEnd = block.endOffset;
+      if (nextEnd <= nextStart) nextEnd = Math.min(nextStart + 60, data.DAY_LENGTH);
+      applyTimes(nextStart, nextEnd);
     });
 
     editorEnd.addEventListener('change', function () {
-      if (filling || !editingId) return;
+      if (filling) return;
+      if (editorMode === 'add' && draft) {
+        draft.startOffset = Number(editorStart.value);
+        draft.endOffset = Number(editorEnd.value);
+        refreshDuration(draft);
+        return;
+      }
+      if (!editingId) return;
       applyTimes(Number(editorStart.value), Number(editorEnd.value));
     });
 
@@ -619,9 +824,36 @@
     if (!modal.hidden) dismissEditor();
   });
 
+  var sourceNotice = '';
+
+  function renderSource(current) {
+    var failed = current.state === 'error';
+    sourceStatus.hidden = current.state === 'ready';
+    sourceStatus.classList.toggle('is-error', failed);
+    sourceMessage.textContent = current.state === 'ready' ? '' : current.message;
+    sourceRetry.hidden = !failed;
+    if (!modal.hidden) {
+      if (current.state === 'ready') {
+        populateDropdowns(editorProduct.value, editorFormat.value);
+        if (sourceNotice && editorError.textContent === sourceNotice) showFormError('');
+      } else if (editorMode === 'add' || editorMode === 'edit') {
+        sourceNotice = current.message;
+        showFormError(current.message);
+      }
+      refreshSubmit();
+    }
+    if (current.state !== 'ready') sourceNotice = current.message;
+  }
+
+  sourceRetry.addEventListener('click', function () {
+    products.load(true).catch(function () { /* status already reported */ });
+  });
+  products.subscribe(renderSource);
+
   scroll.addEventListener('pointerdown', onPointerDown);
   buildGrid();
   renderBlocks();
   bindMeta();
   bindEditor();
+  products.load().catch(function () { /* status already reported */ });
 })();
