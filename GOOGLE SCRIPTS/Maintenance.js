@@ -3,7 +3,10 @@
  *
  * Deploy this file as its own Apps Script web app (separate from Warehouse, Auth, HR,
  * Health and Safety, and Quality).
- * Execute as: Me. Who has access: Anyone.
+ * Execute as: Me. Who has access: Anyone, even anonymous.
+ * In the newer menu, Anyone is the anonymous choice. Anyone with a Google
+ * account asks for a sign-in. Netlify is not signed in, so that choice
+ * comes back as a web page and the report is not saved.
  * The deploying account must be able to edit spreadsheet
  * 1k0y2ieC4Sg5gYNOFLgcCxLNMUjImCdZNOJTBPg-V-KE
  * worksheet "Submission Log".
@@ -60,6 +63,10 @@ var MAINTENANCE_ID_RE = /^MA(\d{4})$/;
 var MAX_TEXT = 8000;
 var MAX_NAME = 200;
 var SUBMISSION_INDEX_KEY = 'FAULT_SUBMISSION_INDEX';
+
+function doGet() {
+  return json({ result: 'ok', service: 'maintenance' });
+}
 
 function doPost(e) {
   try {

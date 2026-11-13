@@ -10,6 +10,118 @@ const scriptConfig = require('./scriptConfig');
 
 const SHARED_TOKEN = 'J4PAN88';
 const FAILURE = 'The server did not confirm that the fault report was saved. Your answers are still here. Try again. If the first attempt did save, you will get the original maintenance ID instead of a duplicate.';
+const SIGN_IN_PAGE = 'Google asked for a sign-in, so the report was not saved. Netlify is not signed in. Edit the deployment: Execute as Me, and Who has access must be “Anyone, even anonymous”. If the menu lists Anyone and Anyone with a Google account, choose Anyone. Then select New version, Deploy, and set MAINTENANCE_SCRIPT_URL to the /exec URL.';
+
+function isHtml(text) {
+  return /^\s*<!DOCTYPE/i.test(text) || /<html[\s>]/i.test(text);
+}
+
+function scriptHost(url) {
+  try {
+    return new URL(url).hostname;
+  } catch (err) {
+    return '';
+  }
+}
+
+function isScriptResultUrl(url) {
+  var host = scriptHost(url);
+  return host === 'script.google.com' || host === 'script.googleusercontent.com';
+}
+
+function isSignInUrl(url) {
+  var host = scriptHost(url);
+  return host === 'accounts.google.com' || /ServiceLogin|signin/i.test(url);
+}
+
+function scriptResultUrl(text) {
+  var patterns = [
+    /<a[^>]+href=["']([^"']+)["']/gi,
+    /<form[^>]+action=["']([^"']+)["']/gi,
+    /content=["']\d+\s*;\s*url=([^"']+)["']/gi,
+    /https:\/\/script\.googleusercontent\.com\/[^\s"'<>]+/gi
+  ];
+  var i;
+  for (i = 0; i < patterns.length; i++) {
+    var match;
+    patterns[i].lastIndex = 0;
+    while ((match = patterns[i].exec(String(text || '')))) {
+      var url = String(match[1] || match[0]).replace(/&amp;/g, '&');
+      if (isScriptResultUrl(url)) return url;
+    }
+  }
+  return '';
+}
+
+function explainScriptPage(text) {
+  var sample = String(text || '');
+  var titleMatch = sample.match(/<title[^>]*>([^<]*)<\/title>/i);
+  var title = titleMatch ? titleMatch[1].replace(/\s+/g, ' ').trim() : '';
+  if (/sign in - google accounts|accounts\.google\.com|choose an account|servicelogin/i.test(sample)) {
+    return SIGN_IN_PAGE;
+  }
+  if (/authorization is required|authorization needed|you need to authorize|review permissions/i.test(sample)) {
+    return 'The Maintenance script has not been authorized, so the report was not saved. In the Apps Script editor, select doGet, Run it, and allow spreadsheet access and connecting to an external service. Then edit the deployment, choose New version, and Deploy.';
+  }
+  if (/duplicate function|syntax error/i.test(sample)) {
+    return 'The Maintenance script did not load, so the report was not saved. Put Maintenance.js in its own Apps Script project, with no other doPost, then deploy that project as a web app and use its /exec URL.';
+  }
+  if (/unable to open the file|page not found|error 404/i.test(sample) || /not found/i.test(title)) {
+    return 'The Maintenance web app URL could not be opened, so the report was not saved. MAINTENANCE_SCRIPT_URL must be the /exec URL from Deploy, Manage deployments.';
+  }
+  var plain = sample
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 180);
+  var detail = title || plain;
+  return 'The Maintenance web app returned a web page instead of a saved result. Nothing was confirmed.' +
+    (detail ? ' Google’s page said: ' + detail + '.' : '');
+}
+
+async function readScriptText(scriptURL, body) {
+  const first = await fetch(scriptURL, {
+    method: 'POST',
+    redirect: 'manual',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'User-Agent': 'SCS-WMS-Maintenance'
+    },
+    body: body,
+    timeout: 30000
+  });
+  const location = first.headers.get('location') || '';
+  let text = await first.text();
+  if (first.status >= 300 && first.status < 400 && location) {
+    if (isSignInUrl(location)) {
+      return '<!DOCTYPE html><html><head><title>Sign in - Google Accounts</title></head><body>accounts.google.com ServiceLogin</body></html>';
+    }
+    if (isScriptResultUrl(location)) {
+      const second = await fetch(location, {
+        method: 'GET',
+        redirect: 'follow',
+        headers: { 'User-Agent': 'SCS-WMS-Maintenance' },
+        timeout: 30000
+      });
+      return second.text();
+    }
+  }
+  if (isHtml(text)) {
+    const next = scriptResultUrl(text);
+    if (next) {
+      const third = await fetch(next, {
+        method: 'GET',
+        redirect: 'follow',
+        headers: { 'User-Agent': 'SCS-WMS-Maintenance' },
+        timeout: 30000
+      });
+      text = await third.text();
+    }
+  }
+  return text;
+}
 
 function confirmed(text) {
   var parsed = null;
@@ -20,6 +132,10 @@ function confirmed(text) {
   }
   return jsonResponse(502, { result: 'error', retryable: true, message: FAILURE });
 }
+
+exports.explainScriptPage = explainScriptPage;
+exports.scriptResultUrl = scriptResultUrl;
+exports.SIGN_IN_PAGE = SIGN_IN_PAGE;
 
 exports.handler = async function (event) {
   try {
@@ -82,13 +198,7 @@ exports.handler = async function (event) {
     body.append('parts', value.parts);
     body.append('maintenanceRequest', value.maintenanceRequest);
 
-    const response = await fetch(scriptURL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: body,
-      timeout: 30000
-    });
-    const text = await response.text();
+    const text = await readScriptText(scriptURL, body);
     if (/Script function not found/i.test(text)) {
       return jsonResponse(502, {
         result: 'error',
@@ -96,12 +206,10 @@ exports.handler = async function (event) {
         message: 'The deployed Maintenance web app does not include doPost. In Apps Script, open Deploy, then Manage deployments, edit the existing deployment, select New version, and deploy again. MAINTENANCE_SCRIPT_URL must be that deployment’s /exec URL.'
       });
     }
-    if (/^\s*<!DOCTYPE/i.test(text) || /<html[\s>]/i.test(text)) {
-      return jsonResponse(502, {
-        result: 'error',
-        retryable: true,
-        message: 'The Maintenance web app returned a web page instead of a saved result. Nothing was confirmed. Check that the deployment is Execute as: Me, Who has access: Anyone, and that MAINTENANCE_SCRIPT_URL is the /exec URL.'
-      });
+    if (isHtml(text)) {
+      const message = explainScriptPage(text);
+      console.error('Maintenance web app returned HTML:', message);
+      return jsonResponse(502, { result: 'error', retryable: true, message: message });
     }
     return confirmed(text);
   } catch (err) {

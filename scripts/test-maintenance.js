@@ -641,6 +641,24 @@ function testPages() {
   assert(script.indexOf(core.SSID_MAINTENANCE) !== -1 && script.indexOf('Submission Log') !== -1, 'writer targets Submission Log');
 }
 
+function testScriptPages() {
+  const submit = require('../netlify/functions/submitFault');
+  const moved = '<HTML><HEAD><TITLE>Moved Temporarily</TITLE></HEAD><BODY>The document has moved <A HREF="https://script.googleusercontent.com/macros/echo?user_content_key=abc">here</A>.</BODY></HTML>';
+  assertEqual(
+    submit.scriptResultUrl(moved),
+    'https://script.googleusercontent.com/macros/echo?user_content_key=abc',
+    'moved page yields the script result URL'
+  );
+  assertEqual(submit.scriptResultUrl('<a href="https://evil.example/collect">x</a>'), '', 'non-script links are ignored');
+  const signIn = submit.explainScriptPage('<!DOCTYPE html><html><title>Sign in - Google Accounts</title><body>accounts.google.com</body></html>');
+  assert(signIn.indexOf('Anyone, even anonymous') !== -1, 'sign-in page names the anonymous access setting');
+  assert(signIn.indexOf(submit.SIGN_IN_PAGE) === 0, 'sign-in page uses the deployment message');
+  const auth = submit.explainScriptPage('<html><title>Authorization needed</title><body>Authorization is required to perform that action.</body></html>');
+  assert(auth.indexOf('has not been authorized') !== -1, 'authorization page asks for a script run');
+  const missing = submit.explainScriptPage('<html><title>Error</title><body>Sorry, unable to open the file at this time.</body></html>');
+  assert(missing.indexOf('/exec') !== -1, 'missing web app names the exec URL');
+}
+
 async function testHandlerAndLiveCsv() {
   const submit = require('../netlify/functions/submitFault').handler;
   const getRes = await submit({ httpMethod: 'GET', body: '' });
@@ -690,6 +708,7 @@ async function main() {
   testLists();
   testSheetWrites();
   testPages();
+  testScriptPages();
   await testHandlerAndLiveCsv();
   if (failures) {
     console.error(failures + ' failed, ' + passes + ' passed');
