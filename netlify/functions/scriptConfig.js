@@ -1,5 +1,5 @@
 // Apps Script URL must be set in Netlify env (never commit the /exec URL to the repo).
-// Warehouse, Auth, HR, Health and Safety, and Quality are separate Apps Script deployments.
+// Warehouse, Auth, HR, Health and Safety, Quality, and Maintenance are separate Apps Script deployments.
 function getAppsScriptUrl(legacyEnvKey) {
   return (
     process.env.APPS_SCRIPT_URL ||
@@ -24,6 +24,10 @@ function getQualityScriptUrl() {
   return process.env.QUALITY_SCRIPT_URL || '';
 }
 
+function getMaintenanceScriptUrl() {
+  return process.env.MAINTENANCE_SCRIPT_URL || '';
+}
+
 function missingUrlMessage(legacyEnvKey) {
   return `Missing Apps Script URL. Set APPS_SCRIPT_URL or ${legacyEnvKey} in Netlify env.`;
 }
@@ -42,6 +46,10 @@ function missingHsUrlMessage() {
 
 function missingQualityUrlMessage() {
   return 'Missing QUALITY_SCRIPT_URL in Netlify env (SCS Quality Apps Script /exec URL).';
+}
+
+function missingMaintenanceUrlMessage() {
+  return 'Missing MAINTENANCE_SCRIPT_URL in Netlify env (SCS Maintenance Apps Script /exec URL).';
 }
 
 // Apps Script web apps often 302 after doPost has already written the row.
@@ -66,10 +74,12 @@ module.exports = {
   getHrScriptUrl,
   getHsScriptUrl,
   getQualityScriptUrl,
+  getMaintenanceScriptUrl,
   missingUrlMessage,
   missingAuthUrlMessage,
   missingHrUrlMessage,
   missingHsUrlMessage,
   missingQualityUrlMessage,
+  missingMaintenanceUrlMessage,
   appsScriptProxyResult
 };

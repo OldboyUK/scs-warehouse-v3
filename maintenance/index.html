@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/png" href="/assets/app-icon.png" />
+  <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="theme-color" content="#1a2233" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>SCS Maintenance</title>
+  <link rel="stylesheet" href="../style.css" />
+  <script src="../auth-session.js"></script>
+  <script src="maintenance-guard.js"></script>
+</head>
+<body>
+  <header class="app-header">
+    <div class="app-header-inner">
+      <a href="index.html" class="brand">
+        <span class="brand-mark">SCS</span>
+        <span class="brand-sub">Maintenance</span>
+      </a>
+      <div class="page-heading">
+        <h1 class="page-title">Maintenance</h1>
+        <p class="page-sub">Maintenance modules</p>
+      </div>
+      <nav class="header-actions">
+        <a href="../menu.html" class="icon-btn" aria-label="Main menu">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg>
+        </a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="home-page fade-in">
+    <div class="home-welcome">
+      <h1>Maintenance</h1>
+      <p>Select a module to get started.</p>
+    </div>
+
+    <section class="dash-section">
+      <h2 class="dash-section-title">Maintenance</h2>
+      <div class="dash-grid">
+        <a href="report-fault.html" class="dash-card">
+          <span class="dash-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></span>
+          <span class="dash-card-title">Report Fault</span>
+          <span class="dash-card-desc">Report a machine fault, unsafe condition or spare parts</span>
+        </a>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

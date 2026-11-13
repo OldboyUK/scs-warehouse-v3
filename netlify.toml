@@ -159,3 +159,13 @@
   from = "/quality/raise-ncr"
   to = "/quality/raise-ncr.html"
   status = 301
+
+[[redirects]]
+  from = "/maintenance"
+  to = "/maintenance/"
+  status = 301
+
+[[redirects]]
+  from = "/maintenance/report-fault"
+  to = "/maintenance/report-fault.html"
+  status = 301
