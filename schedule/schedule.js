@@ -171,14 +171,10 @@
     target.appendChild(corner);
 
     data.DAYS.forEach(function (day, dayIndex) {
-      var head = el('sch-day is-day-end', '');
+      var head = el('sch-day is-day-end', day.label);
       head.style.gridColumn = (2 + dayIndex * 5) + ' / span 5';
       head.style.gridRow = '1';
       head.dataset.day = day.id;
-      if (day.id === 'saturday') head.appendChild(saturdayToggle(target, week));
-      var title = document.createElement('span');
-      title.textContent = day.label;
-      head.appendChild(title);
       target.appendChild(head);
     });
 
@@ -230,31 +226,54 @@
       addDayNote(target, week, day, dayIndex, 'important', 'Important', '4');
       addDayNote(target, week, day, dayIndex, 'absence', 'Staff A/L or absence', '5');
     });
-    paintSaturday(target, week);
   }
 
-  function saturdayToggle(grid, week) {
+  function weekHasSaturdayBlock(week) {
+    var blocks = data.getState().blocks;
+    for (var i = 0; i < blocks.length; i++) {
+      if (blocks[i].weekCommencing === week && blocks[i].day === 'saturday') return true;
+    }
+    return false;
+  }
+
+  function saturdayControl(board, week) {
+    var wrap = document.createElement('div');
+    wrap.className = 'sch-saturday-wrap';
     var button = document.createElement('button');
     button.type = 'button';
-    button.className = 'sch-saturday-toggle';
-    button.setAttribute('aria-label', 'Run Saturday');
-    button.addEventListener('click', function (event) {
+    button.className = 'sch-switch sch-saturday-toggle';
+    button.setAttribute('aria-label', 'Toggle Saturday');
+    var text = document.createElement('span');
+    text.textContent = 'Toggle Saturday';
+    wrap.appendChild(button);
+    wrap.appendChild(text);
+    wrap.addEventListener('click', function (event) {
       event.preventDefault();
-      event.stopPropagation();
-      data.setSaturdayRunning(week, !data.isSaturdayRunning(week));
+      if (button.disabled) return;
+      var next = !button.classList.contains('is-on');
+      if (!next && weekHasSaturdayBlock(week)) return;
+      data.setSaturdayRunning(week, next);
       data.persist();
-      paintSaturday(grid, week);
+      paintSaturday(board);
     });
-    return button;
+    return wrap;
   }
 
-  function paintSaturday(grid, week) {
-    var running = data.isSaturdayRunning(week);
-    grid.classList.toggle('is-saturday-off', !running);
-    var button = grid.querySelector('.sch-saturday-toggle');
-    if (!button) return;
-    button.classList.toggle('is-on', running);
-    button.setAttribute('aria-pressed', running ? 'true' : 'false');
+  function paintSaturday(board) {
+    if (!board) return;
+    var week = board.dataset.week;
+    var locked = weekHasSaturdayBlock(week);
+    var running = locked || data.isSaturdayRunning(week);
+    var weekGrid = board.querySelector('.sch-grid');
+    if (weekGrid) weekGrid.classList.toggle('is-saturday-off', !running);
+    var button = board.querySelector('.sch-saturday-toggle');
+    var wrap = board.querySelector('.sch-saturday-wrap');
+    if (button) {
+      button.classList.toggle('is-on', running);
+      button.disabled = locked;
+      button.setAttribute('aria-pressed', running ? 'true' : 'false');
+    }
+    if (wrap) wrap.classList.toggle('is-locked', locked);
   }
 
   function fitDayNote(input) {
@@ -715,6 +734,7 @@
       if (lane) lane.appendChild(renderBlock(created));
       data.persist();
       releaseNight(created.weekCommencing);
+      paintSaturday(boardFor(created.weekCommencing));
       draft = null;
       closeEditor();
       return;
@@ -841,6 +861,8 @@
       }
       applyNightWeek(info.week);
       if (movedWeek) applyNightWeek(movedWeek);
+      paintSaturday(boardFor(info.week));
+      if (movedWeek) paintSaturday(boardFor(movedWeek));
       return;
     }
 
@@ -859,6 +881,8 @@
     if (changed) data.persist();
     releaseNight(info.week);
     if (block.weekCommencing !== info.week) releaseNight(block.weekCommencing);
+    paintSaturday(boardFor(info.week));
+    if (block.weekCommencing !== info.week) paintSaturday(boardFor(block.weekCommencing));
     if (!changed) openEditor(info.id, 'edit');
   }
 
@@ -1105,13 +1129,16 @@
 
   function paintNight(board, on, locked) {
     var weekGrid = board.querySelector('.sch-grid');
-    var input = board.querySelector('.sch-night input');
+    var button = board.querySelector('.sch-night .sch-switch');
     var note = board.querySelector('.sch-night-note');
     if (weekGrid) weekGrid.classList.toggle('is-night', !!on);
-    if (input) {
-      input.checked = !!on;
-      input.disabled = !!locked;
+    if (button) {
+      button.classList.toggle('is-on', !!on);
+      button.disabled = !!locked;
+      button.setAttribute('aria-pressed', on ? 'true' : 'false');
     }
+    var row = board.querySelector('.sch-night');
+    if (row) row.classList.toggle('is-locked', !!locked);
     if (note) note.hidden = !locked;
   }
 
@@ -1153,18 +1180,21 @@
   function bindNightToggle(board, week) {
     var wrap = document.createElement('div');
     wrap.className = 'sch-night-wrap';
-    var label = document.createElement('label');
+    var label = document.createElement('div');
     label.className = 'sch-night';
-    var input = document.createElement('input');
-    input.type = 'checkbox';
-    input.addEventListener('change', function () {
-      if (input.disabled) return;
-      data.setNightManual(week, input.checked);
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'sch-switch';
+    button.setAttribute('aria-label', 'Toggle Night Shift');
+    label.appendChild(button);
+    label.appendChild(document.createTextNode('Toggle Night Shift'));
+    label.addEventListener('click', function (event) {
+      event.preventDefault();
+      if (button.disabled) return;
+      data.setNightManual(week, !button.classList.contains('is-on'));
       data.persist();
       applyNight(board);
     });
-    label.appendChild(input);
-    label.appendChild(document.createTextNode('Toggle Night Shift'));
     var note = document.createElement('p');
     note.className = 'sch-night-note';
     note.hidden = true;
@@ -1239,6 +1269,7 @@
       label.appendChild(suffix);
       label.appendChild(bindNightToggle(board, info.weekCommencing));
       head.appendChild(label);
+      head.appendChild(saturdayControl(board, info.weekCommencing));
       board.appendChild(head);
       board.appendChild(weekGrid);
       fragment.appendChild(board);
@@ -1248,7 +1279,10 @@
     grid.appendChild(fragment);
     renderBlocks();
     var boards = grid.querySelectorAll('.sch-board');
-    for (var index = 0; index < boards.length; index++) applyNight(boards[index]);
+    for (var index = 0; index < boards.length; index++) {
+      applyNight(boards[index]);
+      paintSaturday(boards[index]);
+    }
     window.requestAnimationFrame(function () {
       var fields = grid.querySelectorAll('.sch-day-note textarea');
       for (var i = 0; i < fields.length; i++) fitDayNote(fields[i]);
@@ -1507,7 +1541,10 @@
       data.persist();
       var node = blockElement(id);
       if (node) node.remove();
-      if (week) releaseNight(week);
+      if (week) {
+        releaseNight(week);
+        paintSaturday(boardFor(week));
+      }
     });
 
     editorDismiss.addEventListener('click', dismissEditor);
