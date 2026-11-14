@@ -771,38 +771,6 @@
   user-select: none !important;
 }
 
-.sch-notes {
-  flex: 0 0 auto;
-  display: grid;
-  grid-template-columns: 110px minmax(0, 1fr);
-  gap: 10px;
-  align-items: center;
-  padding: 8px 10px;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-}
-
-.schedule-app .sch-notes label {
-  margin: 0;
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.schedule-app .sch-notes textarea {
-  width: 100%;
-  min-height: 42px;
-  height: 42px;
-  max-height: 88px;
-  margin: 0;
-  padding: 8px 10px;
-  resize: vertical;
-  font-size: 0.9rem;
-}
-
 .sch-modal[hidden] {
   display: none !important;
 }
@@ -1111,11 +1079,6 @@
   .sch-nav {
     justify-content: flex-start;
     flex-wrap: wrap;
-  }
-
-  .sch-notes {
-    grid-template-columns: 1fr;
-    align-items: stretch;
   }
 
   .sch-week-pop {

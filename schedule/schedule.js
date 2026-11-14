@@ -18,7 +18,6 @@
   var scroll = document.getElementById('scheduleScroll');
   var grid = document.getElementById('scheduleGrid');
   var runSuffix = document.getElementById('runSuffix');
-  var notes = document.getElementById('importantNotes');
   var modal = document.getElementById('blockEditor');
   var editorTitle = document.getElementById('editorTitle');
   var editorLane = document.getElementById('editorLane');
@@ -259,6 +258,11 @@
       fitDayNote(input);
       data.setDayNote(date, field, input.value);
       data.persist();
+    });
+    input.addEventListener('keydown', function (event) {
+      if (event.key !== 'Enter' || event.shiftKey) return;
+      event.preventDefault();
+      input.blur();
     });
     box.appendChild(caption);
     box.appendChild(input);
@@ -1214,11 +1218,6 @@
   }
 
   function bindMeta() {
-    notes.value = data.getState().notes;
-    notes.addEventListener('input', function () {
-      data.setMeta({ notes: notes.value });
-      data.persist();
-    });
     yearSelect.addEventListener('change', function () {
       if (navigating) return;
       var year = Number(yearSelect.value);
