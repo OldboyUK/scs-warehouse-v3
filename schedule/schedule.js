@@ -80,13 +80,19 @@
     return grid.querySelector('.prod-block[data-id="' + CSS.escape(id) + '"]');
   }
 
+  function visibleHours(lane) {
+    var weekGrid = lane && lane.closest('.sch-grid');
+    return weekGrid && weekGrid.classList.contains('is-night') ? 24 : 14;
+  }
+
   function hourAt(lane, clientY) {
     var rect = lane.getBoundingClientRect();
-    var hourHeight = rect.height / 24;
+    var span = visibleHours(lane);
+    var hourHeight = rect.height / span;
     if (!hourHeight) return 0;
     var hour = Math.floor((clientY - rect.top) / hourHeight);
     if (hour < 0) hour = 0;
-    if (hour > 23) hour = 23;
+    if (hour > span - 1) hour = span - 1;
     return hour;
   }
 
@@ -185,6 +191,7 @@
     time.style.gridRow = '3';
     for (var hour = 0; hour < 24; hour++) {
       var tick = el(hour === 0 ? 'sch-tick is-start' : 'sch-tick', data.minutesToLabel(hour * 60));
+      if (hour >= 14) tick.classList.add('is-overnight');
       tick.style.top = 'calc(var(--sch-hour) * ' + hour + ')';
       time.appendChild(tick);
     }
@@ -206,6 +213,56 @@
         laneMap[laneKey(week, day.id, category.id)] = lane;
       });
     });
+
+    var gutter = el('sch-note-gutter');
+    gutter.style.gridColumn = '1';
+    gutter.style.gridRow = '4 / span 2';
+    target.appendChild(gutter);
+
+    data.DAYS.forEach(function (day, dayIndex) {
+      addDayNote(target, week, day, dayIndex, 'important', 'Important', '4');
+      addDayNote(target, week, day, dayIndex, 'absence', 'Staff A/L or absence', '5');
+    });
+  }
+
+  function fitDayNote(input) {
+    input.style.height = '28px';
+    var next = input.scrollHeight;
+    if (next < 28) next = 28;
+    if (next > 72) next = 72;
+    input.style.height = next + 'px';
+  }
+
+  function dayDate(week, dayIndex) {
+    var monday = data.parseISODate(week);
+    var date = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + dayIndex);
+    return data.dateISO(date);
+  }
+
+  function addDayNote(target, week, day, dayIndex, field, label, row) {
+    var date = dayDate(week, dayIndex);
+    var saved = data.getState().dayNotes[date] || {};
+    var box = document.createElement('label');
+    box.className = 'sch-day-note' + (dayIndex === data.DAYS.length - 1 ? ' is-day-end' : '');
+    box.style.gridColumn = (2 + dayIndex * 5) + ' / span 5';
+    box.style.gridRow = row;
+    var caption = document.createElement('span');
+    caption.textContent = label;
+    var input = document.createElement('textarea');
+    input.rows = 1;
+    input.maxLength = 2000;
+    input.dataset.date = date;
+    input.dataset.field = field;
+    input.value = saved[field] || '';
+    input.setAttribute('aria-label', day.label + ' ' + label);
+    input.addEventListener('input', function () {
+      fitDayNote(input);
+      data.setDayNote(date, field, input.value);
+      data.persist();
+    });
+    box.appendChild(caption);
+    box.appendChild(input);
+    target.appendChild(box);
   }
 
   function categoryLabel(id) {
@@ -321,8 +378,10 @@
       return;
     }
     if (!editingId) return;
+    var week = editorSnapshot && editorSnapshot.weekCommencing;
     restoreSnapshot();
     closeEditor();
+    if (week) applyNightWeek(week);
   }
 
   function showFormError(message) {
@@ -617,6 +676,7 @@
       var lane = laneMap[laneKey(created.weekCommencing, created.day, created.category)];
       if (lane) lane.appendChild(renderBlock(created));
       data.persist();
+      releaseNight(created.weekCommencing);
       draft = null;
       closeEditor();
       return;
@@ -625,6 +685,7 @@
     var updated = data.updateBlock(editingId, productPatch(match, volume));
     if (updated) placeBlock(updated);
     data.persist();
+    if (updated) releaseNight(updated.weekCommencing);
     closeEditor();
   }
 
@@ -701,6 +762,7 @@
     var updated = data.updateBlock(editingId, { startOffset: start, endOffset: end });
     if (!updated) return;
     paint(blockElement(editingId), updated);
+    previewNight(updated.weekCommencing);
     filling = true;
     fillEndOptions(updated.startOffset, updated.endOffset);
     editorStart.value = String(updated.startOffset);
@@ -726,7 +788,10 @@
     clearDropTarget();
 
     if (!commit) {
+      var movedWeek = null;
       if (info.kind !== 'create' && info.id) {
+        var current = data.getBlock(info.id);
+        movedWeek = current && current.weekCommencing !== info.week ? current.weekCommencing : null;
         var restored = data.updateBlock(info.id, {
           day: info.day,
           category: info.category,
@@ -736,6 +801,8 @@
         });
         if (restored) placeBlock(restored);
       }
+      applyNightWeek(info.week);
+      if (movedWeek) applyNightWeek(movedWeek);
       return;
     }
 
@@ -752,7 +819,9 @@
       block.category !== info.category ||
       block.weekCommencing !== info.week;
     if (changed) data.persist();
-    else openEditor(info.id, 'edit');
+    releaseNight(info.week);
+    if (block.weekCommencing !== info.week) releaseNight(block.weekCommencing);
+    if (!changed) openEditor(info.id, 'edit');
   }
 
   function clearDropTarget() {
@@ -789,7 +858,8 @@
 
     nudgeScroll(clientX, clientY);
     document.body.classList.add(drag.kind === 'move' ? 'sch-moving' : 'sch-dragging');
-    var hourHeight = drag.lane.getBoundingClientRect().height / 24;
+    var previousWeek = drag.lane.dataset.week;
+    var hourHeight = drag.lane.getBoundingClientRect().height / visibleHours(drag.lane);
     var delta = Math.round(dy / hourHeight) * 60;
     var start = drag.startOffset;
     var end = drag.endOffset;
@@ -823,7 +893,11 @@
     patch.startOffset = start;
     patch.endOffset = end;
     var updated = data.updateBlock(drag.id, patch);
-    if (updated) placeBlock(updated);
+    if (updated) {
+      placeBlock(updated);
+      previewNight(updated.weekCommencing);
+      if (previousWeek && previousWeek !== updated.weekCommencing) previewNight(previousWeek);
+    }
   }
 
   function onPointerMove(event) {
@@ -862,6 +936,7 @@
 
   function onPointerDown(event) {
     if (event.button !== 0 || drag) return;
+    if (event.target.closest('.sch-day-note')) return;
     var handle = event.target.closest('.prod-handle');
     var blockNode = event.target.closest('.prod-block');
     var lane = event.target.closest('.sch-lane');
@@ -942,6 +1017,89 @@
     if (selected) weekJump.value = selected;
   }
 
+  function boardFor(week) {
+    return grid.querySelector('.sch-board[data-week="' + week + '"]');
+  }
+
+  function weekNeedsNight(week) {
+    var blocks = data.getState().blocks;
+    for (var i = 0; i < blocks.length; i++) {
+      if (blocks[i].weekCommencing === week && data.needsNight(blocks[i].endOffset)) return true;
+    }
+    return false;
+  }
+
+  function paintNight(board, on, locked) {
+    var weekGrid = board.querySelector('.sch-grid');
+    var input = board.querySelector('.sch-night input');
+    var note = board.querySelector('.sch-night-note');
+    if (weekGrid) weekGrid.classList.toggle('is-night', !!on);
+    if (input) {
+      input.checked = !!on;
+      input.disabled = !!locked;
+    }
+    if (note) note.hidden = !locked;
+  }
+
+  function applyNight(board) {
+    if (!board) return;
+    var required = weekNeedsNight(board.dataset.week);
+    board.dataset.nightRequired = required ? 'true' : 'false';
+    paintNight(board, required || data.isNightManual(board.dataset.week), required);
+  }
+
+  function applyNightWeek(week) {
+    applyNight(boardFor(week));
+  }
+
+  function previewNight(week) {
+    var board = boardFor(week);
+    if (!board) return;
+    var required = weekNeedsNight(week);
+    if (required) {
+      board.dataset.nightRequired = 'true';
+      paintNight(board, true, true);
+      return;
+    }
+    var keep = board.dataset.nightRequired === 'true' || data.isNightManual(week);
+    paintNight(board, keep, false);
+  }
+
+  function releaseNight(week) {
+    var board = boardFor(week);
+    if (!board) return;
+    var required = weekNeedsNight(week);
+    if (board.dataset.nightRequired === 'true' && !required && !data.isNightManual(week)) {
+      data.setNightManual(week, true);
+      data.persist();
+    }
+    applyNight(board);
+  }
+
+  function bindNightToggle(board, week) {
+    var wrap = document.createElement('div');
+    wrap.className = 'sch-night-wrap';
+    var label = document.createElement('label');
+    label.className = 'sch-night';
+    var input = document.createElement('input');
+    input.type = 'checkbox';
+    input.addEventListener('change', function () {
+      if (input.disabled) return;
+      data.setNightManual(week, input.checked);
+      data.persist();
+      applyNight(board);
+    });
+    label.appendChild(input);
+    label.appendChild(document.createTextNode('Toggle Night Shift'));
+    var note = document.createElement('p');
+    note.className = 'sch-night-note';
+    note.hidden = true;
+    note.textContent = 'Night shift required – production scheduled beyond 20:00';
+    wrap.appendChild(label);
+    wrap.appendChild(note);
+    return wrap;
+  }
+
   function markActive(iso) {
     var boards = grid.querySelectorAll('.sch-board');
     for (var i = 0; i < boards.length; i++) {
@@ -984,6 +1142,7 @@
       var weekGrid = el('sch-grid');
       label.appendChild(title);
       label.appendChild(suffix);
+      label.appendChild(bindNightToggle(board, info.weekCommencing));
       head.appendChild(label);
       board.appendChild(head);
       board.appendChild(weekGrid);
@@ -993,6 +1152,12 @@
     grid.innerHTML = '';
     grid.appendChild(fragment);
     renderBlocks();
+    var boards = grid.querySelectorAll('.sch-board');
+    for (var index = 0; index < boards.length; index++) applyNight(boards[index]);
+    window.requestAnimationFrame(function () {
+      var fields = grid.querySelectorAll('.sch-day-note textarea');
+      for (var i = 0; i < fields.length; i++) fitDayNote(fields[i]);
+    });
   }
 
   function scrollToWeek(iso, smooth) {
@@ -1235,11 +1400,14 @@
     editorDelete.addEventListener('click', function () {
       if (!editingId || editorMode !== 'edit') return;
       var id = editingId;
+      var existing = data.getBlock(id);
+      var week = existing && existing.weekCommencing;
       closeEditor();
       data.removeBlock(id);
       data.persist();
       var node = blockElement(id);
       if (node) node.remove();
+      if (week) releaseNight(week);
     });
 
     editorDismiss.addEventListener('click', dismissEditor);

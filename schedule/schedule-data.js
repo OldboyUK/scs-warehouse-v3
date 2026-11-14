@@ -77,12 +77,17 @@
     return 'b_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
   }
 
+  function dateISO(from) {
+    var date = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+    return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate());
+  }
+
   function mondayISO(from) {
     var date = new Date(from.getFullYear(), from.getMonth(), from.getDate());
     var weekday = date.getDay();
     var shift = weekday === 0 ? -6 : 1 - weekday;
     date.setDate(date.getDate() + shift);
-    return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate());
+    return dateISO(date);
   }
 
   function parseISODate(value) {
@@ -177,8 +182,56 @@
       runSuffix: runSuffixFor(week),
       weekCommencing: week,
       notes: '',
+      dayNotes: {},
+      nightShift: {},
       blocks: []
     };
+  }
+
+  // 20:00 on the production day. A block that finishes at this time still
+  // fits the daytime view. Anything later needs the overnight hours.
+  var NIGHT_AFTER = 14 * 60;
+
+  function needsNight(endOffset) {
+    return endOffset > NIGHT_AFTER;
+  }
+
+  function cleanNightShift(raw) {
+    var saved = {};
+    if (!raw || typeof raw !== 'object') return saved;
+    Object.keys(raw).forEach(function (key) {
+      var monday = canonicalWeek(key);
+      if (monday && raw[key] === true) saved[monday] = true;
+    });
+    return saved;
+  }
+
+  var DAY_NOTE_MAX = 2000;
+
+  function cleanDayNotes(raw) {
+    var notes = {};
+    if (!raw || typeof raw !== 'object') return notes;
+    Object.keys(raw).forEach(function (key) {
+      if (!parseISODate(key)) return;
+      var item = raw[key];
+      if (!item || typeof item !== 'object') return;
+      var important = typeof item.important === 'string' ? item.important.slice(0, DAY_NOTE_MAX) : '';
+      var absence = typeof item.absence === 'string' ? item.absence.slice(0, DAY_NOTE_MAX) : '';
+      if (!important && !absence) return;
+      notes[key] = { important: important, absence: absence };
+    });
+    return notes;
+  }
+
+  function copyDayNotes() {
+    var copy = {};
+    Object.keys(state.dayNotes).forEach(function (key) {
+      copy[key] = {
+        important: state.dayNotes[key].important,
+        absence: state.dayNotes[key].absence
+      };
+    });
+    return copy;
   }
 
   function clockToOffset(time, isEnd) {
@@ -335,6 +388,8 @@
       if (!data || typeof data !== 'object') return fresh;
       var changed = false;
       if (typeof data.notes === 'string') fresh.notes = data.notes.slice(0, 4000);
+      fresh.dayNotes = cleanDayNotes(data.dayNotes);
+      fresh.nightShift = cleanNightShift(data.nightShift);
       if (typeof data.weekCommencing === 'string') {
         var monday = canonicalWeek(data.weekCommencing);
         if (monday) {
@@ -386,6 +441,8 @@
       runSuffix: runSuffixFor(state.weekCommencing),
       weekCommencing: state.weekCommencing,
       notes: state.notes,
+      dayNotes: copyDayNotes(),
+      nightShift: Object.assign({}, state.nightShift),
       blocks: state.blocks.map(present)
     };
   }
@@ -408,6 +465,32 @@
       }
     }
     return getState();
+  }
+
+  function isNightManual(week) {
+    var monday = canonicalWeek(week);
+    return !!(monday && state.nightShift[monday]);
+  }
+
+  function setNightManual(week, on) {
+    var monday = canonicalWeek(week);
+    if (!monday) return false;
+    if (on) state.nightShift[monday] = true;
+    else delete state.nightShift[monday];
+    return true;
+  }
+
+  function setDayNote(date, field, value) {
+    if (!parseISODate(date) || (field !== 'important' && field !== 'absence')) return null;
+    var text = String(value == null ? '' : value).slice(0, DAY_NOTE_MAX);
+    var current = state.dayNotes[date] || { important: '', absence: '' };
+    var next = {
+      important: field === 'important' ? text : current.important,
+      absence: field === 'absence' ? text : current.absence
+    };
+    if (!next.important && !next.absence) delete state.dayNotes[date];
+    else state.dayNotes[date] = next;
+    return { date: date, important: next.important, absence: next.absence };
   }
 
   function addBlock(input) {
@@ -473,6 +556,7 @@
   var api = {
     STORAGE_KEY: STORAGE_KEY,
     DAY_LENGTH: DAY_LENGTH,
+    needsNight: needsNight,
     DEFAULT_COLOUR: DEFAULT_COLOUR,
     DAYS: DAYS,
     CATEGORIES: CATEGORIES,
@@ -480,6 +564,7 @@
       return { colour: status.colour, label: status.label };
     }),
     COLOURS: COLOURS.slice(),
+    dateISO: dateISO,
     mondayISO: mondayISO,
     parseISODate: parseISODate,
     weekNumber: weekNumber,
@@ -495,6 +580,9 @@
     getState: getState,
     getBlock: getBlock,
     setMeta: setMeta,
+    setDayNote: setDayNote,
+    isNightManual: isNightManual,
+    setNightManual: setNightManual,
     addBlock: addBlock,
     updateBlock: updateBlock,
     removeBlock: removeBlock,

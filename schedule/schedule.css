@@ -1,7 +1,7 @@
 /* Schedule module. Kept separate from the shared application stylesheet. */
 
 .schedule-app {
-  --sch-hour: 36px;
+  --sch-hour: 32px;
   --sch-time: 58px;
   --sch-lane: 78px;
   --sch-day-h: 28px;
@@ -382,25 +382,77 @@
 }
 
 .sch-month {
-  margin: 10px 0 0;
-  background: #1f2937;
-  color: #e5e7eb;
-  font-size: 12px;
+  margin: 22px 0 16px;
+  padding: 12px 16px;
+  background: #f3f4f6;
+  color: #111827;
+  font-size: 16px;
   font-weight: 800;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.14em;
+  text-align: center;
   text-transform: uppercase;
+  border-top: 3px solid #1d4ed8;
+  border-bottom: 3px solid #1d4ed8;
 }
 
-.sch-month span,
+.sch-month span {
+  display: inline;
+}
+
 .sch-board-label {
-  position: sticky;
-  left: 0;
   display: flex;
-  align-items: baseline;
-  gap: 16px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
   width: max-content;
   max-width: 100%;
   padding: 7px 12px;
+}
+
+.sch-night-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.schedule-app label.sch-night {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1.2;
+  text-transform: none;
+  cursor: pointer;
+}
+
+.schedule-app .sch-night input {
+  width: 15px;
+  height: 15px;
+  min-height: 15px;
+  margin: 0;
+  padding: 0;
+  flex: 0 0 auto;
+}
+
+.schedule-app .sch-night input:disabled {
+  cursor: not-allowed;
+}
+
+.sch-night-note {
+  margin: 0;
+  color: #fbbf24;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.sch-night-note[hidden] {
+  display: none !important;
 }
 
 .sch-year > .sch-month:first-child {
@@ -437,11 +489,16 @@
 .sch-grid {
   display: grid;
   grid-template-columns: var(--sch-time) repeat(30, minmax(var(--sch-lane), 1fr));
-  grid-template-rows: var(--sch-day-h) var(--sch-cat-h) calc(var(--sch-hour) * 24);
+  --sch-span: 14;
+  grid-template-rows: var(--sch-day-h) var(--sch-cat-h) calc(var(--sch-hour) * var(--sch-span)) auto auto;
   width: 100%;
   min-width: 100%;
   user-select: none;
   background: #434343;
+}
+
+.sch-grid.is-night {
+  --sch-span: 24;
 }
 
 .sch-corner,
@@ -454,9 +511,8 @@
 .sch-corner {
   grid-column: 1;
   grid-row: 1 / span 2;
-  position: sticky;
-  left: 0;
-  z-index: 5;
+  position: relative;
+  z-index: 2;
   display: flex;
   align-items: flex-end;
   justify-content: flex-end;
@@ -509,29 +565,9 @@
   border-right: 2px solid #111;
 }
 
-.sch-board.is-active .sch-corner {
-  top: 0;
-  z-index: 8;
-}
-
-.sch-board.is-active .sch-day,
-.sch-board.is-active .sch-cat {
-  position: sticky;
-  z-index: 6;
-}
-
-.sch-board.is-active .sch-day {
-  top: 0;
-}
-
-.sch-board.is-active .sch-cat {
-  top: var(--sch-day-h);
-}
-
 .sch-time {
-  position: sticky;
-  left: 0;
-  z-index: 5;
+  position: relative;
+  z-index: 1;
   background: #e8e8e8;
   border-right: 2px solid #111;
 }
@@ -547,6 +583,14 @@
   line-height: 1;
   pointer-events: none;
   white-space: nowrap;
+}
+
+.sch-tick.is-overnight {
+  display: none;
+}
+
+.sch-grid.is-night .sch-tick.is-overnight {
+  display: block;
 }
 
 .sch-tick.is-start {
@@ -574,6 +618,56 @@
 
 .sch-lane.is-day-end {
   border-right: 2px solid #d6d6d6;
+}
+
+.sch-note-gutter {
+  background: #e8e8e8;
+  border-top: 2px solid #111;
+  border-right: 2px solid #111;
+}
+
+.schedule-app label.sch-day-note {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 2px;
+  min-width: 0;
+  margin: 0;
+  padding: 4px 6px 5px;
+  background: #313743;
+  border-top: 1px solid #111;
+  border-right: 1px solid rgba(255, 255, 255, 0.12);
+  color: #e5e7eb;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  line-height: 1.2;
+  text-transform: none;
+  user-select: text;
+}
+
+.sch-day-note.is-day-end {
+  border-right: 2px solid #d6d6d6;
+}
+
+.schedule-app .sch-day-note textarea {
+  box-sizing: border-box;
+  width: 100%;
+  height: 28px;
+  min-height: 28px;
+  max-height: 72px;
+  margin: 0;
+  padding: 4px 6px;
+  resize: none;
+  overflow: auto;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-transform: none;
+  letter-spacing: 0;
+  user-select: text;
 }
 
 .sch-lane.is-drop-target {
