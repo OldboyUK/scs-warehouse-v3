@@ -1111,6 +1111,31 @@
     }
   }
 
+  function monthDivider(label) {
+    var month = document.createElement('h2');
+    month.className = 'sch-month';
+    var pill = document.createElement('span');
+    pill.className = 'sch-month-pill';
+    var icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    icon.setAttribute('viewBox', '0 0 24 24');
+    icon.setAttribute('aria-hidden', 'true');
+    icon.classList.add('sch-month-icon');
+    var shape = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    shape.setAttribute('fill', 'none');
+    shape.setAttribute('stroke', 'currentColor');
+    shape.setAttribute('stroke-width', '2');
+    shape.setAttribute('stroke-linecap', 'round');
+    shape.setAttribute('stroke-linejoin', 'round');
+    shape.setAttribute('d', 'M8 3v3M16 3v3M4.5 9h15M6 5.5h12a1.5 1.5 0 0 1 1.5 1.5v11A1.5 1.5 0 0 1 18 19.5H6A1.5 1.5 0 0 1 4.5 18V7A1.5 1.5 0 0 1 6 5.5z');
+    icon.appendChild(shape);
+    var monthText = document.createElement('span');
+    monthText.textContent = label;
+    pill.appendChild(icon);
+    pill.appendChild(monthText);
+    month.appendChild(pill);
+    return month;
+  }
+
   function renderYear(year) {
     Object.keys(laneMap).forEach(function (key) { delete laneMap[key]; });
     var weeks = data.productionWeeks(year);
@@ -1121,12 +1146,7 @@
       var monday = data.parseISODate(info.weekCommencing);
       var monthKey = monday.getFullYear() + '-' + monday.getMonth();
       if (monthKey !== lastMonth) {
-        var month = document.createElement('h2');
-        month.className = 'sch-month';
-        var monthText = document.createElement('span');
-        monthText.textContent = MONTHS[monday.getMonth()] + ' ' + monday.getFullYear();
-        month.appendChild(monthText);
-        fragment.appendChild(month);
+        fragment.appendChild(monthDivider(MONTHS[monday.getMonth()] + ' ' + monday.getFullYear()));
         lastMonth = monthKey;
       }
       var board = document.createElement('section');
