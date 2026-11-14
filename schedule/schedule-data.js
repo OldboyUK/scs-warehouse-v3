@@ -107,18 +107,67 @@
   }
 
   // Excel / Google Sheets WEEKNUM(date, 2): weeks start on Monday, and the
-  // week containing 1 January is week 1. Not ISO week numbering.
+  // week containing 1 January is week 1 of that date's calendar year.
+  // Not ISO week numbering. A Monday in late December can still be week 53
+  // of its own calendar year; production weeks below do not use that result
+  // when the Monday–Sunday period contains 1 January of the next year.
   function weekNumber(date) {
     var jan1 = new Date(date.getFullYear(), 0, 1);
     var diff = Math.round((date - jan1) / 86400000);
     return Math.floor((diff + weekdayMonday(jan1) - 1) / 7) + 1;
   }
 
+  function weekOneMonday(year) {
+    return parseISODate(mondayISO(new Date(year, 0, 1)));
+  }
+
+  // Production year Y begins on the Monday of the week that contains
+  // 1 January Y, even when that Monday is in December of Y - 1.
+  // Weeks then run until the Monday before week 01 of Y + 1.
+  function productionInfo(iso) {
+    var monday = parseISODate(canonicalWeek(iso) || iso);
+    if (!monday) return null;
+    var calendarYear = monday.getFullYear();
+    var startThis = weekOneMonday(calendarYear);
+    var startNext = weekOneMonday(calendarYear + 1);
+    var productionYear;
+    var start;
+    if (monday.getTime() >= startNext.getTime()) {
+      productionYear = calendarYear + 1;
+      start = startNext;
+    } else if (monday.getTime() >= startThis.getTime()) {
+      productionYear = calendarYear;
+      start = startThis;
+    } else {
+      productionYear = calendarYear - 1;
+      start = weekOneMonday(calendarYear - 1);
+    }
+    var diff = Math.round((monday.getTime() - start.getTime()) / 86400000);
+    var week = Math.floor(diff / 7) + 1;
+    return {
+      year: productionYear,
+      week: week,
+      weekCommencing: mondayISO(monday),
+      suffix: String(productionYear).slice(-1) + (week < 10 ? '0' : '') + week
+    };
+  }
+
+  function productionWeeks(year) {
+    var start = weekOneMonday(year);
+    var next = weekOneMonday(year + 1);
+    var count = Math.round((next.getTime() - start.getTime()) / 86400000 / 7);
+    var weeks = [];
+    for (var index = 0; index < count; index++) {
+      var monday = new Date(start.getFullYear(), start.getMonth(), start.getDate() + (index * 7));
+      var info = productionInfo(mondayISO(monday));
+      if (info) weeks.push(info);
+    }
+    return weeks;
+  }
+
   function runSuffixFor(iso) {
-    var date = parseISODate(canonicalWeek(iso) || iso);
-    if (!date) return '';
-    var week = weekNumber(date);
-    return String(date.getFullYear()).slice(-1) + (week < 10 ? '0' : '') + week;
+    var info = productionInfo(iso);
+    return info ? info.suffix : '';
   }
 
   function blankState() {
@@ -399,6 +448,10 @@
     if (patch.backgroundColour !== undefined) block.backgroundColour = normaliseColour(patch.backgroundColour);
     if (patch.day !== undefined && dayIds[patch.day]) block.day = patch.day;
     if (patch.category !== undefined && categoryIds[patch.category]) block.category = patch.category;
+    if (patch.weekCommencing !== undefined) {
+      var monday = canonicalWeek(patch.weekCommencing);
+      if (monday) block.weekCommencing = monday;
+    }
     if (patch.startOffset !== undefined || patch.endOffset !== undefined) {
       var current = present(block);
       var start = patch.startOffset !== undefined ? patch.startOffset : current.startOffset;
@@ -430,6 +483,8 @@
     mondayISO: mondayISO,
     parseISODate: parseISODate,
     weekNumber: weekNumber,
+    productionInfo: productionInfo,
+    productionWeeks: productionWeeks,
     runSuffixFor: runSuffixFor,
     statusLabel: statusLabel,
     minutesToLabel: minutesToLabel,

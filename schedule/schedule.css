@@ -103,7 +103,7 @@
   position: relative;
   z-index: 20;
   display: grid;
-  grid-template-columns: minmax(190px, 240px) minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
   padding: 8px 12px;
@@ -162,8 +162,39 @@
   font-size: 0.75rem;
 }
 
-.sch-heading .sch-field:last-child {
+.sch-nav {
+  display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.schedule-app .sch-field select {
+  width: auto;
+  min-height: 34px;
+  height: 34px;
+  margin: 0;
+  padding: 0 28px 0 8px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.schedule-app #yearSelect {
+  width: 92px;
+}
+
+.schedule-app #weekJump {
+  width: 248px;
+}
+
+.schedule-app .sch-current-week {
+  min-height: 34px;
+  padding: 0 12px;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 .sch-week {
@@ -342,11 +373,72 @@
   overflow: hidden;
 }
 
+.sch-year {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: max(100%, calc(var(--sch-time) + (var(--sch-lane) * 30)));
+  min-width: 100%;
+}
+
+.sch-month {
+  margin: 10px 0 0;
+  background: #1f2937;
+  color: #e5e7eb;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.sch-month span,
+.sch-board-label {
+  position: sticky;
+  left: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  width: max-content;
+  max-width: 100%;
+  padding: 7px 12px;
+}
+
+.sch-year > .sch-month:first-child {
+  margin-top: 0;
+}
+
+.sch-board {
+  margin: 0 0 16px;
+}
+
+.sch-board-head {
+  background: #111827;
+  color: #e5e7eb;
+  border-bottom: 1px solid #000;
+}
+
+.sch-board.is-current .sch-board-head {
+  background: #1e3a8a;
+  color: #fff;
+}
+
+.sch-board-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.sch-board-suffix {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
 .sch-grid {
   display: grid;
   grid-template-columns: var(--sch-time) repeat(30, minmax(var(--sch-lane), 1fr));
   grid-template-rows: var(--sch-day-h) var(--sch-cat-h) calc(var(--sch-hour) * 24);
-  width: max(100%, calc(var(--sch-time) + (var(--sch-lane) * 30)));
+  width: 100%;
   min-width: 100%;
   user-select: none;
   background: #434343;
@@ -363,9 +455,8 @@
   grid-column: 1;
   grid-row: 1 / span 2;
   position: sticky;
-  top: 0;
   left: 0;
-  z-index: 8;
+  z-index: 5;
   display: flex;
   align-items: flex-end;
   justify-content: flex-end;
@@ -381,9 +472,7 @@
 }
 
 .sch-day {
-  position: sticky;
-  top: 0;
-  z-index: 6;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -398,9 +487,7 @@
 }
 
 .sch-cat {
-  position: sticky;
-  top: var(--sch-day-h);
-  z-index: 6;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -420,6 +507,25 @@
 .sch-day.is-day-end,
 .sch-cat.is-day-end {
   border-right: 2px solid #111;
+}
+
+.sch-board.is-active .sch-corner {
+  top: 0;
+  z-index: 8;
+}
+
+.sch-board.is-active .sch-day,
+.sch-board.is-active .sch-cat {
+  position: sticky;
+  z-index: 6;
+}
+
+.sch-board.is-active .sch-day {
+  top: 0;
+}
+
+.sch-board.is-active .sch-cat {
+  top: var(--sch-day-h);
 }
 
 .sch-time {
@@ -908,9 +1014,9 @@
     text-align: left;
   }
 
-  .sch-heading .sch-field:last-child,
-  .sch-week {
+  .sch-nav {
     justify-content: flex-start;
+    flex-wrap: wrap;
   }
 
   .sch-notes {

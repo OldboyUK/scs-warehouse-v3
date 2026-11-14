@@ -43,39 +43,26 @@
 
     <header class="sch-heading">
       <label class="sch-field" for="runSuffix">Run suffix
-        <input id="runSuffix" type="text" readonly tabindex="-1" inputmode="numeric" aria-readonly="true" title="Last digit of the year and the week number" />
+        <input id="runSuffix" type="text" readonly tabindex="-1" inputmode="numeric" aria-readonly="true" title="Last digit of the production year and the production week number" />
       </label>
       <div class="sch-heading-title">
         <h1>Production Schedule</h1>
         <p>Monday 06:00 to Sunday 06:00</p>
       </div>
-      <div class="sch-week" id="weekPicker">
-        <button type="button" class="sch-week-nav" id="weekPrev" aria-label="Previous week">‹</button>
-        <button type="button" class="sch-week-current" id="weekToggle" aria-haspopup="dialog" aria-expanded="false" aria-controls="weekPop">
-          <span class="sch-week-kicker">Week commencing</span>
-          <span class="sch-week-date" id="weekLabel"></span>
-          <span class="sch-week-range" id="weekRange"></span>
-        </button>
-        <button type="button" class="sch-week-nav" id="weekNext" aria-label="Next week">›</button>
-        <div class="sch-week-pop" id="weekPop" hidden role="dialog" aria-label="Choose a production week">
-          <div class="sch-week-pop-bar">
-            <button type="button" id="weekYearPrev" aria-label="Previous year">«</button>
-            <button type="button" id="weekMonthPrev" aria-label="Previous month">‹</button>
-            <strong id="weekMonthLabel"></strong>
-            <button type="button" id="weekMonthNext" aria-label="Next month">›</button>
-            <button type="button" id="weekYearNext" aria-label="Next year">»</button>
-          </div>
-          <div class="sch-week-dow" aria-hidden="true">
-            <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
-          </div>
-          <div id="weekCal"></div>
-        </div>
+      <div class="sch-nav" id="scheduleNav">
+        <label class="sch-field" for="yearSelect">Production year
+          <select id="yearSelect"></select>
+        </label>
+        <label class="sch-field" for="weekJump">Jump to week
+          <select id="weekJump"></select>
+        </label>
+        <button type="button" class="btn sch-current-week" id="currentWeek">Current Week</button>
       </div>
     </header>
 
     <div class="sch-workspace">
       <div class="sch-scroll" id="scheduleScroll" aria-label="Production schedule">
-        <div class="sch-grid" id="scheduleGrid"></div>
+        <div class="sch-year" id="scheduleGrid"></div>
       </div>
       <aside class="sch-booking" id="bookingPanel" aria-hidden="true"></aside>
     </div>

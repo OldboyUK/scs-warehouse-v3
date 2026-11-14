@@ -12,6 +12,8 @@
   var currentMatch = null;
   var filling = false;
   var drag = null;
+  var navigating = false;
+  var scrollLock = false;
 
   var scroll = document.getElementById('scheduleScroll');
   var grid = document.getElementById('scheduleGrid');
@@ -41,26 +43,14 @@
   var sourceMessage = document.getElementById('sourceMessage');
   var sourceRetry = document.getElementById('sourceRetry');
   var statusLegend = document.getElementById('statusLegend');
-  var weekPrev = document.getElementById('weekPrev');
-  var weekNext = document.getElementById('weekNext');
-  var weekToggle = document.getElementById('weekToggle');
-  var weekLabel = document.getElementById('weekLabel');
-  var weekRange = document.getElementById('weekRange');
-  var weekPop = document.getElementById('weekPop');
-  var weekYearPrev = document.getElementById('weekYearPrev');
-  var weekYearNext = document.getElementById('weekYearNext');
-  var weekMonthPrev = document.getElementById('weekMonthPrev');
-  var weekMonthNext = document.getElementById('weekMonthNext');
-  var weekMonthLabel = document.getElementById('weekMonthLabel');
-  var weekCal = document.getElementById('weekCal');
-  var weekPicker = document.getElementById('weekPicker');
+  var yearSelect = document.getElementById('yearSelect');
+  var weekJump = document.getElementById('weekJump');
+  var currentWeek = document.getElementById('currentWeek');
   var activeCustomer = '';
   var customerMatches = [];
   var customerIndex = -1;
   var customerQuiet = false;
-  var calendarMonth = null;
   var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-  var MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
   function el(className, text) {
     var node = document.createElement('div');
@@ -69,8 +59,21 @@
     return node;
   }
 
-  function laneKey(day, category) {
-    return day + ':' + category;
+  function laneKey(week, day, category) {
+    return week + '|' + day + '|' + category;
+  }
+
+  function ukDate(date) {
+    var day = date.getDate();
+    var month = date.getMonth() + 1;
+    return (day < 10 ? '0' : '') + day + '-' + (month < 10 ? '0' : '') + month + '-' + date.getFullYear();
+  }
+
+  function weekHeading(iso) {
+    var info = data.productionInfo(iso);
+    if (!info) return '';
+    var monday = data.parseISODate(info.weekCommencing);
+    return 'Week ' + info.week + ' (W/C ' + ukDate(monday) + ')';
   }
 
   function blockElement(id) {
@@ -151,21 +154,20 @@
     });
     var state = data.getState();
     state.blocks.forEach(function (block) {
-      if (block.weekCommencing !== state.weekCommencing) return;
-      var lane = laneMap[laneKey(block.day, block.category)];
+      var lane = laneMap[laneKey(block.weekCommencing, block.day, block.category)];
       if (lane) lane.appendChild(renderBlock(block));
     });
   }
 
-  function buildGrid() {
+  function buildWeekGrid(target, week) {
     var corner = el('sch-corner', 'Time');
-    grid.appendChild(corner);
+    target.appendChild(corner);
 
     data.DAYS.forEach(function (day, dayIndex) {
       var head = el('sch-day is-day-end', day.label);
       head.style.gridColumn = (2 + dayIndex * 5) + ' / span 5';
       head.style.gridRow = '1';
-      grid.appendChild(head);
+      target.appendChild(head);
     });
 
     data.DAYS.forEach(function (day, dayIndex) {
@@ -174,7 +176,7 @@
         var cell = el(classes, category.label);
         cell.style.gridColumn = String(2 + dayIndex * 5 + categoryIndex);
         cell.style.gridRow = '2';
-        grid.appendChild(cell);
+        target.appendChild(cell);
       });
     });
 
@@ -186,12 +188,13 @@
       tick.style.top = 'calc(var(--sch-hour) * ' + hour + ')';
       time.appendChild(tick);
     }
-    grid.appendChild(time);
+    target.appendChild(time);
 
     data.DAYS.forEach(function (day, dayIndex) {
       data.CATEGORIES.forEach(function (category, categoryIndex) {
         var classes = 'sch-lane' + (categoryIndex === data.CATEGORIES.length - 1 ? ' is-day-end' : '');
         var lane = el(classes);
+        lane.dataset.week = week;
         lane.dataset.day = day.id;
         lane.dataset.category = category.id;
         lane.style.gridColumn = String(2 + dayIndex * 5 + categoryIndex);
@@ -199,8 +202,8 @@
         lane.setAttribute('role', 'group');
         lane.setAttribute('aria-label', day.label + ' ' + category.label);
         lane.appendChild(el('sch-midnight'));
-        grid.appendChild(lane);
-        laneMap[laneKey(day.id, category.id)] = lane;
+        target.appendChild(lane);
+        laneMap[laneKey(week, day.id, category.id)] = lane;
       });
     });
   }
@@ -287,7 +290,7 @@
 
   function placeBlock(block) {
     var node = blockElement(block.id);
-    var lane = laneMap[laneKey(block.day, block.category)];
+    var lane = laneMap[laneKey(block.weekCommencing, block.day, block.category)];
     if (node && lane && node.parentElement !== lane) lane.appendChild(node);
     paint(node, block);
     return node;
@@ -611,8 +614,8 @@
         showFormError('The production block could not be created.');
         return;
       }
-      var lane = laneMap[laneKey(created.day, created.category)];
-      if (lane && created.weekCommencing === data.getState().weekCommencing) lane.appendChild(renderBlock(created));
+      var lane = laneMap[laneKey(created.weekCommencing, created.day, created.category)];
+      if (lane) lane.appendChild(renderBlock(created));
       data.persist();
       draft = null;
       closeEditor();
@@ -649,7 +652,7 @@
     var node = blockElement(id);
     if (node) node.classList.add('is-editing');
     filling = true;
-    editorLane.textContent = dayLabel(block.day) + ' · ' + categoryLabel(block.category);
+    editorLane.textContent = weekHeading(block.weekCommencing) + ' · ' + dayLabel(block.day) + ' · ' + categoryLabel(block.category);
     fillForm(block.customer, block.product, block.packingFormat);
     editorVolume.value = block.volume == null ? '' : String(block.volume);
     fillStartOptions(block.startOffset);
@@ -663,7 +666,7 @@
     if (products.ready()) focusCustomerField();
   }
 
-  function openCreate(day, category, hour) {
+  function openCreate(day, category, hour, week) {
     if (editorMode === 'edit') dismissEditor();
     else if (editorMode === 'add') closeEditor();
     draft = {
@@ -672,13 +675,13 @@
       startOffset: hour * 60,
       endOffset: hour * 60 + 60,
       backgroundColour: data.DEFAULT_COLOUR,
-      weekCommencing: data.getState().weekCommencing
+      weekCommencing: week || data.getState().weekCommencing
     };
     editingId = null;
     editorSnapshot = null;
     setEditorMode('add');
     filling = true;
-    editorLane.textContent = dayLabel(day) + ' · ' + categoryLabel(category);
+    editorLane.textContent = weekHeading(draft.weekCommencing) + ' · ' + dayLabel(day) + ' · ' + categoryLabel(category);
     fillForm('', '', '');
     editorVolume.value = '';
     fillStartOptions(draft.startOffset);
@@ -705,8 +708,8 @@
     refreshDuration(updated);
   }
 
-  function createBlock(day, category, hour) {
-    openCreate(day, category, hour);
+  function createBlock(day, category, hour, week) {
+    openCreate(day, category, hour, week);
   }
 
   function finishDrag(commit) {
@@ -727,6 +730,7 @@
         var restored = data.updateBlock(info.id, {
           day: info.day,
           category: info.category,
+          weekCommencing: info.week,
           startOffset: info.startOffset,
           endOffset: info.endOffset
         });
@@ -736,7 +740,7 @@
     }
 
     if (info.kind === 'create') {
-      if (!info.moved) createBlock(info.day, info.category, info.hour);
+      if (!info.moved) createBlock(info.day, info.category, info.hour, info.week);
       return;
     }
 
@@ -745,7 +749,8 @@
     var changed = block.startOffset !== info.startOffset ||
       block.endOffset !== info.endOffset ||
       block.day !== info.day ||
-      block.category !== info.category;
+      block.category !== info.category ||
+      block.weekCommencing !== info.week;
     if (changed) data.persist();
     else openEditor(info.id, 'edit');
   }
@@ -806,6 +811,7 @@
       if (lane) {
         patch.day = lane.dataset.day;
         patch.category = lane.dataset.category;
+        patch.weekCommencing = lane.dataset.week;
         drag.lane = lane;
         lane.classList.add('is-drop-target');
       }
@@ -855,7 +861,6 @@
   }
 
   function onPointerDown(event) {
-    if (!weekPop.hidden) return;
     if (event.button !== 0 || drag) return;
     var handle = event.target.closest('.prod-handle');
     var blockNode = event.target.closest('.prod-block');
@@ -872,6 +877,7 @@
         y: event.clientY,
         moved: false,
         lane: lane,
+        week: lane.dataset.week,
         day: lane.dataset.day,
         category: lane.dataset.category,
         startOffset: Number(blockNode.dataset.start),
@@ -886,6 +892,7 @@
         y: event.clientY,
         moved: false,
         lane: lane,
+        week: lane.dataset.week,
         day: lane.dataset.day,
         category: lane.dataset.category,
         hour: hourAt(lane, event.clientY)
@@ -900,131 +907,188 @@
     window.addEventListener('mouseup', onMouseUp);
   }
 
-  function isoFromDate(date) {
-    var month = date.getMonth() + 1;
-    var day = date.getDate();
-    return date.getFullYear() + '-' + (month < 10 ? '0' : '') + month + '-' + (day < 10 ? '0' : '') + day;
+  function availableYears() {
+    var current = data.productionInfo(data.mondayISO(new Date()));
+    var years = {};
+    var year;
+    for (year = current.year - 1; year <= current.year + 2; year++) years[year] = true;
+    data.getState().blocks.forEach(function (block) {
+      var info = data.productionInfo(block.weekCommencing);
+      if (info) years[info.year] = true;
+    });
+    return Object.keys(years).map(Number).sort(function (a, b) { return a - b; });
   }
 
-  function formatFull(date) {
-    return date.getDate() + ' ' + MONTHS_SHORT[date.getMonth()] + ' ' + date.getFullYear();
+  function fillYearSelect(selected) {
+    yearSelect.innerHTML = '';
+    availableYears().forEach(function (year) {
+      var option = document.createElement('option');
+      option.value = String(year);
+      option.textContent = String(year);
+      yearSelect.appendChild(option);
+    });
+    yearSelect.value = String(selected);
   }
 
-  function weekRangeLabel(monday) {
-    var sunday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6);
-    if (monday.getFullYear() !== sunday.getFullYear()) return formatFull(monday) + ' – ' + formatFull(sunday);
-    if (monday.getMonth() !== sunday.getMonth()) {
-      return monday.getDate() + ' ' + MONTHS_SHORT[monday.getMonth()] + ' – ' +
-        sunday.getDate() + ' ' + MONTHS_SHORT[sunday.getMonth()] + ' ' + sunday.getFullYear();
+  function fillWeekJump(year, selected) {
+    weekJump.innerHTML = '';
+    data.productionWeeks(year).forEach(function (info) {
+      var monday = data.parseISODate(info.weekCommencing);
+      var option = document.createElement('option');
+      option.value = info.weekCommencing;
+      option.textContent = 'Week ' + info.week + ' (W/C ' + ukDate(monday) + ')';
+      weekJump.appendChild(option);
+    });
+    if (selected) weekJump.value = selected;
+  }
+
+  function markActive(iso) {
+    var boards = grid.querySelectorAll('.sch-board');
+    for (var i = 0; i < boards.length; i++) {
+      boards[i].classList.toggle('is-active', boards[i].dataset.week === iso);
     }
-    return monday.getDate() + '–' + sunday.getDate() + ' ' + MONTHS_SHORT[sunday.getMonth()] + ' ' + sunday.getFullYear();
   }
 
-  function paintWeek() {
-    var iso = data.getState().weekCommencing;
-    var monday = data.parseISODate(iso);
-    if (!monday) return;
-    var full = formatFull(monday);
-    var range = weekRangeLabel(monday);
-    weekLabel.textContent = full;
-    weekRange.textContent = range;
-    weekToggle.setAttribute('aria-label', 'Week commencing ' + full + ', Monday to Sunday, ' + range);
-    runSuffix.value = data.runSuffixFor(iso);
-  }
-
-  function closeWeekPop() {
-    weekPop.hidden = true;
-    weekToggle.setAttribute('aria-expanded', 'false');
-  }
-
-  function renderCalendar() {
-    var year = calendarMonth.getFullYear();
-    var month = calendarMonth.getMonth();
-    weekMonthLabel.textContent = MONTHS[month] + ' ' + year;
-    var selected = data.getState().weekCommencing;
-    var start = new Date(year, month, 1);
-    var weekday = start.getDay();
-    start.setDate(start.getDate() + (weekday === 0 ? -6 : 1 - weekday));
-    var monthEnd = new Date(year, month + 1, 0);
-    var today = new Date();
-    weekCal.innerHTML = '';
-    var cursor = new Date(start.getFullYear(), start.getMonth(), start.getDate());
-    while (cursor <= monthEnd) {
-      var monday = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate());
-      var mondayIso = isoFromDate(monday);
-      var row = document.createElement('button');
-      row.type = 'button';
-      row.className = 'sch-week-row' + (mondayIso === selected ? ' is-selected' : '');
-      row.setAttribute('aria-pressed', mondayIso === selected ? 'true' : 'false');
-      row.setAttribute('aria-label', 'Week commencing ' + formatFull(monday));
-      for (var day = 0; day < 7; day++) {
-        var date = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + day);
-        var cell = document.createElement('span');
-        cell.textContent = String(date.getDate());
-        if (date.getMonth() !== month) cell.className = 'is-outside';
-        if (date.getFullYear() === today.getFullYear() && date.getMonth() === today.getMonth() && date.getDate() === today.getDate()) {
-          cell.className = (cell.className ? cell.className + ' ' : '') + 'is-today';
-        }
-        row.appendChild(cell);
+  function renderYear(year) {
+    Object.keys(laneMap).forEach(function (key) { delete laneMap[key]; });
+    var weeks = data.productionWeeks(year);
+    var today = data.productionInfo(data.mondayISO(new Date()));
+    var fragment = document.createDocumentFragment();
+    var lastMonth = '';
+    weeks.forEach(function (info) {
+      var monday = data.parseISODate(info.weekCommencing);
+      var monthKey = monday.getFullYear() + '-' + monday.getMonth();
+      if (monthKey !== lastMonth) {
+        var month = document.createElement('h2');
+        month.className = 'sch-month';
+        var monthText = document.createElement('span');
+        monthText.textContent = MONTHS[monday.getMonth()] + ' ' + monday.getFullYear();
+        month.appendChild(monthText);
+        fragment.appendChild(month);
+        lastMonth = monthKey;
       }
-      row.addEventListener('click', function (iso) {
-        return function () { selectWeek(iso); };
-      }(mondayIso));
-      weekCal.appendChild(row);
-      cursor.setDate(cursor.getDate() + 7);
+      var board = document.createElement('section');
+      board.className = 'sch-board';
+      board.dataset.week = info.weekCommencing;
+      if (today && today.weekCommencing === info.weekCommencing) board.classList.add('is-current');
+      var head = document.createElement('div');
+      head.className = 'sch-board-head';
+      var label = document.createElement('div');
+      label.className = 'sch-board-label';
+      var title = document.createElement('h3');
+      title.className = 'sch-board-title';
+      title.textContent = weekHeading(info.weekCommencing);
+      var suffix = document.createElement('span');
+      suffix.className = 'sch-board-suffix';
+      suffix.textContent = info.suffix;
+      var weekGrid = el('sch-grid');
+      label.appendChild(title);
+      label.appendChild(suffix);
+      head.appendChild(label);
+      board.appendChild(head);
+      board.appendChild(weekGrid);
+      fragment.appendChild(board);
+      buildWeekGrid(weekGrid, info.weekCommencing);
+    });
+    grid.innerHTML = '';
+    grid.appendChild(fragment);
+    renderBlocks();
+  }
+
+  function scrollToWeek(iso, smooth) {
+    var board = grid.querySelector('.sch-board[data-week="' + iso + '"]');
+    if (!board) return;
+    markActive(iso);
+    var top = board.getBoundingClientRect().top - scroll.getBoundingClientRect().top + scroll.scrollTop;
+    if (top < 0) top = 0;
+    scrollLock = true;
+    scroll.scrollTo({ top: top, behavior: smooth ? 'smooth' : 'auto' });
+    window.setTimeout(function () { scrollLock = false; }, smooth ? 800 : 80);
+  }
+
+  function showYear(year, weekIso, smooth) {
+    var weeks = data.productionWeeks(year);
+    if (!weeks.length) return;
+    var iso = weekIso;
+    var found = false;
+    for (var i = 0; i < weeks.length; i++) {
+      if (weeks[i].weekCommencing === iso) found = true;
     }
+    if (!found) iso = weeks[0].weekCommencing;
+    if (editorMode) dismissEditor();
+    navigating = true;
+    fillYearSelect(year);
+    fillWeekJump(year, iso);
+    renderYear(year);
+    data.setMeta({ weekCommencing: iso });
+    runSuffix.value = data.runSuffixFor(iso);
+    markActive(iso);
+    navigating = false;
+    window.requestAnimationFrame(function () {
+      window.requestAnimationFrame(function () { scrollToWeek(iso, !!smooth); });
+    });
   }
 
-  function openWeekPop() {
-    var monday = data.parseISODate(data.getState().weekCommencing) || new Date();
-    calendarMonth = new Date(monday.getFullYear(), monday.getMonth(), 1);
-    renderCalendar();
-    weekPop.hidden = false;
-    weekToggle.setAttribute('aria-expanded', 'true');
-  }
-
-  function moveCalendar(months) {
-    calendarMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + months, 1);
-    renderCalendar();
-  }
-
-  function selectWeek(iso) {
-    var date = data.parseISODate(iso);
-    if (!date) return;
-    var monday = data.mondayISO(date);
-    if (monday !== data.getState().weekCommencing) {
-      data.setMeta({ weekCommencing: monday });
-      data.persist();
-      renderBlocks();
+  function syncVisibleWeek() {
+    if (scrollLock || navigating) return;
+    var edge = scroll.getBoundingClientRect().top + 12;
+    var boards = grid.querySelectorAll('.sch-board');
+    var chosen = null;
+    for (var i = 0; i < boards.length; i++) {
+      if (boards[i].getBoundingClientRect().top <= edge) chosen = boards[i];
+      else break;
     }
-    paintWeek();
-    closeWeekPop();
-  }
-
-  function shiftWeek(days) {
-    var monday = data.parseISODate(data.getState().weekCommencing);
-    if (!monday) return;
-    monday.setDate(monday.getDate() + days);
-    selectWeek(isoFromDate(monday));
+    if (!chosen) chosen = boards[0];
+    if (!chosen) return;
+    var iso = chosen.dataset.week;
+    if (iso === data.getState().weekCommencing && chosen.classList.contains('is-active')) return;
+    markActive(iso);
+    if (weekJump.value !== iso) weekJump.value = iso;
+    runSuffix.value = data.runSuffixFor(iso);
+    data.setMeta({ weekCommencing: iso });
   }
 
   function bindMeta() {
-    paintWeek();
     notes.value = data.getState().notes;
     notes.addEventListener('input', function () {
       data.setMeta({ notes: notes.value });
       data.persist();
     });
-    weekPrev.addEventListener('click', function () { shiftWeek(-7); });
-    weekNext.addEventListener('click', function () { shiftWeek(7); });
-    weekToggle.addEventListener('click', function () {
-      if (weekPop.hidden) openWeekPop();
-      else closeWeekPop();
+    yearSelect.addEventListener('change', function () {
+      if (navigating) return;
+      var year = Number(yearSelect.value);
+      var current = data.productionInfo(data.mondayISO(new Date()));
+      var iso = current && current.year === year ? current.weekCommencing : data.productionWeeks(year)[0].weekCommencing;
+      showYear(year, iso, false);
     });
-    weekMonthPrev.addEventListener('click', function () { moveCalendar(-1); });
-    weekMonthNext.addEventListener('click', function () { moveCalendar(1); });
-    weekYearPrev.addEventListener('click', function () { moveCalendar(-12); });
-    weekYearNext.addEventListener('click', function () { moveCalendar(12); });
+    weekJump.addEventListener('change', function () {
+      if (navigating) return;
+      var iso = weekJump.value;
+      data.setMeta({ weekCommencing: iso });
+      runSuffix.value = data.runSuffixFor(iso);
+      scrollToWeek(iso, true);
+    });
+    currentWeek.addEventListener('click', function () {
+      var current = data.productionInfo(data.mondayISO(new Date()));
+      if (!current) return;
+      if (String(yearSelect.value) !== String(current.year)) {
+        showYear(current.year, current.weekCommencing, true);
+        return;
+      }
+      if (weekJump.value !== current.weekCommencing) weekJump.value = current.weekCommencing;
+      data.setMeta({ weekCommencing: current.weekCommencing });
+      runSuffix.value = current.suffix;
+      scrollToWeek(current.weekCommencing, true);
+    });
+    var scrollTimer = null;
+    scroll.addEventListener('scroll', function () {
+      if (scrollLock || navigating) return;
+      if (scrollTimer) window.clearTimeout(scrollTimer);
+      scrollTimer = window.setTimeout(function () {
+        scrollTimer = null;
+        syncVisibleWeek();
+      }, 60);
+    });
   }
 
   function bindEditor() {
@@ -1199,12 +1263,10 @@
       dismissEditor();
       return;
     }
-    if (!weekPop.hidden) closeWeekPop();
   });
 
   document.addEventListener('pointerdown', function (event) {
     if (isCustomerOpen() && !event.target.closest('.sch-customer')) closeCustomerList();
-    if (!weekPop.hidden && weekPicker && !weekPicker.contains(event.target)) closeWeekPop();
   });
 
   var sourceNotice = '';
@@ -1246,9 +1308,9 @@
 
   scroll.addEventListener('pointerdown', onPointerDown);
   renderLegend();
-  buildGrid();
-  renderBlocks();
   bindMeta();
   bindEditor();
+  var opening = data.productionInfo(data.mondayISO(new Date()));
+  showYear(opening.year, opening.weekCommencing, false);
   products.load().catch(function () { /* status already reported */ });
 })();
