@@ -184,6 +184,7 @@
       notes: '',
       dayNotes: {},
       nightShift: {},
+      saturday: {},
       blocks: []
     };
   }
@@ -390,6 +391,7 @@
       if (typeof data.notes === 'string') fresh.notes = data.notes.slice(0, 4000);
       fresh.dayNotes = cleanDayNotes(data.dayNotes);
       fresh.nightShift = cleanNightShift(data.nightShift);
+      fresh.saturday = cleanNightShift(data.saturday);
       if (typeof data.weekCommencing === 'string') {
         var monday = canonicalWeek(data.weekCommencing);
         if (monday) {
@@ -443,6 +445,7 @@
       notes: state.notes,
       dayNotes: copyDayNotes(),
       nightShift: Object.assign({}, state.nightShift),
+      saturday: Object.assign({}, state.saturday),
       blocks: state.blocks.map(present)
     };
   }
@@ -477,6 +480,19 @@
     if (!monday) return false;
     if (on) state.nightShift[monday] = true;
     else delete state.nightShift[monday];
+    return true;
+  }
+
+  function isSaturdayRunning(week) {
+    var monday = canonicalWeek(week);
+    return !!(monday && state.saturday[monday]);
+  }
+
+  function setSaturdayRunning(week, on) {
+    var monday = canonicalWeek(week);
+    if (!monday) return false;
+    if (on) state.saturday[monday] = true;
+    else delete state.saturday[monday];
     return true;
   }
 
@@ -583,6 +599,8 @@
     setDayNote: setDayNote,
     isNightManual: isNightManual,
     setNightManual: setNightManual,
+    isSaturdayRunning: isSaturdayRunning,
+    setSaturdayRunning: setSaturdayRunning,
     addBlock: addBlock,
     updateBlock: updateBlock,
     removeBlock: removeBlock,

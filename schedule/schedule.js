@@ -171,9 +171,14 @@
     target.appendChild(corner);
 
     data.DAYS.forEach(function (day, dayIndex) {
-      var head = el('sch-day is-day-end', day.label);
+      var head = el('sch-day is-day-end', '');
       head.style.gridColumn = (2 + dayIndex * 5) + ' / span 5';
       head.style.gridRow = '1';
+      head.dataset.day = day.id;
+      if (day.id === 'saturday') head.appendChild(saturdayToggle(target, week));
+      var title = document.createElement('span');
+      title.textContent = day.label;
+      head.appendChild(title);
       target.appendChild(head);
     });
 
@@ -181,6 +186,7 @@
       data.CATEGORIES.forEach(function (category, categoryIndex) {
         var classes = 'sch-cat' + (categoryIndex === data.CATEGORIES.length - 1 ? ' is-day-end' : '');
         var cell = el(classes, category.label);
+        cell.dataset.day = day.id;
         cell.style.gridColumn = String(2 + dayIndex * 5 + categoryIndex);
         cell.style.gridRow = '2';
         target.appendChild(cell);
@@ -224,6 +230,31 @@
       addDayNote(target, week, day, dayIndex, 'important', 'Important', '4');
       addDayNote(target, week, day, dayIndex, 'absence', 'Staff A/L or absence', '5');
     });
+    paintSaturday(target, week);
+  }
+
+  function saturdayToggle(grid, week) {
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'sch-saturday-toggle';
+    button.setAttribute('aria-label', 'Run Saturday');
+    button.addEventListener('click', function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      data.setSaturdayRunning(week, !data.isSaturdayRunning(week));
+      data.persist();
+      paintSaturday(grid, week);
+    });
+    return button;
+  }
+
+  function paintSaturday(grid, week) {
+    var running = data.isSaturdayRunning(week);
+    grid.classList.toggle('is-saturday-off', !running);
+    var button = grid.querySelector('.sch-saturday-toggle');
+    if (!button) return;
+    button.classList.toggle('is-on', running);
+    button.setAttribute('aria-pressed', running ? 'true' : 'false');
   }
 
   function fitDayNote(input) {
@@ -245,6 +276,7 @@
     var saved = data.getState().dayNotes[date] || {};
     var box = document.createElement('label');
     box.className = 'sch-day-note' + (dayIndex === data.DAYS.length - 1 ? ' is-day-end' : '');
+    box.dataset.day = day.id;
     box.style.gridColumn = (2 + dayIndex * 5) + ' / span 5';
     box.style.gridRow = row;
     var caption = document.createElement('span');
@@ -874,7 +906,11 @@
       var length = end - start;
       var lane = laneUnderPoint(clientX, clientY);
       clearDropTarget();
-      if (!(lane && lane.dataset.week !== drag.week)) {
+      var otherWeek = lane && lane.dataset.week !== drag.week;
+      if (otherWeek) {
+        start = drag.startOffset;
+        end = drag.endOffset;
+      } else {
         start = drag.startOffset + delta;
         end = start + length;
         if (start < 0) {
@@ -884,6 +920,10 @@
         if (end > data.DAY_LENGTH) {
           end = data.DAY_LENGTH;
           start = end - length;
+        }
+        if (!drag.nightAtStart[drag.week] && end > 14 * 60) {
+          end = 14 * 60;
+          start = Math.max(0, end - length);
         }
       }
       if (lane) {
@@ -906,7 +946,11 @@
       if (drag.nightAtStart[updated.weekCommencing] === undefined) {
         drag.nightAtStart[updated.weekCommencing] = othersNeedNight(updated.weekCommencing, drag.id);
       }
-      previewNight(updated.weekCommencing);
+      if (updated.weekCommencing === drag.week && (drag.nightAtStart[drag.week] || data.needsNight(updated.endOffset))) {
+        previewNight(updated.weekCommencing);
+      } else {
+        applyNightWeek(updated.weekCommencing);
+      }
       if (previousWeek && previousWeek !== updated.weekCommencing) restoreDragNight(previousWeek);
     }
   }
