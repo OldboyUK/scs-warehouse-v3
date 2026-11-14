@@ -364,7 +364,6 @@
   border: 1px solid #111;
   border-radius: 8px;
   overscroll-behavior: contain;
-  container-type: inline-size;
 }
 
 /* Reserved for a later Booking Generator. Width stays zero until that panel is built. */
@@ -383,16 +382,11 @@
 }
 
 .sch-month {
-  position: sticky;
-  left: 0;
-  z-index: 2;
   display: flex;
   align-items: center;
   gap: 16px;
-  box-sizing: border-box;
-  width: 100cqi;
-  margin: 28px 0 22px;
-  padding: 0 12px;
+  margin: 28px 12px 22px;
+  padding: 0;
   background: none;
   border: 0;
   color: #fff;
@@ -404,12 +398,7 @@
   flex: 1 1 0;
   height: 2px;
   border-radius: 999px;
-  background: linear-gradient(90deg, rgba(125, 211, 252, 0.08), #7dd3fc 86%, #38bdf8);
-  box-shadow: 0 0 8px rgba(56, 189, 248, 0.55);
-}
-
-.sch-month::after {
-  background: linear-gradient(90deg, #38bdf8, #7dd3fc 14%, rgba(125, 211, 252, 0.08));
+  background: #d7e4f5;
 }
 
 .sch-month-pill {
@@ -418,25 +407,34 @@
   justify-content: center;
   gap: 10px;
   flex: 0 0 auto;
-  min-height: 42px;
-  padding: 8px 26px;
+  box-sizing: border-box;
+  width: 312px;
+  height: 42px;
+  padding: 0 22px;
   border-radius: 999px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0) 46%),
-    linear-gradient(180deg, #3b82f6 0%, #1d4ed8 56%, #1e3a8a 100%);
   color: #fff;
   font-size: 18px;
   font-weight: 800;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.12em;
   line-height: 1;
   text-transform: uppercase;
   white-space: nowrap;
-  border: 1px solid #dbeafe;
-  box-shadow:
-    0 0 0 1px rgba(147, 197, 253, 0.55),
-    0 0 16px rgba(59, 130, 246, 0.65),
-    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(0, 0, 0, 0.28);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
 }
+
+.sch-month-pill[data-month="0"] { background-color: #0171E4; }
+.sch-month-pill[data-month="1"] { background-color: #00C3E1; }
+.sch-month-pill[data-month="2"] { background-color: #02A344; }
+.sch-month-pill[data-month="3"] { background-color: #8EC914; }
+.sch-month-pill[data-month="4"] { background-color: #FDD703; }
+.sch-month-pill[data-month="5"] { background-color: #FAB001; }
+.sch-month-pill[data-month="6"] { background-color: #FCB201; }
+.sch-month-pill[data-month="7"] { background-color: #B605B3; }
+.sch-month-pill[data-month="8"] { background-color: #EA1A73; }
+.sch-month-pill[data-month="9"] { background-color: #FE5F01; }
+.sch-month-pill[data-month="10"] { background-color: #F4341B; }
+.sch-month-pill[data-month="11"] { background-color: #E70916; }
 
 .sch-month-icon {
   width: 18px;

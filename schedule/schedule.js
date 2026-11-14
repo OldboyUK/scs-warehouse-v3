@@ -1111,11 +1111,12 @@
     }
   }
 
-  function monthDivider(label) {
+  function monthDivider(monthIndex, year) {
     var month = document.createElement('h2');
     month.className = 'sch-month';
     var pill = document.createElement('span');
     pill.className = 'sch-month-pill';
+    pill.dataset.month = String(monthIndex);
     var icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     icon.setAttribute('viewBox', '0 0 24 24');
     icon.setAttribute('aria-hidden', 'true');
@@ -1129,7 +1130,7 @@
     shape.setAttribute('d', 'M8 3v3M16 3v3M4.5 9h15M6 5.5h12a1.5 1.5 0 0 1 1.5 1.5v11A1.5 1.5 0 0 1 18 19.5H6A1.5 1.5 0 0 1 4.5 18V7A1.5 1.5 0 0 1 6 5.5z');
     icon.appendChild(shape);
     var monthText = document.createElement('span');
-    monthText.textContent = label;
+    monthText.textContent = MONTHS[monthIndex] + ' ' + year;
     pill.appendChild(icon);
     pill.appendChild(monthText);
     month.appendChild(pill);
@@ -1146,7 +1147,7 @@
       var monday = data.parseISODate(info.weekCommencing);
       var monthKey = monday.getFullYear() + '-' + monday.getMonth();
       if (monthKey !== lastMonth) {
-        fragment.appendChild(monthDivider(MONTHS[monday.getMonth()] + ' ' + monday.getFullYear()));
+        fragment.appendChild(monthDivider(monday.getMonth(), monday.getFullYear()));
         lastMonth = monthKey;
       }
       var board = document.createElement('section');
