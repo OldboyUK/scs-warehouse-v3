@@ -16,7 +16,6 @@
   var scroll = document.getElementById('scheduleScroll');
   var grid = document.getElementById('scheduleGrid');
   var runSuffix = document.getElementById('runSuffix');
-  var weekCommencing = document.getElementById('weekCommencing');
   var notes = document.getElementById('importantNotes');
   var modal = document.getElementById('blockEditor');
   var editorTitle = document.getElementById('editorTitle');
@@ -32,6 +31,8 @@
   var editorEnd = document.getElementById('editorEnd');
   var editorDuration = document.getElementById('editorDuration');
   var editorSwatches = document.getElementById('editorSwatches');
+  var editorStatus = document.getElementById('editorStatus');
+  var editorCustomerList = document.getElementById('editorCustomerList');
   var editorDelete = document.getElementById('editorDelete');
   var editorDismiss = document.getElementById('editorDismiss');
   var editorConfirm = document.getElementById('editorConfirm');
@@ -39,6 +40,27 @@
   var sourceStatus = document.getElementById('sourceStatus');
   var sourceMessage = document.getElementById('sourceMessage');
   var sourceRetry = document.getElementById('sourceRetry');
+  var statusLegend = document.getElementById('statusLegend');
+  var weekPrev = document.getElementById('weekPrev');
+  var weekNext = document.getElementById('weekNext');
+  var weekToggle = document.getElementById('weekToggle');
+  var weekLabel = document.getElementById('weekLabel');
+  var weekRange = document.getElementById('weekRange');
+  var weekPop = document.getElementById('weekPop');
+  var weekYearPrev = document.getElementById('weekYearPrev');
+  var weekYearNext = document.getElementById('weekYearNext');
+  var weekMonthPrev = document.getElementById('weekMonthPrev');
+  var weekMonthNext = document.getElementById('weekMonthNext');
+  var weekMonthLabel = document.getElementById('weekMonthLabel');
+  var weekCal = document.getElementById('weekCal');
+  var weekPicker = document.getElementById('weekPicker');
+  var activeCustomer = '';
+  var customerMatches = [];
+  var customerIndex = -1;
+  var customerQuiet = false;
+  var calendarMonth = null;
+  var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  var MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
   function el(className, text) {
     var node = document.createElement('div');
@@ -127,7 +149,9 @@
     Object.keys(laneMap).forEach(function (key) {
       laneMap[key].querySelectorAll('.prod-block').forEach(function (node) { node.remove(); });
     });
-    data.getState().blocks.forEach(function (block) {
+    var state = data.getState();
+    state.blocks.forEach(function (block) {
+      if (block.weekCommencing !== state.weekCommencing) return;
       var lane = laneMap[laneKey(block.day, block.category)];
       if (lane) lane.appendChild(renderBlock(block));
     });
@@ -218,11 +242,14 @@
   }
 
   function markSwatch(colour) {
+    var chosen = '';
     editorSwatches.querySelectorAll('.sch-swatch').forEach(function (swatch) {
       var selected = swatch.dataset.colour === colour;
       swatch.classList.toggle('is-selected', selected);
       swatch.setAttribute('aria-pressed', selected ? 'true' : 'false');
+      if (selected) chosen = colour;
     });
+    editorStatus.textContent = data.statusLabel(chosen || colour);
   }
 
   function refreshDuration(block) {
@@ -247,6 +274,7 @@
       category: block.category,
       startOffset: block.startOffset,
       endOffset: block.endOffset,
+      weekCommencing: block.weekCommencing,
       customer: block.customer,
       product: block.product,
       liquidCode: block.liquidCode,
@@ -323,9 +351,9 @@
 
   function formReady() {
     return products.ready() &&
+      !!canonicalCustomer(editorCustomer.value) &&
       currentMatch &&
       !currentMatch.ambiguous &&
-      editorCustomer.value &&
       editorProduct.value &&
       editorFormat.value &&
       readVolume() != null;
@@ -363,11 +391,12 @@
   function applyLiquid() {
     currentMatch = null;
     editorLiquid.value = '';
-    if (!products.ready() || !editorCustomer.value || !editorProduct.value) {
+    var customerName = canonicalCustomer(editorCustomer.value);
+    if (!products.ready() || !customerName || !editorProduct.value) {
       if (products.ready()) showFormError('');
       return;
     }
-    var result = products.lookup(editorCustomer.value, editorProduct.value);
+    var result = products.lookup(customerName, editorProduct.value);
     if (!result) {
       showFormError('The selected customer and product could not be found among active products in PRODUCT DATABASE.');
       return;
@@ -381,17 +410,149 @@
     showFormError('');
   }
 
-  function fillForm(customer, product, format) {
-    fillSelect(editorCustomer, products.customers(), 'Select a customer', customer);
-    var chosenCustomer = editorCustomer.value;
-    var list = chosenCustomer ? products.productsFor(chosenCustomer) : [];
+  function customerQuery(value) {
+    return String(value || '').trim().toLowerCase();
+  }
+
+  function canonicalCustomer(value) {
+    var query = customerQuery(value);
+    if (!query || !products.ready()) return '';
+    var list = products.customers();
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].trim().toLowerCase() === query) return list[i];
+    }
+    return '';
+  }
+
+  function matchingCustomers(value) {
+    var query = customerQuery(value);
+    var list = products.customers();
+    if (!query) return list;
+    return list.filter(function (name) {
+      return name.trim().toLowerCase().indexOf(query) !== -1;
+    });
+  }
+
+  function isCustomerOpen() {
+    return editorCustomerList && !editorCustomerList.hidden;
+  }
+
+  function closeCustomerList() {
+    editorCustomerList.hidden = true;
+    editorCustomerList.innerHTML = '';
+    editorCustomer.setAttribute('aria-expanded', 'false');
+    editorCustomer.removeAttribute('aria-activedescendant');
+    customerIndex = -1;
+    customerMatches = [];
+  }
+
+  function markCustomerOption(scroll) {
+    var options = editorCustomerList.querySelectorAll('.sch-customer-option');
+    options.forEach(function (option, index) {
+      var selected = index === customerIndex;
+      option.classList.toggle('is-active', selected);
+      option.setAttribute('aria-selected', selected ? 'true' : 'false');
+      if (selected) {
+        editorCustomer.setAttribute('aria-activedescendant', option.id);
+        if (scroll && option.scrollIntoView) option.scrollIntoView({ block: 'nearest' });
+      }
+    });
+  }
+
+  function openCustomerList() {
+    if (!products.ready() || editorCustomer.disabled) return;
+    customerMatches = matchingCustomers(editorCustomer.value);
+    editorCustomerList.innerHTML = '';
+    if (!customerMatches.length) {
+      var empty = document.createElement('p');
+      empty.className = 'sch-customer-empty';
+      empty.textContent = customerQuery(editorCustomer.value)
+        ? 'No matching customers found'
+        : 'No customers available';
+      editorCustomerList.appendChild(empty);
+      customerIndex = -1;
+      editorCustomer.removeAttribute('aria-activedescendant');
+    } else {
+      customerMatches.forEach(function (name, index) {
+        var option = document.createElement('button');
+        option.type = 'button';
+        option.className = 'sch-customer-option';
+        option.id = 'editorCustomerOption' + index;
+        option.setAttribute('role', 'option');
+        option.tabIndex = -1;
+        option.dataset.index = String(index);
+        option.textContent = name;
+        option.addEventListener('mouseenter', function () {
+          customerIndex = index;
+          markCustomerOption(false);
+        });
+        editorCustomerList.appendChild(option);
+      });
+      customerIndex = 0;
+      markCustomerOption(false);
+    }
+    editorCustomerList.hidden = false;
+    editorCustomer.setAttribute('aria-expanded', 'true');
+  }
+
+  function moveCustomer(delta) {
+    if (!customerMatches.length) return;
+    if (customerIndex < 0) customerIndex = delta > 0 ? 0 : customerMatches.length - 1;
+    else customerIndex = Math.max(0, Math.min(customerMatches.length - 1, customerIndex + delta));
+    markCustomerOption(true);
+  }
+
+  function syncCustomerFromInput() {
+    if (filling) return;
+    var next = canonicalCustomer(editorCustomer.value);
+    if (next === activeCustomer) {
+      refreshSubmit();
+      return;
+    }
+    activeCustomer = next;
+    filling = true;
     fillSelect(
       editorProduct,
-      list,
-      chosenCustomer ? 'Select a product' : 'Select a customer first',
+      next ? products.productsFor(next) : [],
+      next ? 'Select a product' : 'Select a customer first',
+      ''
+    );
+    editorProduct.disabled = !products.ready() || !next;
+    filling = false;
+    applyLiquid();
+    refreshSubmit();
+  }
+
+  function chooseCustomer(name) {
+    if (!name) return;
+    customerQuiet = true;
+    editorCustomer.value = name;
+    closeCustomerList();
+    syncCustomerFromInput();
+    editorCustomer.focus();
+    customerQuiet = false;
+  }
+
+  function focusCustomerField() {
+    customerQuiet = true;
+    editorCustomer.focus();
+    customerQuiet = false;
+  }
+
+  function fillForm(customer, product, format) {
+    var raw = String(customer || '');
+    var canonical = canonicalCustomer(raw);
+    activeCustomer = canonical;
+    editorCustomer.value = canonical || raw;
+    editorCustomer.disabled = !products.ready();
+    closeCustomerList();
+    fillSelect(
+      editorProduct,
+      canonical ? products.productsFor(canonical) : [],
+      canonical ? 'Select a product' : 'Select a customer first',
       product
     );
-    editorProduct.disabled = !products.ready() || !chosenCustomer;
+    editorProduct.disabled = !products.ready() || !canonical;
     fillSelect(editorFormat, products.formats(), 'Select a packing format', format);
     applyLiquid();
   }
@@ -422,7 +583,8 @@
       return;
     }
     var volume = readVolume();
-    var match = products.lookup(editorCustomer.value, editorProduct.value);
+    var customerName = canonicalCustomer(editorCustomer.value);
+    var match = customerName ? products.lookup(customerName, editorProduct.value) : null;
     if (!match || match.ambiguous) {
       if (editorMode === 'edit') restoreSnapshot();
       applyLiquid();
@@ -442,14 +604,15 @@
         product: match.product,
         liquidCode: match.liquidCode,
         packingFormat: editorFormat.value,
-        volume: volume
+        volume: volume,
+        weekCommencing: draft.weekCommencing
       });
       if (!created) {
         showFormError('The production block could not be created.');
         return;
       }
       var lane = laneMap[laneKey(created.day, created.category)];
-      if (lane) lane.appendChild(renderBlock(created));
+      if (lane && created.weekCommencing === data.getState().weekCommencing) lane.appendChild(renderBlock(created));
       data.persist();
       draft = null;
       closeEditor();
@@ -497,7 +660,7 @@
     refreshVolumeMessage();
     refreshSubmit();
     modal.hidden = false;
-    if (products.ready()) editorCustomer.focus();
+    if (products.ready()) focusCustomerField();
   }
 
   function openCreate(day, category, hour) {
@@ -508,7 +671,8 @@
       category: category,
       startOffset: hour * 60,
       endOffset: hour * 60 + 60,
-      backgroundColour: data.DEFAULT_COLOUR
+      backgroundColour: data.DEFAULT_COLOUR,
+      weekCommencing: data.getState().weekCommencing
     };
     editingId = null;
     editorSnapshot = null;
@@ -526,7 +690,7 @@
     refreshVolumeMessage();
     refreshSubmit();
     modal.hidden = false;
-    if (products.ready()) editorCustomer.focus();
+    if (products.ready()) focusCustomerField();
   }
 
   function applyTimes(start, end) {
@@ -691,6 +855,7 @@
   }
 
   function onPointerDown(event) {
+    if (!weekPop.hidden) return;
     if (event.button !== 0 || drag) return;
     var handle = event.target.closest('.prod-handle');
     var blockNode = event.target.closest('.prod-block');
@@ -735,38 +900,143 @@
     window.addEventListener('mouseup', onMouseUp);
   }
 
-  function bindMeta() {
-    var state = data.getState();
-    runSuffix.value = state.runSuffix;
-    weekCommencing.value = state.weekCommencing;
-    notes.value = state.notes;
+  function isoFromDate(date) {
+    var month = date.getMonth() + 1;
+    var day = date.getDate();
+    return date.getFullYear() + '-' + (month < 10 ? '0' : '') + month + '-' + (day < 10 ? '0' : '') + day;
+  }
 
-    runSuffix.addEventListener('input', function () {
-      data.setMeta({ runSuffix: runSuffix.value });
-      data.persist();
-    });
-    weekCommencing.addEventListener('change', function () {
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(weekCommencing.value)) {
-        weekCommencing.value = data.getState().weekCommencing;
-        return;
+  function formatFull(date) {
+    return date.getDate() + ' ' + MONTHS_SHORT[date.getMonth()] + ' ' + date.getFullYear();
+  }
+
+  function weekRangeLabel(monday) {
+    var sunday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6);
+    if (monday.getFullYear() !== sunday.getFullYear()) return formatFull(monday) + ' – ' + formatFull(sunday);
+    if (monday.getMonth() !== sunday.getMonth()) {
+      return monday.getDate() + ' ' + MONTHS_SHORT[monday.getMonth()] + ' – ' +
+        sunday.getDate() + ' ' + MONTHS_SHORT[sunday.getMonth()] + ' ' + sunday.getFullYear();
+    }
+    return monday.getDate() + '–' + sunday.getDate() + ' ' + MONTHS_SHORT[sunday.getMonth()] + ' ' + sunday.getFullYear();
+  }
+
+  function paintWeek() {
+    var iso = data.getState().weekCommencing;
+    var monday = data.parseISODate(iso);
+    if (!monday) return;
+    var full = formatFull(monday);
+    var range = weekRangeLabel(monday);
+    weekLabel.textContent = full;
+    weekRange.textContent = range;
+    weekToggle.setAttribute('aria-label', 'Week commencing ' + full + ', Monday to Sunday, ' + range);
+    runSuffix.value = data.runSuffixFor(iso);
+  }
+
+  function closeWeekPop() {
+    weekPop.hidden = true;
+    weekToggle.setAttribute('aria-expanded', 'false');
+  }
+
+  function renderCalendar() {
+    var year = calendarMonth.getFullYear();
+    var month = calendarMonth.getMonth();
+    weekMonthLabel.textContent = MONTHS[month] + ' ' + year;
+    var selected = data.getState().weekCommencing;
+    var start = new Date(year, month, 1);
+    var weekday = start.getDay();
+    start.setDate(start.getDate() + (weekday === 0 ? -6 : 1 - weekday));
+    var monthEnd = new Date(year, month + 1, 0);
+    var today = new Date();
+    weekCal.innerHTML = '';
+    var cursor = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+    while (cursor <= monthEnd) {
+      var monday = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate());
+      var mondayIso = isoFromDate(monday);
+      var row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'sch-week-row' + (mondayIso === selected ? ' is-selected' : '');
+      row.setAttribute('aria-pressed', mondayIso === selected ? 'true' : 'false');
+      row.setAttribute('aria-label', 'Week commencing ' + formatFull(monday));
+      for (var day = 0; day < 7; day++) {
+        var date = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + day);
+        var cell = document.createElement('span');
+        cell.textContent = String(date.getDate());
+        if (date.getMonth() !== month) cell.className = 'is-outside';
+        if (date.getFullYear() === today.getFullYear() && date.getMonth() === today.getMonth() && date.getDate() === today.getDate()) {
+          cell.className = (cell.className ? cell.className + ' ' : '') + 'is-today';
+        }
+        row.appendChild(cell);
       }
-      data.setMeta({ weekCommencing: weekCommencing.value });
+      row.addEventListener('click', function (iso) {
+        return function () { selectWeek(iso); };
+      }(mondayIso));
+      weekCal.appendChild(row);
+      cursor.setDate(cursor.getDate() + 7);
+    }
+  }
+
+  function openWeekPop() {
+    var monday = data.parseISODate(data.getState().weekCommencing) || new Date();
+    calendarMonth = new Date(monday.getFullYear(), monday.getMonth(), 1);
+    renderCalendar();
+    weekPop.hidden = false;
+    weekToggle.setAttribute('aria-expanded', 'true');
+  }
+
+  function moveCalendar(months) {
+    calendarMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + months, 1);
+    renderCalendar();
+  }
+
+  function selectWeek(iso) {
+    var date = data.parseISODate(iso);
+    if (!date) return;
+    var monday = data.mondayISO(date);
+    if (monday !== data.getState().weekCommencing) {
+      data.setMeta({ weekCommencing: monday });
       data.persist();
-    });
+      renderBlocks();
+    }
+    paintWeek();
+    closeWeekPop();
+  }
+
+  function shiftWeek(days) {
+    var monday = data.parseISODate(data.getState().weekCommencing);
+    if (!monday) return;
+    monday.setDate(monday.getDate() + days);
+    selectWeek(isoFromDate(monday));
+  }
+
+  function bindMeta() {
+    paintWeek();
+    notes.value = data.getState().notes;
     notes.addEventListener('input', function () {
       data.setMeta({ notes: notes.value });
       data.persist();
     });
+    weekPrev.addEventListener('click', function () { shiftWeek(-7); });
+    weekNext.addEventListener('click', function () { shiftWeek(7); });
+    weekToggle.addEventListener('click', function () {
+      if (weekPop.hidden) openWeekPop();
+      else closeWeekPop();
+    });
+    weekMonthPrev.addEventListener('click', function () { moveCalendar(-1); });
+    weekMonthNext.addEventListener('click', function () { moveCalendar(1); });
+    weekYearPrev.addEventListener('click', function () { moveCalendar(-12); });
+    weekYearNext.addEventListener('click', function () { moveCalendar(12); });
   }
 
   function bindEditor() {
-    data.COLOURS.forEach(function (colour) {
+    data.STATUSES.forEach(function (status) {
+      var colour = status.colour;
       var swatch = document.createElement('button');
       swatch.type = 'button';
       swatch.className = 'sch-swatch';
       swatch.dataset.colour = colour;
       swatch.style.background = colour;
-      swatch.setAttribute('aria-label', 'Colour ' + colour);
+      swatch.title = status.label;
+      swatch.setAttribute('aria-label', status.label);
       swatch.setAttribute('aria-pressed', 'false');
       swatch.addEventListener('click', function () {
         if (editorMode === 'add' && draft) {
@@ -782,19 +1052,69 @@
       editorSwatches.appendChild(swatch);
     });
 
-    editorCustomer.addEventListener('change', function () {
+    editorCustomer.addEventListener('input', function () {
       if (filling) return;
-      filling = true;
-      fillSelect(
-        editorProduct,
-        products.productsFor(editorCustomer.value),
-        editorCustomer.value ? 'Select a product' : 'Select a customer first',
-        ''
-      );
-      editorProduct.disabled = !products.ready() || !editorCustomer.value;
-      filling = false;
-      applyLiquid();
-      refreshSubmit();
+      openCustomerList();
+      syncCustomerFromInput();
+    });
+
+    editorCustomer.addEventListener('focus', function () {
+      if (customerQuiet || filling) return;
+      openCustomerList();
+    });
+
+    editorCustomer.addEventListener('click', function () {
+      if (!isCustomerOpen()) openCustomerList();
+    });
+
+    editorCustomer.closest('.sch-customer').addEventListener('click', function (event) {
+      if (event.target.closest('.sch-customer-option')) return;
+      if (!isCustomerOpen()) openCustomerList();
+    });
+
+    editorCustomer.addEventListener('blur', function () {
+      var canonical = canonicalCustomer(editorCustomer.value);
+      if (canonical && editorCustomer.value !== canonical) editorCustomer.value = canonical;
+      closeCustomerList();
+    });
+
+    editorCustomer.addEventListener('keydown', function (event) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        if (!isCustomerOpen()) {
+          openCustomerList();
+          return;
+        }
+        moveCustomer(1);
+        return;
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        if (!isCustomerOpen()) {
+          openCustomerList();
+          return;
+        }
+        moveCustomer(-1);
+        return;
+      }
+      if (event.key === 'Enter') {
+        if (!isCustomerOpen() || customerIndex < 0) return;
+        event.preventDefault();
+        chooseCustomer(customerMatches[customerIndex]);
+        return;
+      }
+      if (event.key === 'Escape' && isCustomerOpen()) {
+        event.preventDefault();
+        event.stopPropagation();
+        closeCustomerList();
+      }
+    });
+
+    editorCustomerList.addEventListener('mousedown', function (event) {
+      var option = event.target.closest('.sch-customer-option');
+      if (!option) return;
+      event.preventDefault();
+      chooseCustomer(customerMatches[Number(option.dataset.index)]);
     });
 
     editorProduct.addEventListener('change', function () {
@@ -871,7 +1191,20 @@
       endPointer({ pointerId: drag.pointerId }, false);
       return;
     }
-    if (!modal.hidden) dismissEditor();
+    if (isCustomerOpen()) {
+      closeCustomerList();
+      return;
+    }
+    if (!modal.hidden) {
+      dismissEditor();
+      return;
+    }
+    if (!weekPop.hidden) closeWeekPop();
+  });
+
+  document.addEventListener('pointerdown', function (event) {
+    if (isCustomerOpen() && !event.target.closest('.sch-customer')) closeCustomerList();
+    if (!weekPop.hidden && weekPicker && !weekPicker.contains(event.target)) closeWeekPop();
   });
 
   var sourceNotice = '';
@@ -895,12 +1228,24 @@
     if (current.state !== 'ready') sourceNotice = current.message;
   }
 
+  function renderLegend() {
+    statusLegend.innerHTML = '';
+    data.STATUSES.forEach(function (status) {
+      var item = document.createElement('div');
+      item.className = 'sch-legend-item';
+      item.style.background = status.colour;
+      item.textContent = status.label;
+      statusLegend.appendChild(item);
+    });
+  }
+
   sourceRetry.addEventListener('click', function () {
     products.load(true).catch(function () { /* status already reported */ });
   });
   products.subscribe(renderSource);
 
   scroll.addEventListener('pointerdown', onPointerDown);
+  renderLegend();
   buildGrid();
   renderBlocks();
   bindMeta();

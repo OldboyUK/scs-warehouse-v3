@@ -83,7 +83,7 @@
 }
 
 .sch-legend-item {
-  min-height: 46px;
+  min-height: 58px;
   padding: 3px 6px;
   display: flex;
   align-items: center;
@@ -100,8 +100,10 @@
 
 .sch-heading {
   flex: 0 0 auto;
+  position: relative;
+  z-index: 20;
   display: grid;
-  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr) minmax(180px, 240px);
+  grid-template-columns: minmax(190px, 240px) minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
   padding: 8px 12px;
@@ -124,18 +126,21 @@
 }
 
 .schedule-app .sch-field input {
-  width: 132px;
+  width: 72px;
   min-height: 34px;
   margin: 0;
   padding: 4px 8px;
   font-size: 0.9rem;
   font-weight: 700;
-  letter-spacing: 0;
+  letter-spacing: 0.08em;
+  text-align: center;
   text-transform: none;
 }
 
-.schedule-app .sch-field input[type="date"] {
-  width: 154px;
+.schedule-app .sch-field input[readonly] {
+  cursor: default;
+  color: var(--text);
+  background: rgba(17, 24, 39, 0.45);
 }
 
 .sch-heading-title {
@@ -159,6 +164,156 @@
 
 .sch-heading .sch-field:last-child {
   justify-content: flex-end;
+}
+
+.sch-week {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.schedule-app .sch-week-nav,
+.schedule-app .sch-week-pop-bar button {
+  width: 32px;
+  min-height: 32px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.schedule-app .sch-week-nav:hover,
+.schedule-app .sch-week-pop-bar button:hover,
+.schedule-app .sch-week-current:hover {
+  border-color: var(--primary);
+}
+
+.schedule-app .sch-week-current {
+  min-width: 168px;
+  min-height: 46px;
+  padding: 4px 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  line-height: 1.15;
+  text-align: left;
+}
+
+.schedule-app .sch-week-current[aria-expanded="true"] {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
+.sch-week-kicker,
+.sch-week-range {
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.sch-week-date {
+  color: var(--text);
+  font-size: 0.92rem;
+  font-weight: 800;
+}
+
+.sch-week-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  width: min(292px, calc(100vw - 24px));
+  padding: 10px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+
+.sch-week-pop[hidden] {
+  display: none !important;
+}
+
+.sch-week-pop-bar {
+  display: grid;
+  grid-template-columns: 32px 32px minmax(0, 1fr) 32px 32px;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.sch-week-pop-bar strong {
+  color: var(--text);
+  font-size: 0.82rem;
+  text-align: center;
+}
+
+.sch-week-dow,
+.sch-week-row {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+}
+
+.sch-week-dow {
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.schedule-app .sch-week-row {
+  width: 100%;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+}
+
+.schedule-app .sch-week-row span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.schedule-app .sch-week-row .is-outside {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.schedule-app .sch-week-row .is-today {
+  box-shadow: inset 0 0 0 1px var(--primary);
+  border-radius: 6px;
+}
+
+.schedule-app .sch-week-row:hover,
+.schedule-app .sch-week-row.is-selected {
+  background: var(--primary-soft);
+}
+
+.schedule-app .sch-week-row.is-selected span {
+  color: var(--text);
 }
 
 .sch-workspace {
@@ -464,8 +619,8 @@
 }
 
 .sch-modal-card {
-  width: min(460px, 100%);
-  max-height: min(640px, calc(100dvh - 32px));
+  width: min(552px, 100%);
+  max-height: min(720px, calc(100dvh - 32px));
   overflow: auto;
   padding: 18px 18px 16px;
   background: var(--card);
@@ -516,6 +671,73 @@
   cursor: default;
   color: var(--text);
   background: rgba(17, 24, 39, 0.45);
+}
+
+.sch-pair {
+  display: grid;
+  gap: 10px;
+  align-items: start;
+}
+
+.sch-pair-product {
+  grid-template-columns: minmax(0, 3fr) minmax(0, 1fr);
+}
+
+.sch-pair-pack {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.sch-pair > *,
+.sch-pack-volume {
+  min-width: 0;
+}
+
+.sch-customer {
+  position: relative;
+}
+
+.sch-customer-list {
+  max-height: 180px;
+  margin: 6px 0 0;
+  padding: 4px;
+  overflow: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.sch-customer-list[hidden] {
+  display: none !important;
+}
+
+.schedule-app .sch-customer-option {
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 8px;
+  justify-content: flex-start;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-align: left;
+}
+
+.schedule-app .sch-customer-option.is-active,
+.schedule-app .sch-customer-option:hover {
+  background: var(--primary-soft);
+  color: var(--text);
+}
+
+.sch-customer-empty {
+  margin: 0;
+  padding: 8px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 700;
 }
 
 .sch-volume-hint {
@@ -597,6 +819,15 @@
   transform: translateY(-1px);
 }
 
+.sch-status {
+  margin: 8px 0 0;
+  color: var(--text);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  line-height: 1.3;
+}
+
 .sch-editor-actions {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
@@ -655,13 +886,26 @@
     text-align: left;
   }
 
-  .sch-heading .sch-field:last-child {
+  .sch-heading .sch-field:last-child,
+  .sch-week {
     justify-content: flex-start;
   }
 
   .sch-notes {
     grid-template-columns: 1fr;
     align-items: stretch;
+  }
+
+  .sch-week-pop {
+    left: 0;
+    right: auto;
+  }
+}
+
+@media (max-width: 520px) {
+  .sch-pair-product,
+  .sch-pair-pack {
+    grid-template-columns: 1fr;
   }
 }
 

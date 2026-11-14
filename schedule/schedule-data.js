@@ -3,9 +3,12 @@
  * Blocks live in memory and localStorage only. No network calls.
  *
  * Stored block shape (ready for a later database):
- *   id, day, category, startTime, endTime, backgroundColour,
- *   customer, product, liquidCode, packingFormat, volume
+ *   id, weekCommencing, day, category, startTime, endTime,
+ *   customer, product, liquidCode, packingFormat, volume, backgroundColour
+ * weekCommencing is the Monday of the production week, "YYYY-MM-DD".
  * Older free-text blocks keep legacyText so they can still be shown.
+ * Blocks saved before weeks were stored are kept and assigned to the
+ * selected week the first time they are loaded.
  *
  * startTime and endTime are whole-hour clock times, "HH:MM".
  * The production day runs 06:00 to 06:00 the next morning, so an
@@ -15,7 +18,7 @@
   var STORAGE_KEY = 'scs_schedule_v1';
   var DAY_LENGTH = 24 * 60;
   var DAY_START = 6 * 60;
-  var DEFAULT_COLOUR = '#ff9900';
+  var DEFAULT_COLOUR = '#ff0000';
 
   var DAYS = [
     { id: 'monday', label: 'Monday' },
@@ -34,19 +37,20 @@
     { id: 'bulk', label: 'Bulk' }
   ];
 
-  var COLOURS = [
-    '#ff0000',
-    '#ff9900',
-    '#fff2cc',
-    '#9fc5e8',
-    '#c27ba0',
-    '#b7b7b7',
-    '#93c47d',
-    '#ffff00',
-    '#00ffff',
-    '#ff00ff',
-    '#3c78d8'
+  var STATUSES = [
+    { colour: '#ff0000', label: 'PRODUCTION SPACE SCHEDULED BUT NOT CONFIRMED' },
+    { colour: '#ff9900', label: 'PRODUCTION APPROVAL DOCUMENT SENT TO CUSTOMER' },
+    { colour: '#fff2cc', label: 'ALL PRODUCTION PAPERWORK PRODUCED & PRINTED & STOCK DEDUCTED' },
+    { colour: '#9fc5e8', label: 'BLENDING / RUN REPORT COMPLETE' },
+    { colour: '#c27ba0', label: 'STOCK COUNT COMPLETE & PASSED TO OFFICE FOR INVOICING' },
+    { colour: '#b7b7b7', label: 'INVOICED' },
+    { colour: '#93c47d', label: 'INVOICE PAID / RELEASE' },
+    { colour: '#ffff00', label: 'STOCK COLLECTED' },
+    { colour: '#00ffff', label: 'ONBOARDING' },
+    { colour: '#ff00ff', label: 'REPACKAGING REQUIRED' }
   ];
+
+  var COLOURS = STATUSES.map(function (status) { return status.colour; });
 
   var dayIds = {};
   var categoryIds = {};
@@ -81,11 +85,48 @@
     return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate());
   }
 
+  function parseISODate(value) {
+    var match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ''));
+    if (!match) return null;
+    var year = Number(match[1]);
+    var month = Number(match[2]);
+    var day = Number(match[3]);
+    var date = new Date(year, month - 1, day);
+    if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
+    return date;
+  }
+
+  function canonicalWeek(value) {
+    var date = parseISODate(value);
+    return date ? mondayISO(date) : '';
+  }
+
+  function weekdayMonday(date) {
+    var day = date.getDay();
+    return day === 0 ? 7 : day;
+  }
+
+  // Excel / Google Sheets WEEKNUM(date, 2): weeks start on Monday, and the
+  // week containing 1 January is week 1. Not ISO week numbering.
+  function weekNumber(date) {
+    var jan1 = new Date(date.getFullYear(), 0, 1);
+    var diff = Math.round((date - jan1) / 86400000);
+    return Math.floor((diff + weekdayMonday(jan1) - 1) / 7) + 1;
+  }
+
+  function runSuffixFor(iso) {
+    var date = parseISODate(canonicalWeek(iso) || iso);
+    if (!date) return '';
+    var week = weekNumber(date);
+    return String(date.getFullYear()).slice(-1) + (week < 10 ? '0' : '') + week;
+  }
+
   function blankState() {
+    var week = mondayISO(new Date());
     return {
       version: 1,
-      runSuffix: '',
-      weekCommencing: mondayISO(new Date()),
+      runSuffix: runSuffixFor(week),
+      weekCommencing: week,
       notes: '',
       blocks: []
     };
@@ -140,6 +181,14 @@
     return COLOURS.indexOf(colour) !== -1 ? colour : DEFAULT_COLOUR;
   }
 
+  function statusLabel(colour) {
+    var key = String(colour || '').toLowerCase();
+    for (var i = 0; i < STATUSES.length; i++) {
+      if (STATUSES[i].colour === key) return STATUSES[i].label;
+    }
+    return '';
+  }
+
   function cleanLine(value, max) {
     return typeof value === 'string' ? value.trim().slice(0, max || 500) : '';
   }
@@ -169,6 +218,7 @@
   function present(block) {
     return {
       id: block.id,
+      weekCommencing: block.weekCommencing,
       day: block.day,
       category: block.category,
       startTime: block.startTime,
@@ -186,7 +236,7 @@
     };
   }
 
-  function normaliseBlock(item, seen) {
+  function normaliseBlock(item, seen, fallbackWeek) {
     if (!item || typeof item !== 'object') return null;
     if (!dayIds[item.day] || !categoryIds[item.category]) return null;
     var start = clockToOffset(item.startTime, false);
@@ -208,6 +258,7 @@
     }
     return {
       id: id,
+      weekCommencing: canonicalWeek(item.weekCommencing) || fallbackWeek || mondayISO(new Date()),
       day: item.day,
       category: item.category,
       startTime: offsetToClock(start),
@@ -222,6 +273,8 @@
     };
   }
 
+  var migratedOnLoad = false;
+
   function load() {
     var fresh = blankState();
     var store = storage();
@@ -231,20 +284,34 @@
       if (!raw) return fresh;
       var data = JSON.parse(raw);
       if (!data || typeof data !== 'object') return fresh;
-      if (typeof data.runSuffix === 'string') fresh.runSuffix = data.runSuffix.slice(0, 40);
+      var changed = false;
       if (typeof data.notes === 'string') fresh.notes = data.notes.slice(0, 4000);
-      if (typeof data.weekCommencing === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(data.weekCommencing)) {
-        fresh.weekCommencing = data.weekCommencing;
+      if (typeof data.weekCommencing === 'string') {
+        var monday = canonicalWeek(data.weekCommencing);
+        if (monday) {
+          if (monday !== data.weekCommencing) changed = true;
+          fresh.weekCommencing = monday;
+        } else {
+          changed = true;
+        }
       }
+      var suffix = runSuffixFor(fresh.weekCommencing);
+      if (data.runSuffix !== suffix) changed = true;
+      fresh.runSuffix = suffix;
       var seen = {};
       var blocks = Array.isArray(data.blocks) ? data.blocks : [];
       fresh.blocks = [];
       blocks.forEach(function (item) {
-        var block = normaliseBlock(item, seen);
-        if (block) fresh.blocks.push(block);
+        var block = normaliseBlock(item, seen, fresh.weekCommencing);
+        if (!block) return;
+        if (canonicalWeek(item && item.weekCommencing) !== block.weekCommencing) changed = true;
+        if (String((item && item.backgroundColour) || '').toLowerCase() !== block.backgroundColour) changed = true;
+        fresh.blocks.push(block);
       });
+      if (changed) migratedOnLoad = true;
       return fresh;
     } catch (err) {
+      migratedOnLoad = false;
       return blankState();
     }
   }
@@ -262,10 +329,12 @@
     }
   }
 
+  if (migratedOnLoad) persist();
+
   function getState() {
     return {
       version: state.version,
-      runSuffix: state.runSuffix,
+      runSuffix: runSuffixFor(state.weekCommencing),
       weekCommencing: state.weekCommencing,
       notes: state.notes,
       blocks: state.blocks.map(present)
@@ -281,10 +350,13 @@
 
   function setMeta(patch) {
     if (!patch) return getState();
-    if (patch.runSuffix !== undefined) state.runSuffix = String(patch.runSuffix).slice(0, 40);
     if (patch.notes !== undefined) state.notes = String(patch.notes).slice(0, 4000);
-    if (patch.weekCommencing !== undefined && /^\d{4}-\d{2}-\d{2}$/.test(patch.weekCommencing)) {
-      state.weekCommencing = patch.weekCommencing;
+    if (patch.weekCommencing !== undefined) {
+      var monday = canonicalWeek(patch.weekCommencing);
+      if (monday) {
+        state.weekCommencing = monday;
+        state.runSuffix = runSuffixFor(monday);
+      }
     }
     return getState();
   }
@@ -295,6 +367,7 @@
     if (!validOffsets(input.startOffset, input.endOffset)) return null;
     var block = {
       id: newId(),
+      weekCommencing: canonicalWeek(input.weekCommencing) || state.weekCommencing,
       day: input.day,
       category: input.category,
       startTime: offsetToClock(input.startOffset),
@@ -350,8 +423,15 @@
     DEFAULT_COLOUR: DEFAULT_COLOUR,
     DAYS: DAYS,
     CATEGORIES: CATEGORIES,
+    STATUSES: STATUSES.map(function (status) {
+      return { colour: status.colour, label: status.label };
+    }),
     COLOURS: COLOURS.slice(),
     mondayISO: mondayISO,
+    parseISODate: parseISODate,
+    weekNumber: weekNumber,
+    runSuffixFor: runSuffixFor,
+    statusLabel: statusLabel,
     minutesToLabel: minutesToLabel,
     formatVolume: formatVolume,
     textColour: textColour,
