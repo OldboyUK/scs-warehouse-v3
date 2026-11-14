@@ -990,10 +990,12 @@
     var current = data.productionInfo(data.mondayISO(new Date()));
     var years = {};
     var year;
-    for (year = current.year - 1; year <= current.year + 2; year++) years[year] = true;
+    for (year = current.year - 1; year <= current.year + 2; year++) {
+      if (year !== 2025) years[year] = true;
+    }
     data.getState().blocks.forEach(function (block) {
       var info = data.productionInfo(block.weekCommencing);
-      if (info) years[info.year] = true;
+      if (info && info.year !== 2025) years[info.year] = true;
     });
     return Object.keys(years).map(Number).sort(function (a, b) { return a - b; });
   }
