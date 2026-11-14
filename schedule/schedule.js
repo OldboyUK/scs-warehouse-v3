@@ -45,6 +45,8 @@
   var yearSelect = document.getElementById('yearSelect');
   var weekJump = document.getElementById('weekJump');
   var currentWeek = document.getElementById('currentWeek');
+  var mainMenu = document.getElementById('mainMenu');
+  var leaveMenu = document.getElementById('leaveMenu');
   var activeCustomer = '';
   var customerMatches = [];
   var customerIndex = -1;
@@ -870,18 +872,20 @@
     var patch = {};
     if (drag.kind === 'move') {
       var length = end - start;
-      start = drag.startOffset + delta;
-      end = start + length;
-      if (start < 0) {
-        start = 0;
-        end = length;
-      }
-      if (end > data.DAY_LENGTH) {
-        end = data.DAY_LENGTH;
-        start = end - length;
-      }
       var lane = laneUnderPoint(clientX, clientY);
       clearDropTarget();
+      if (!(lane && lane.dataset.week !== drag.week)) {
+        start = drag.startOffset + delta;
+        end = start + length;
+        if (start < 0) {
+          start = 0;
+          end = length;
+        }
+        if (end > data.DAY_LENGTH) {
+          end = data.DAY_LENGTH;
+          start = end - length;
+        }
+      }
       if (lane) {
         patch.day = lane.dataset.day;
         patch.category = lane.dataset.category;
@@ -899,8 +903,11 @@
     var updated = data.updateBlock(drag.id, patch);
     if (updated) {
       placeBlock(updated);
+      if (drag.nightAtStart[updated.weekCommencing] === undefined) {
+        drag.nightAtStart[updated.weekCommencing] = othersNeedNight(updated.weekCommencing, drag.id);
+      }
       previewNight(updated.weekCommencing);
-      if (previousWeek && previousWeek !== updated.weekCommencing) previewNight(previousWeek);
+      if (previousWeek && previousWeek !== updated.weekCommencing) restoreDragNight(previousWeek);
     }
   }
 
@@ -960,8 +967,10 @@
         day: lane.dataset.day,
         category: lane.dataset.category,
         startOffset: Number(blockNode.dataset.start),
-        endOffset: Number(blockNode.dataset.end)
+        endOffset: Number(blockNode.dataset.end),
+        nightAtStart: {}
       };
+      drag.nightAtStart[lane.dataset.week] = weekNeedsNight(lane.dataset.week);
       blockNode.classList.add('is-active');
     } else {
       drag = {
@@ -1028,11 +1037,26 @@
   }
 
   function weekNeedsNight(week) {
+    return othersNeedNight(week, null);
+  }
+
+  function othersNeedNight(week, ignoreId) {
     var blocks = data.getState().blocks;
     for (var i = 0; i < blocks.length; i++) {
+      if (ignoreId && blocks[i].id === ignoreId) continue;
       if (blocks[i].weekCommencing === week && data.needsNight(blocks[i].endOffset)) return true;
     }
     return false;
+  }
+
+  function restoreDragNight(week) {
+    var board = boardFor(week);
+    if (!board) return;
+    if (drag && drag.nightAtStart && drag.nightAtStart[week]) {
+      previewNight(week);
+      return;
+    }
+    applyNight(board);
   }
 
   function paintNight(board, on, locked) {
@@ -1267,6 +1291,16 @@
       runSuffix.value = current.suffix;
       scrollToWeek(current.weekCommencing, true);
     });
+    mainMenu.addEventListener('click', function () {
+      leaveMenu.hidden = false;
+      document.getElementById('leaveMenuNo').focus();
+    });
+    document.getElementById('leaveMenuNo').addEventListener('click', function () {
+      leaveMenu.hidden = true;
+    });
+    document.getElementById('leaveMenuYes').addEventListener('click', function () {
+      window.location.href = '../menu.html';
+    });
     var scrollTimer = null;
     scroll.addEventListener('scroll', function () {
       if (scrollLock || navigating) return;
@@ -1447,6 +1481,10 @@
     }
     if (isCustomerOpen()) {
       closeCustomerList();
+      return;
+    }
+    if (!leaveMenu.hidden) {
+      leaveMenu.hidden = true;
       return;
     }
     if (!modal.hidden) {

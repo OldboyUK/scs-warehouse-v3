@@ -1,42 +1,13 @@
 /* Schedule module. Kept separate from the shared application stylesheet. */
 
 .schedule-app {
-  --header-h: calc(72px * 0.6);
+  --header-h: 0px;
   --sch-hour: 32px;
   --sch-time: 58px;
   --sch-lane: 78px;
   --sch-day-h: 28px;
   --sch-cat-h: 34px;
   overflow: hidden;
-}
-
-.schedule-app .app-header-inner {
-  max-width: none;
-  padding: 0 12px;
-  gap: 10px;
-}
-
-.schedule-app .brand-mark {
-  font-size: 0.66rem;
-}
-
-.schedule-app .brand-sub {
-  font-size: 0.42rem;
-}
-
-.schedule-app .page-title {
-  font-size: 0.75rem;
-}
-
-.schedule-app .icon-btn {
-  width: 26px;
-  height: 26px;
-  border-radius: 6px;
-}
-
-.schedule-app .icon-btn svg {
-  width: 12px;
-  height: 12px;
 }
 
 .sch-source {
@@ -215,6 +186,28 @@
   padding: 0 12px;
   font-weight: 800;
   white-space: nowrap;
+}
+
+.schedule-app .sch-menu {
+  width: 34px;
+  height: 34px;
+  min-height: 34px;
+  margin-left: 16px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.schedule-app .sch-menu svg {
+  width: 18px;
+  height: 18px;
+}
+
+.schedule-app .sch-menu:hover {
+  border-color: var(--primary);
+  color: var(--text);
 }
 
 .sch-week {
@@ -836,6 +829,41 @@
 
 .sch-modal[hidden] {
   display: none !important;
+}
+
+.sch-leave {
+  align-items: center;
+}
+
+.sch-leave-card {
+  width: min(440px, 100%);
+  margin: auto;
+  padding: 22px 20px 16px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+
+.sch-leave-card p {
+  margin: 0;
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.sch-leave-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.schedule-app .sch-leave-actions .btn {
+  min-width: 88px;
+  min-height: 40px;
+  font-family: inherit;
 }
 
 .sch-modal {
