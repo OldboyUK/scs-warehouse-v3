@@ -945,7 +945,8 @@
           end = data.DAY_LENGTH;
           start = end - length;
         }
-        if (!drag.nightAtStart[drag.week] && end > 14 * 60) {
+        var nightAlreadyOpen = drag.nightAtStart[drag.week] || data.isNightManual(drag.week);
+        if (!nightAlreadyOpen && end > 14 * 60) {
           end = 14 * 60;
           start = Math.max(0, end - length);
         }
