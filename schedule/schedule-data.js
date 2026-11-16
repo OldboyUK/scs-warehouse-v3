@@ -1,18 +1,13 @@
 /*
- * Schedule data for Phase 1.
- * Blocks live in memory and localStorage only. No network calls.
+ * Schedule data.
+ * The database is the source of truth. This file keeps the working copy for
+ * the screen, sends each change to the schedule functions, and keeps a local
+ * recovery copy only when a change has not reached the server yet.
  *
- * Stored block shape (ready for a later database):
+ * Stored block shape:
  *   id, weekCommencing, day, category, startTime, endTime,
- *   customer, product, liquidCode, packingFormat, volume, backgroundColour
+ *   customer, product, liquidCode, packingFormat, volume, backgroundColour, version
  * weekCommencing is the Monday of the production week, "YYYY-MM-DD".
- * Older free-text blocks keep legacyText so they can still be shown.
- * Blocks saved before weeks were stored are kept and assigned to the
- * selected week the first time they are loaded.
- *
- * startTime and endTime are whole-hour clock times, "HH:MM".
- * The production day runs 06:00 to 06:00 the next morning, so an
- * endTime of "06:00" is the following morning, not the start of the day.
  */
 (function (root) {
   var STORAGE_KEY = 'scs_schedule_v1';
@@ -185,6 +180,8 @@
       dayNotes: {},
       nightShift: {},
       saturday: {},
+      weekVersions: {},
+      loadedYear: null,
       blocks: []
     };
   }
@@ -229,7 +226,8 @@
     Object.keys(state.dayNotes).forEach(function (key) {
       copy[key] = {
         important: state.dayNotes[key].important,
-        absence: state.dayNotes[key].absence
+        absence: state.dayNotes[key].absence,
+        version: state.dayNotes[key].version || 0
       };
     });
     return copy;
@@ -335,7 +333,8 @@
       volume: block.volume,
       legacyText: block.legacyText,
       text: displayText(block),
-      backgroundColour: block.backgroundColour
+      backgroundColour: block.backgroundColour,
+      version: block.version || 0
     };
   }
 
@@ -372,70 +371,20 @@
       packingFormat: packingFormat,
       volume: volume,
       legacyText: legacyText,
-      backgroundColour: normaliseColour(item.backgroundColour)
+      backgroundColour: normaliseColour(item.backgroundColour),
+      version: Number(item.version) || 0
     };
   }
 
-  var migratedOnLoad = false;
-
   function load() {
-    var fresh = blankState();
-    var store = storage();
-    if (!store) return fresh;
-    try {
-      var raw = store.getItem(STORAGE_KEY);
-      if (!raw) return fresh;
-      var data = JSON.parse(raw);
-      if (!data || typeof data !== 'object') return fresh;
-      var changed = false;
-      if (typeof data.notes === 'string') fresh.notes = data.notes.slice(0, 4000);
-      fresh.dayNotes = cleanDayNotes(data.dayNotes);
-      fresh.nightShift = cleanNightShift(data.nightShift);
-      fresh.saturday = cleanNightShift(data.saturday);
-      if (typeof data.weekCommencing === 'string') {
-        var monday = canonicalWeek(data.weekCommencing);
-        if (monday) {
-          if (monday !== data.weekCommencing) changed = true;
-          fresh.weekCommencing = monday;
-        } else {
-          changed = true;
-        }
-      }
-      var suffix = runSuffixFor(fresh.weekCommencing);
-      if (data.runSuffix !== suffix) changed = true;
-      fresh.runSuffix = suffix;
-      var seen = {};
-      var blocks = Array.isArray(data.blocks) ? data.blocks : [];
-      fresh.blocks = [];
-      blocks.forEach(function (item) {
-        var block = normaliseBlock(item, seen, fresh.weekCommencing);
-        if (!block) return;
-        if (canonicalWeek(item && item.weekCommencing) !== block.weekCommencing) changed = true;
-        if (String((item && item.backgroundColour) || '').toLowerCase() !== block.backgroundColour) changed = true;
-        fresh.blocks.push(block);
-      });
-      if (changed) migratedOnLoad = true;
-      return fresh;
-    } catch (err) {
-      migratedOnLoad = false;
-      return blankState();
-    }
+    return blankState();
   }
 
   var state = load();
 
-  function persist() {
-    var store = storage();
-    if (!store) return false;
-    try {
-      store.setItem(STORAGE_KEY, JSON.stringify(state));
-      return true;
-    } catch (err) {
-      return false;
-    }
+  function persist(scope) {
+    queueSync(scope || 'block');
   }
-
-  if (migratedOnLoad) persist();
 
   function getState() {
     return {
@@ -499,10 +448,11 @@
   function setDayNote(date, field, value) {
     if (!parseISODate(date) || (field !== 'important' && field !== 'absence')) return null;
     var text = String(value == null ? '' : value).slice(0, DAY_NOTE_MAX);
-    var current = state.dayNotes[date] || { important: '', absence: '' };
+    var current = state.dayNotes[date] || { important: '', absence: '', version: 0 };
     var next = {
       important: field === 'important' ? text : current.important,
-      absence: field === 'absence' ? text : current.absence
+      absence: field === 'absence' ? text : current.absence,
+      version: current.version || 0
     };
     if (!next.important && !next.absence) delete state.dayNotes[date];
     else state.dayNotes[date] = next;
@@ -526,7 +476,8 @@
       packingFormat: cleanLine(input.packingFormat, 200),
       volume: storedVolume(input.volume),
       legacyText: '',
-      backgroundColour: normaliseColour(input.backgroundColour)
+      backgroundColour: normaliseColour(input.backgroundColour),
+      version: 0
     };
     state.blocks.push(block);
     return present(block);
@@ -569,6 +520,602 @@
     return removed;
   }
 
+  var CACHE_KEY = 'scs_schedule_cache_v1';
+  var acked = null;
+  var lastPayload = null;
+  var backupStatus = { configured: false, pending: 0, failed: 0, lastFullAt: null };
+  var statusCode = 'loading';
+  var statusHandler = null;
+  var conflictHandler = null;
+  var appliedHandler = null;
+  var conflicts = [];
+  var conflictOpen = false;
+  var noteTimer = null;
+  var flights = { block: null, notes: null, week: null };
+
+  function queueSync(scope) {
+    if (scope === 'notes') {
+      if (noteTimer) clearTimeout(noteTimer);
+      noteTimer = setTimeout(function () {
+        noteTimer = null;
+        flush('notes');
+      }, 700);
+      return;
+    }
+    flush(scope === 'week' ? 'week' : 'block');
+  }
+
+  function snapshot() {
+    var blocks = state.blocks.map(function (block) {
+      return {
+        id: block.id,
+        weekCommencing: block.weekCommencing,
+        day: block.day,
+        category: block.category,
+        startTime: block.startTime,
+        endTime: block.endTime,
+        customer: block.customer,
+        product: block.product,
+        liquidCode: block.liquidCode,
+        packingFormat: block.packingFormat,
+        volume: block.volume,
+        legacyText: block.legacyText,
+        backgroundColour: block.backgroundColour,
+        version: block.version || 0
+      };
+    });
+    var dayNotes = {};
+    Object.keys(state.dayNotes).forEach(function (date) {
+      var note = state.dayNotes[date];
+      var parsed = parseISODate(date);
+      dayNotes[date] = {
+        weekCommencing: parsed ? mondayISO(parsed) : '',
+        important: note.important || '',
+        absence: note.absence || '',
+        version: note.version || 0
+      };
+    });
+    var seen = {};
+    Object.keys(state.nightShift).forEach(function (week) { seen[week] = true; });
+    Object.keys(state.saturday).forEach(function (week) { seen[week] = true; });
+    Object.keys(state.weekVersions).forEach(function (week) { seen[week] = true; });
+    var weeks = {};
+    Object.keys(seen).forEach(function (week) {
+      weeks[week] = {
+        weekCommencing: week,
+        nightShift: !!state.nightShift[week],
+        saturday: !!state.saturday[week],
+        version: state.weekVersions[week] || 0
+      };
+    });
+    return { blocks: blocks, dayNotes: dayNotes, weeks: weeks };
+  }
+
+  function isDirty() {
+    if (!root.ScheduleSync || !acked) return false;
+    return root.ScheduleSync.planChanges(acked, snapshot(), 'all').length > 0;
+  }
+
+  function statusMessage() {
+    if (statusCode === 'loading') return 'Loading schedule…';
+    if (statusCode === 'saving') return 'Saving…';
+    if (statusCode === 'unsaved') return 'Not saved on this computer. These changes will be sent when the connection returns.';
+    if (statusCode === 'offline') return 'Couldn\u2019t reach the schedule store. Showing the last copy saved on this computer.';
+    if (statusCode === 'error') return 'Couldn\u2019t load the schedule.';
+    if (statusCode === 'conflict') return 'A change needs a decision before it can be saved.';
+    if (!backupStatus.configured) return 'Saved. Google Sheets backup is not set up yet.';
+    if (backupStatus.failed) return 'Saved. Google Sheets backup failed and will retry.';
+    if (backupStatus.pending) return 'Saved. Google Sheets backup is waiting.';
+    return 'Saved';
+  }
+
+  function statusTone() {
+    if (statusCode === 'error' || statusCode === 'unsaved' || statusCode === 'offline') return 'error';
+    if (statusCode === 'conflict' || statusCode === 'saved-fail' || (statusCode === 'saved' && backupStatus.failed)) return 'problem';
+    if (statusCode === 'saved' && !backupStatus.configured) return 'problem';
+    return '';
+  }
+
+  function setStatus(code) {
+    statusCode = code;
+    if (statusHandler) statusHandler({ code: code, message: statusMessage(), tone: statusTone(), backup: backupStatus });
+  }
+
+  function emitStatus() {
+    if (statusHandler) statusHandler({ code: statusCode, message: statusMessage(), tone: statusTone(), backup: backupStatus });
+  }
+
+  function readCache() {
+    var store = storage();
+    if (!store) return {};
+    try { return JSON.parse(store.getItem(CACHE_KEY)) || {}; } catch (err) { return {}; }
+  }
+
+  function writeCache(year) {
+    if (!year) return;
+    var store = storage();
+    if (!store) return;
+    var all = readCache();
+    all[String(year)] = {
+      server: lastPayload,
+      acked: acked,
+      local: isDirty() ? snapshot() : null
+    };
+    try { store.setItem(CACHE_KEY, JSON.stringify(all)); } catch (err) { /* the screen copy remains */ }
+  }
+
+  function applyPayload(payload, asAck) {
+    state.blocks = [];
+    state.dayNotes = {};
+    state.nightShift = {};
+    state.saturday = {};
+    state.weekVersions = {};
+    state.loadedYear = payload.year;
+    var seen = {};
+    (payload.bookings || []).forEach(function (booking) {
+      var block = normaliseBlock(booking, seen, booking.weekCommencing);
+      if (!block) return;
+      block.version = Number(booking.version) || 0;
+      state.blocks.push(block);
+    });
+    (payload.dayNotes || []).forEach(function (note) {
+      if (!note || !parseISODate(note.date)) return;
+      if (!note.important && !note.absence) return;
+      state.dayNotes[note.date] = {
+        important: note.important || '',
+        absence: note.absence || '',
+        version: Number(note.version) || 0
+      };
+    });
+    (payload.weeks || []).forEach(function (week) {
+      if (!week || !week.weekCommencing) return;
+      if (week.nightShift) state.nightShift[week.weekCommencing] = true;
+      if (week.saturday) state.saturday[week.weekCommencing] = true;
+      state.weekVersions[week.weekCommencing] = Number(week.version) || 0;
+    });
+    if (payload.backup) backupStatus = payload.backup;
+    lastPayload = payload;
+    if (asAck) acked = snapshot();
+  }
+
+  function applyPendingOps(ops) {
+    ops.forEach(function (op) {
+      if (op.type === 'booking' && op.action === 'delete') {
+        state.blocks = state.blocks.filter(function (block) { return block.id !== op.id; });
+        return;
+      }
+      if (op.type === 'booking' && op.booking) {
+        state.blocks = state.blocks.filter(function (block) { return block.id !== op.booking.id; });
+        var block = normaliseBlock(op.booking, {}, op.booking.weekCommencing);
+        if (block) state.blocks.push(block);
+        return;
+      }
+      if (op.type === 'note' && op.action === 'delete') {
+        delete state.dayNotes[op.date];
+        return;
+      }
+      if (op.type === 'note' && op.note) {
+        state.dayNotes[op.note.date] = {
+          important: op.note.important || '',
+          absence: op.note.absence || '',
+          version: 0
+        };
+        return;
+      }
+      if (op.type === 'week' && op.week) {
+        var week = op.week.weekCommencing;
+        if (op.week.nightShift) state.nightShift[week] = true;
+        else delete state.nightShift[week];
+        if (op.week.saturday) state.saturday[week] = true;
+        else delete state.saturday[week];
+      }
+    });
+  }
+
+  function restoreLocal(snap) {
+    state.blocks = (snap.blocks || []).map(function (block) { return Object.assign({}, block); });
+    state.dayNotes = {};
+    Object.keys(snap.dayNotes || {}).forEach(function (date) {
+      state.dayNotes[date] = {
+        important: snap.dayNotes[date].important || '',
+        absence: snap.dayNotes[date].absence || '',
+        version: snap.dayNotes[date].version || 0
+      };
+    });
+    state.nightShift = {};
+    state.saturday = {};
+    state.weekVersions = {};
+    Object.keys(snap.weeks || {}).forEach(function (week) {
+      var item = snap.weeks[week];
+      if (item.nightShift) state.nightShift[week] = true;
+      if (item.saturday) state.saturday[week] = true;
+      if (item.version) state.weekVersions[week] = item.version;
+    });
+  }
+
+  function peekYear(year) {
+    var cached = readCache()[String(year)];
+    if (!cached || !cached.server) return false;
+    applyPayload(cached.server, true);
+    if (cached.local) {
+      restoreLocal(cached.local);
+      acked = cached.acked || acked;
+      setStatus('unsaved');
+    }
+    return true;
+  }
+
+  function authError() {
+    var error = new Error('auth');
+    error.auth = true;
+    return error;
+  }
+
+  function sessionExpired() {
+    setStatus('auth');
+    if (root.SCSAuth && root.SCSAuth.clearSession) root.SCSAuth.clearSession();
+    if (root.location) root.location.href = '/';
+  }
+
+  function postOps(ops) {
+    var chunks = [];
+    var index;
+    for (index = 0; index < ops.length; index += 20) chunks.push(ops.slice(index, index + 20));
+    var all = [];
+    var chain = Promise.resolve();
+    chunks.forEach(function (chunk) {
+      chain = chain.then(function () {
+        return fetch('/.netlify/functions/schedule-mutate', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ops: chunk })
+        }).then(function (response) {
+          if (response.status === 401) {
+            sessionExpired();
+            throw authError();
+          }
+          if (!response.ok) throw new Error('save');
+          return response.json();
+        }).then(function (body) {
+          if (body && body.backup) backupStatus = body.backup;
+          all = all.concat((body && body.results) || []);
+        });
+      });
+    });
+    return chain.then(function () { return all; });
+  }
+
+  function flush(scope) {
+    if (!root.ScheduleSync || !acked) return Promise.resolve();
+    if (flights[scope]) {
+      flights[scope].again = true;
+      return flights[scope].promise;
+    }
+    var ops = root.ScheduleSync.planChanges(acked, snapshot(), scope);
+    if (!ops.length) {
+      if (!conflicts.length && !isDirty()) setStatus(backupStatus.failed ? 'saved' : 'saved');
+      return Promise.resolve();
+    }
+    setStatus('saving');
+    var job = { again: false, promise: null };
+    job.promise = postOps(ops).then(function (results) {
+      handleResults(results, ops);
+    }).catch(function (err) {
+      if (err && err.auth) return;
+      setStatus('unsaved');
+      writeCache(state.loadedYear);
+    }).then(function () {
+      flights[scope] = null;
+      if (job.again) return flush(scope);
+      return null;
+    });
+    flights[scope] = job;
+    return job.promise;
+  }
+
+  function flushAll() {
+    if (noteTimer) {
+      clearTimeout(noteTimer);
+      noteTimer = null;
+    }
+    return flush('block').then(function () {
+      return flush('notes');
+    }).then(function () {
+      return flush('week');
+    });
+  }
+
+  function handleResults(results) {
+    var found = [];
+    (results || []).forEach(function (result) {
+      if (result && result.ok) acknowledge(result);
+      else if (result && result.conflict) found.push(result);
+    });
+    if (found.length) {
+      found.forEach(function (item) { conflicts.push(item); });
+      setStatus('conflict');
+      openConflict();
+      writeCache(state.loadedYear);
+      return;
+    }
+    if (isDirty()) setStatus('unsaved');
+    else {
+      setStatus('saved');
+      writeCache(state.loadedYear);
+    }
+  }
+
+  function sameBooking(left, right) {
+    if (!left || !right) return false;
+    return left.weekCommencing === right.weekCommencing && left.day === right.day &&
+      left.category === right.category && left.startTime === right.startTime &&
+      left.endTime === right.endTime && left.customer === right.customer &&
+      left.product === right.product && left.liquidCode === right.liquidCode &&
+      left.packingFormat === right.packingFormat && left.volume === right.volume &&
+      left.legacyText === right.legacyText && left.backgroundColour === right.backgroundColour;
+  }
+
+  function acknowledge(result) {
+    if (result.type === 'booking' && result.action === 'delete') {
+      acked.blocks = acked.blocks.filter(function (block) { return block.id !== result.id; });
+      return;
+    }
+    if (result.type === 'booking' && result.record) {
+      var saved = result.record;
+      var previous = null;
+      acked.blocks.forEach(function (block) { if (block.id === saved.id) previous = block; });
+      acked.blocks = acked.blocks.filter(function (block) { return block.id !== saved.id; });
+      acked.blocks.push(Object.assign({}, saved, { version: result.version }));
+      var existing = null;
+      state.blocks.forEach(function (block) { if (block.id === saved.id) existing = block; });
+      if (!existing || sameBooking(existing, previous)) {
+        state.blocks = state.blocks.filter(function (block) { return block.id !== saved.id; });
+        var block = normaliseBlock(saved, {}, saved.weekCommencing);
+        if (block) {
+          block.version = result.version;
+          state.blocks.push(block);
+        }
+      } else if (sameBooking(existing, saved)) {
+        existing.version = result.version;
+      }
+      return;
+    }
+    if (result.type === 'note' && result.action === 'delete') {
+      delete acked.dayNotes[result.date];
+      return;
+    }
+    if (result.type === 'note' && result.record) {
+      var note = result.record;
+      var previousNote = acked.dayNotes[note.date];
+      acked.dayNotes[note.date] = {
+        weekCommencing: note.weekCommencing,
+        important: note.important,
+        absence: note.absence,
+        version: result.version
+      };
+      var live = state.dayNotes[note.date];
+      var previousSame = previousNote && live && live.important === previousNote.important && live.absence === previousNote.absence;
+      if (!live || previousSame) {
+        state.dayNotes[note.date] = {
+          important: note.important,
+          absence: note.absence,
+          version: result.version
+        };
+      } else if (live.important === note.important && live.absence === note.absence) {
+        live.version = result.version;
+      }
+      return;
+    }
+    if (result.type === 'week' && result.record) {
+      var week = result.record;
+      var previousWeek = acked.weeks[week.weekCommencing];
+      acked.weeks[week.weekCommencing] = {
+        weekCommencing: week.weekCommencing,
+        nightShift: !!week.nightShift,
+        saturday: !!week.saturday,
+        version: result.version
+      };
+      var liveNight = !!state.nightShift[week.weekCommencing];
+      var liveSaturday = !!state.saturday[week.weekCommencing];
+      var previousNight = previousWeek ? !!previousWeek.nightShift : false;
+      var previousSaturday = previousWeek ? !!previousWeek.saturday : false;
+      if (liveNight === previousNight && liveSaturday === previousSaturday) {
+        if (week.nightShift) state.nightShift[week.weekCommencing] = true;
+        else delete state.nightShift[week.weekCommencing];
+        if (week.saturday) state.saturday[week.weekCommencing] = true;
+        else delete state.saturday[week.weekCommencing];
+        state.weekVersions[week.weekCommencing] = result.version;
+      } else if (liveNight === !!week.nightShift && liveSaturday === !!week.saturday) {
+        state.weekVersions[week.weekCommencing] = result.version;
+      }
+    }
+  }
+
+  function openConflict() {
+    if (conflictOpen || !conflicts.length || !conflictHandler) return;
+    conflictOpen = true;
+    var item = conflicts[0];
+    conflictHandler(describeConflict(item), function (choice) {
+      conflicts.shift();
+      conflictOpen = false;
+      if (choice === 'theirs') applyTheirs(item);
+      else keepMine(item);
+      if (appliedHandler) appliedHandler();
+      if (conflicts.length) openConflict();
+      else if (choice === 'mine' || isDirty()) flush(item.type === 'note' ? 'notes' : (item.type === 'week' ? 'week' : 'block'));
+      else setStatus('saved');
+    });
+  }
+
+  function describeConflict(item) {
+    if (item.type === 'note') return 'Someone else changed this day\u2019s Important note or absence line. Your text is still on screen, but it has not replaced theirs.';
+    if (item.type === 'week') return 'Someone else changed the night shift or Saturday setting for this week. Your switch has not replaced theirs.';
+    if (!item.server) return 'Someone else removed this booking. It is still on your screen, but it is no longer on the shared schedule.';
+    return 'Someone else changed this booking. Your version is still on screen, but it has not replaced theirs.';
+  }
+
+  function applyTheirs(item) {
+    if (item.type === 'booking') {
+      state.blocks = state.blocks.filter(function (block) { return block.id !== (item.server ? item.server.id : item.id); });
+      acked.blocks = acked.blocks.filter(function (block) { return block.id !== (item.server ? item.server.id : item.id); });
+      if (item.server) {
+        var seen = {};
+        var block = normaliseBlock(item.server, seen, item.server.weekCommencing);
+        if (block) {
+          block.version = item.server.version || 0;
+          state.blocks.push(block);
+          acked.blocks.push(Object.assign({}, block));
+        }
+      }
+      return;
+    }
+    if (item.type === 'note') {
+      var date = item.date || (item.server && item.server.date);
+      delete state.dayNotes[date];
+      delete acked.dayNotes[date];
+      if (item.server && (item.server.important || item.server.absence)) {
+        state.dayNotes[date] = {
+          important: item.server.important || '',
+          absence: item.server.absence || '',
+          version: item.server.version || 0
+        };
+        acked.dayNotes[date] = {
+          weekCommencing: item.server.weekCommencing,
+          important: item.server.important || '',
+          absence: item.server.absence || '',
+          version: item.server.version || 0
+        };
+      }
+      return;
+    }
+    if (item.type === 'week' && item.server) {
+      var week = item.server.weekCommencing;
+      if (item.server.nightShift) state.nightShift[week] = true;
+      else delete state.nightShift[week];
+      if (item.server.saturday) state.saturday[week] = true;
+      else delete state.saturday[week];
+      state.weekVersions[week] = item.server.version || 0;
+      acked.weeks[week] = {
+        weekCommencing: week,
+        nightShift: !!item.server.nightShift,
+        saturday: !!item.server.saturday,
+        version: item.server.version || 0
+      };
+    }
+  }
+
+  function keepMine(item) {
+    if (item.type === 'booking') {
+      var id = item.server ? item.server.id : item.id;
+      var found = false;
+      acked.blocks.forEach(function (block) {
+        if (block.id !== id) return;
+        found = true;
+        block.version = item.server ? item.server.version : 0;
+      });
+      if (!found && item.server) acked.blocks.push(Object.assign({}, item.server));
+      if (!item.server) acked.blocks = acked.blocks.filter(function (block) { return block.id !== id; });
+      return;
+    }
+    if (item.type === 'note') {
+      var date = item.date || (item.server && item.server.date);
+      if (!acked.dayNotes[date] && item.server) {
+        acked.dayNotes[date] = {
+          weekCommencing: item.server.weekCommencing,
+          important: '',
+          absence: '',
+          version: item.server.version || 0
+        };
+      }
+      if (acked.dayNotes[date]) acked.dayNotes[date].version = item.server ? item.server.version : 0;
+      if (!item.server) delete acked.dayNotes[date];
+      return;
+    }
+    if (item.type === 'week') {
+      var week = (item.server && item.server.weekCommencing) || item.weekCommencing;
+      if (!acked.weeks[week]) {
+        acked.weeks[week] = { weekCommencing: week, nightShift: false, saturday: false, version: 0 };
+      }
+      acked.weeks[week].version = item.server ? item.server.version : 0;
+    }
+  }
+
+  function loadYear(year) {
+    setStatus('loading');
+    var previous = state.loadedYear;
+    var prepare = Promise.resolve();
+    if (previous && Number(previous) !== Number(year)) {
+      prepare = flushAll().then(function () {
+        writeCache(previous);
+      }).catch(function () {
+        writeCache(previous);
+      });
+    }
+    return prepare.then(function () {
+      return fetch('/.netlify/functions/schedule-year?year=' + encodeURIComponent(year), {
+        credentials: 'same-origin',
+        cache: 'no-store'
+      });
+    }).then(function (response) {
+      if (response.status === 401) {
+        sessionExpired();
+        throw authError();
+      }
+      if (!response.ok) throw new Error('load');
+      return response.json();
+    }).then(function (payload) {
+      var cached = readCache()[String(year)];
+      applyPayload(payload, true);
+      var replay = cached && cached.local && cached.acked && root.ScheduleSync
+        ? root.ScheduleSync.planChanges(cached.acked, cached.local, 'all')
+        : [];
+      if (!replay.length) {
+        setStatus('saved');
+        writeCache(year);
+        return payload;
+      }
+      applyPendingOps(replay);
+      setStatus('saving');
+      return postOps(replay).then(function (results) {
+        handleResults(results);
+        return payload;
+      });
+    }).catch(function (err) {
+      if (err && err.auth) throw err;
+      var cached = readCache()[String(year)];
+      if (cached && cached.server) {
+        applyPayload(cached.server, true);
+        if (cached.local) {
+          restoreLocal(cached.local);
+          acked = cached.acked || acked;
+        }
+        setStatus(cached.local ? 'unsaved' : 'offline');
+        emitStatus();
+        return cached.server;
+      }
+      state.loadedYear = Number(year);
+      lastPayload = {
+        year: Number(year),
+        bookings: [],
+        dayNotes: [],
+        weeks: [],
+        backup: backupStatus
+      };
+      setStatus('error');
+      throw err;
+    });
+  }
+
+  if (root.addEventListener) {
+    root.addEventListener('online', function () { flushAll(); });
+    root.addEventListener('beforeunload', function () {
+      if (state.loadedYear && isDirty()) writeCache(state.loadedYear);
+    });
+  }
+
+  acked = snapshot();
+
   var api = {
     STORAGE_KEY: STORAGE_KEY,
     DAY_LENGTH: DAY_LENGTH,
@@ -604,7 +1151,13 @@
     addBlock: addBlock,
     updateBlock: updateBlock,
     removeBlock: removeBlock,
-    persist: persist
+    persist: persist,
+    loadYear: loadYear,
+    peekYear: peekYear,
+    loadedYear: function () { return state.loadedYear; },
+    onStatus: function (handler) { statusHandler = handler; emitStatus(); },
+    onConflict: function (handler) { conflictHandler = handler; },
+    onApplied: function (handler) { appliedHandler = handler; }
   };
 
   root.ScheduleData = api;

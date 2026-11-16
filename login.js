@@ -42,6 +42,7 @@
     try {
       const response = await fetch(AUTH_LOGIN_URL, {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, pin })
       });

@@ -155,6 +155,17 @@
   letter-spacing: 0.03em;
 }
 
+.sch-save {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.sch-save.is-problem { color: #b45309; }
+.sch-save.is-error { color: #b91c1c; }
+
 .sch-nav {
   display: flex;
   align-items: center;

@@ -28,7 +28,14 @@
   }
 
   function clearSession() {
-    localStorage.removeItem(SESSION_KEY);
+    try { localStorage.removeItem(SESSION_KEY); } catch (err) { /* ignore */ }
+    try {
+      fetch('/.netlify/functions/authLogout', {
+        method: 'POST',
+        credentials: 'same-origin',
+        keepalive: true
+      });
+    } catch (err) { /* the local flag is already gone */ }
   }
 
   function isAuthenticated() {

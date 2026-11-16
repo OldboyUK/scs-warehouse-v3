@@ -13,6 +13,7 @@
   var filling = false;
   var drag = null;
   var navigating = false;
+  var yearToken = 0;
   var scrollLock = false;
 
   var scroll = document.getElementById('scheduleScroll');
@@ -249,11 +250,11 @@
     wrap.appendChild(text);
     wrap.addEventListener('click', function (event) {
       event.preventDefault();
-      if (button.disabled) return;
+      if (navigating || button.disabled) return;
       var next = !button.classList.contains('is-on');
       if (!next && weekHasSaturdayBlock(week)) return;
       data.setSaturdayRunning(week, next);
-      data.persist();
+      data.persist('week');
       paintSaturday(board);
     });
     return wrap;
@@ -308,9 +309,13 @@
     input.value = saved[field] || '';
     input.setAttribute('aria-label', day.label + ' ' + label);
     input.addEventListener('input', function () {
+      if (navigating) {
+        input.value = saved[field] || '';
+        return;
+      }
       fitDayNote(input);
       data.setDayNote(date, field, input.value);
-      data.persist();
+      data.persist('notes');
     });
     input.addEventListener('keydown', function (event) {
       if (event.key !== 'Enter' || event.shiftKey) return;
@@ -732,7 +737,7 @@
       }
       var lane = laneMap[laneKey(created.weekCommencing, created.day, created.category)];
       if (lane) lane.appendChild(renderBlock(created));
-      data.persist();
+      data.persist('block');
       releaseNight(created.weekCommencing);
       paintSaturday(boardFor(created.weekCommencing));
       draft = null;
@@ -742,7 +747,7 @@
     if (!editingId) return;
     var updated = data.updateBlock(editingId, productPatch(match, volume));
     if (updated) placeBlock(updated);
-    data.persist();
+    data.persist('block');
     if (updated) releaseNight(updated.weekCommencing);
     closeEditor();
   }
@@ -758,6 +763,7 @@
   }
 
   function openEditor(id, mode) {
+    if (navigating) return;
     var block = data.getBlock(id);
     if (!block) return;
     if (editingId && editingId !== id) {
@@ -786,6 +792,7 @@
   }
 
   function openCreate(day, category, hour, week) {
+    if (navigating) return;
     if (editorMode === 'edit') dismissEditor();
     else if (editorMode === 'add') closeEditor();
     draft = {
@@ -878,7 +885,7 @@
       block.day !== info.day ||
       block.category !== info.category ||
       block.weekCommencing !== info.week;
-    if (changed) data.persist();
+    if (changed) data.persist('block');
     releaseNight(info.week);
     if (block.weekCommencing !== info.week) releaseNight(block.weekCommencing);
     paintSaturday(boardFor(info.week));
@@ -1015,7 +1022,7 @@
   }
 
   function onPointerDown(event) {
-    if (event.button !== 0 || drag) return;
+    if (event.button !== 0 || drag || navigating) return;
     if (event.target.closest('.sch-day-note')) return;
     var handle = event.target.closest('.prod-handle');
     var blockNode = event.target.closest('.prod-block');
@@ -1173,7 +1180,7 @@
     var required = weekNeedsNight(week);
     if (board.dataset.nightRequired === 'true' && !required && !data.isNightManual(week)) {
       data.setNightManual(week, true);
-      data.persist();
+      data.persist('week');
     }
     applyNight(board);
   }
@@ -1191,9 +1198,9 @@
     label.appendChild(document.createTextNode('Toggle Night Shift'));
     label.addEventListener('click', function (event) {
       event.preventDefault();
-      if (button.disabled) return;
+      if (navigating || button.disabled) return;
       data.setNightManual(week, !button.classList.contains('is-on'));
-      data.persist();
+      data.persist('week');
       applyNight(board);
     });
     var note = document.createElement('p');
@@ -1314,13 +1321,29 @@
     navigating = true;
     fillYearSelect(year);
     fillWeekJump(year, iso);
-    renderYear(year);
     data.setMeta({ weekCommencing: iso });
     runSuffix.value = data.runSuffixFor(iso);
-    markActive(iso);
-    navigating = false;
-    window.requestAnimationFrame(function () {
-      window.requestAnimationFrame(function () { scrollToWeek(iso, !!smooth); });
+    if (data.peekYear(year) || !data.loadedYear()) {
+      renderYear(year);
+      markActive(iso);
+      window.requestAnimationFrame(function () { scrollToWeek(iso, false); });
+    }
+    var token = ++yearToken;
+    data.loadYear(year).then(function () {
+      if (token !== yearToken) return;
+      renderYear(year);
+      data.setMeta({ weekCommencing: iso });
+      runSuffix.value = data.runSuffixFor(iso);
+      markActive(iso);
+      navigating = false;
+      window.requestAnimationFrame(function () {
+        window.requestAnimationFrame(function () { scrollToWeek(iso, !!smooth); });
+      });
+    }).catch(function () {
+      if (token !== yearToken) return;
+      renderYear(year);
+      markActive(iso);
+      navigating = false;
     });
   }
 
@@ -1341,6 +1364,42 @@
     if (weekJump.value !== iso) weekJump.value = iso;
     runSuffix.value = data.runSuffixFor(iso);
     data.setMeta({ weekCommencing: iso });
+  }
+
+  function bindScheduleStatus() {
+    var saveStatus = document.getElementById('saveStatus');
+    var conflictDialog = document.getElementById('conflictDialog');
+    var conflictText = document.getElementById('conflictText');
+    var conflictTheirs = document.getElementById('conflictTheirs');
+    var conflictMine = document.getElementById('conflictMine');
+    data.onStatus(function (info) {
+      if (!saveStatus) return;
+      saveStatus.textContent = info.message;
+      saveStatus.classList.toggle('is-problem', info.tone === 'problem');
+      saveStatus.classList.toggle('is-error', info.tone === 'error');
+    });
+    data.onConflict(function (message, decide) {
+      conflictText.textContent = message;
+      conflictDialog.hidden = false;
+      conflictTheirs.onclick = function () {
+        conflictDialog.hidden = true;
+        decide('theirs');
+      };
+      conflictMine.onclick = function () {
+        conflictDialog.hidden = true;
+        decide('mine');
+      };
+      conflictTheirs.focus();
+    });
+    data.onApplied(function () {
+      var top = scroll.scrollTop;
+      var left = scroll.scrollLeft;
+      var iso = weekJump.value;
+      renderYear(Number(yearSelect.value));
+      scroll.scrollTop = top;
+      scroll.scrollLeft = left;
+      if (iso) markActive(iso);
+    });
   }
 
   function bindMeta() {
@@ -1539,7 +1598,7 @@
       var week = existing && existing.weekCommencing;
       closeEditor();
       data.removeBlock(id);
-      data.persist();
+      data.persist('block');
       var node = blockElement(id);
       if (node) node.remove();
       if (week) {
@@ -1620,6 +1679,7 @@
   renderLegend();
   bindMeta();
   bindEditor();
+  bindScheduleStatus();
   var opening = data.productionInfo(data.mondayISO(new Date()));
   showYear(opening.year, opening.weekCommencing, false);
   products.load().catch(function () { /* status already reported */ });

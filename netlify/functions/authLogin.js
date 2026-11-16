@@ -1,5 +1,6 @@
 const fetch = require('node-fetch');
 const { getAuthScriptUrl, missingAuthUrlMessage } = require('./scriptConfig');
+const session = require('./session');
 const SHARED_TOKEN = 'J4PAN88';
 
 exports.handler = async function (event) {
@@ -48,9 +49,17 @@ exports.handler = async function (event) {
       };
     }
 
+    const headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
+    let parsed = null;
+    try { parsed = JSON.parse(text); } catch (err) { parsed = null; }
+    if (parsed && parsed.result === 'success') {
+      const token = session.signSession(String(payload.username || '').trim());
+      if (token) headers['Set-Cookie'] = session.cookieHeader(token, session.requestIsSecure(event));
+    }
+
     return {
       statusCode: response.status || 200,
-      headers: { 'Content-Type': 'application/json' },
+      headers: headers,
       body: text
     };
   } catch (err) {
