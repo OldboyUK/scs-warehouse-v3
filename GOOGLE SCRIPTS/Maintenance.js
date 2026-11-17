@@ -38,9 +38,24 @@
  * is an available ID cell.
  * Other formulas, the header row, column I, and unrelated cells are left alone.
  *
- * Run authorizeMaintenanceDrive once from the editor, allow Drive access, then
- * deploy a new web app version. Anonymous web apps upload through the Drive API.
+ * This project must use GOOGLE SCRIPTS/maintenance-appsscript.json, not the
+ * Warehouse manifest. The web app runs as the deploying account
+ * (executeAs USER_DEPLOYING). That account must be an editor of the parent
+ * Drive folder. oauthScopes must include https://www.googleapis.com/auth/drive.
+ * drive.readonly can open a folder but cannot create job folders or upload
+ * photographs. UrlFetchApp does not add that scope on its own.
+ *
+ * After pasting this file and the manifest, run authorizeMaintenanceDrive once
+ * from the editor, allow the Drive prompt, then deploy a new web app version
+ * (Execute as: Me, Who has access: Anyone). Anonymous web apps upload through
+ * the Drive API with that account's token.
  */
+
+var MAINTENANCE_SCOPES = [
+  'https://www.googleapis.com/auth/spreadsheets',
+  'https://www.googleapis.com/auth/drive',
+  'https://www.googleapis.com/auth/script.external_request'
+];
 
 var API_TOKEN = 'J4PAN88';
 var SSID_MAINTENANCE = '1k0y2ieC4Sg5gYNOFLgcCxLNMUjImCdZNOJTBPg-V-KE';
@@ -982,9 +997,26 @@ function publicMessage_(err) {
 }
 
 function authorizeMaintenanceDrive() {
+  if (ScriptApp.requireScopes) {
+    ScriptApp.requireScopes(ScriptApp.AuthMode.FULL, MAINTENANCE_SCOPES);
+  }
   var parent = DriveApp.getFolderById(DRIVE_FAULT_PARENT);
-  driveFetch_('get', driveListUrl_(DRIVE_FAULT_PARENT, parent.getName()));
-  Logger.log('Maintenance Drive OK. Parent: ' + parent.getName());
+  var probeName = '_maintenance_auth_probe_' + new Date().getTime();
+  var probe = parent.createFolder(probeName);
+  try {
+    var listed = driveFoldersNamed_(DRIVE_FAULT_PARENT, probeName);
+    if (!listed.length) {
+      throw new Error('The Drive API could not see the test folder just created in the Maintenance parent.');
+    }
+  } catch (err) {
+    throw new Error(
+      'Drive authorisation is incomplete. Paste maintenance-appsscript.json so this project requests https://www.googleapis.com/auth/drive, then run this function again as the account that edits the parent folder. ' +
+      publicMessage_(err)
+    );
+  } finally {
+    probe.setTrashed(true);
+  }
+  Logger.log('Maintenance Drive OK. Parent: ' + parent.getName() + '. This account can create folders there. Deploy a new web app version before testing a report.');
 }
 
 function ensureJobFolders_(maintenanceId) {

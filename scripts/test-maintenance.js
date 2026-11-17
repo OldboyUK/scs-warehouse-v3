@@ -255,12 +255,38 @@ const context = {
   DriveApp: {
     getFolderById: function (id) {
       if (id !== '1AMvZj3XOytmfdiWSIT-EQ7mH8FVQsBxs') throw new Error('permission denied');
-      return { getName: function () { return 'Maintenance jobs'; } };
+      return {
+        getName: function () { return 'Maintenance jobs'; },
+        createFolder: function (name) {
+          const folderId = 'probe-' + world.drive.next++;
+          world.drive.nodes.push({
+            id: folderId,
+            name: name,
+            parentId: id,
+            mimeType: 'application/vnd.google-apps.folder',
+            trashed: false
+          });
+          return {
+            setTrashed: function (trashed) {
+              world.drive.nodes.forEach(function (node) {
+                if (node.id === folderId) node.trashed = !!trashed;
+              });
+            }
+          };
+        }
+      };
     }
   },
   ScriptApp: {
-    getOAuthToken: function () { return 'test-token'; }
+    getOAuthToken: function () { return 'test-token'; },
+    AuthMode: { FULL: 'FULL' },
+    requireScopes: function (mode, scopes) {
+      if (mode !== 'FULL') throw new Error('unexpected auth mode');
+      if (scopes.indexOf('https://www.googleapis.com/auth/drive') === -1) throw new Error('full Drive scope was not requested');
+      if (scopes.indexOf('https://www.googleapis.com/auth/drive.readonly') !== -1) throw new Error('read-only Drive scope was requested');
+    }
   },
+  Logger: { log: function () {} },
   UrlFetchApp: {
     fetch: function (url, options) {
       options = options || {};
@@ -799,9 +825,28 @@ function testPages() {
   assert(form.indexOf('/.netlify/functions/uploadFaultPhoto') !== -1, 'photographs post to the upload function');
   assert(form.indexOf('J4PAN88') === -1 && form.indexOf('script.google.com') === -1, 'frontend has no script credential or web app URL');
   assert(form.indexOf('/.netlify/functions/submitFault') !== -1, 'form posts to the Netlify function');
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, 'GOOGLE SCRIPTS/maintenance-appsscript.json'), 'utf8'));
+  assertEqual(manifest.webapp.executeAs, 'USER_DEPLOYING', 'Maintenance web app runs as the deploying account');
+  assertEqual(manifest.webapp.access, 'ANYONE_ANONYMOUS', 'Maintenance web app stays anonymous for Netlify');
+  assert(manifest.oauthScopes.indexOf('https://www.googleapis.com/auth/drive') !== -1, 'Maintenance manifest requests full Drive');
+  assert(manifest.oauthScopes.indexOf('https://www.googleapis.com/auth/drive.readonly') === -1, 'Maintenance manifest does not request read-only Drive');
+  assert(script.indexOf('https://www.googleapis.com/auth/drive') !== -1, 'editor authorisation requests full Drive');
+  assert(script.indexOf('https://www.googleapis.com/auth/drive.readonly') === -1, 'script does not request read-only Drive');
+  assert(script.indexOf('function authorizeMaintenanceDrive') !== -1, 'editor function is available to grant Drive');
   assert(script.indexOf('appendRow') === -1 && script.indexOf('setValues') === -1, 'writer does not append or bulk-write');
   assert(script.indexOf('deleteRow') === -1 && script.indexOf('clearContents') === -1, 'writer does not delete rows or clear the sheet');
   assert(script.indexOf(core.SSID_MAINTENANCE) !== -1 && script.indexOf('Submission Log') !== -1, 'writer targets Submission Log');
+}
+
+function testDriveAuthorisation() {
+  fresh();
+  context.authorizeMaintenanceDrive();
+  const probes = world.drive.nodes.filter(function (node) {
+    return node.name.indexOf('_maintenance_auth_probe_') === 0;
+  });
+  assertEqual(probes.length, 1, 'authorisation creates one probe folder');
+  assertEqual(probes[0].parentId, '1AMvZj3XOytmfdiWSIT-EQ7mH8FVQsBxs', 'probe is created in the Maintenance parent');
+  assert(probes[0].trashed, 'authorisation removes the probe folder');
 }
 
 function testScriptPages() {
@@ -872,6 +917,7 @@ async function main() {
   testIds();
   testLists();
   testSheetWrites();
+  testDriveAuthorisation();
   testPages();
   testScriptPages();
   await testHandlerAndLiveCsv();
