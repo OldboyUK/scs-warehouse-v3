@@ -1,7 +1,7 @@
 /*
  * Product lists for the Schedule module.
- * Both sheets are published CSVs. They are loaded once per page view
- * and kept in memory. They are not written to localStorage.
+ * The published Google CSVs remain the source. Netlify keeps a cached copy,
+ * and this browser keeps the last good copy so the page does not wait on Google.
  */
 (function (root) {
   var RANGES_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vThaK38XWYKd8tXJ0g9BzOxjGVooeeNbpz4A5W4eJ6DSWoPFZOaSkaHipAS2pwXU2_L-QyeMyy7Fnsf/pub?gid=621719663&single=true&output=csv';
@@ -12,6 +12,7 @@
   var STATUS_COLUMN = 32;
   var FORMAT_COLUMN = 3;
 
+  var CACHE_KEY = 'scs_schedule_products_v1';
   var catalogue = null;
   var loadError = '';
   var pending = null;
@@ -155,7 +156,7 @@
   }
 
   function fetchText(url) {
-    return fetch(url, { cache: 'no-store' }).then(function (response) {
+    return fetch(url).then(function (response) {
       if (!response.ok) throw new Error('Request failed (' + response.status + ').');
       return response.text();
     }).then(function (text) {
@@ -164,25 +165,79 @@
     });
   }
 
+  function storage() {
+    try { return root.localStorage; } catch (err) { return null; }
+  }
+
+  function remember(rangesText, databaseText) {
+    var store = storage();
+    if (!store) return;
+    try {
+      store.setItem(CACHE_KEY, JSON.stringify({ ranges: rangesText, database: databaseText }));
+    } catch (err) { /* the lists stay in memory for this visit */ }
+  }
+
+  function remembered() {
+    var store = storage();
+    if (!store) return null;
+    try {
+      var saved = JSON.parse(store.getItem(CACHE_KEY) || 'null');
+      if (!saved || !saved.ranges || !saved.database) return null;
+      return buildCatalogue(saved.ranges, saved.database);
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function useCatalogue(next) {
+    catalogue = next;
+    loadError = '';
+    emit();
+    return catalogue;
+  }
+
+  function fromGoogle() {
+    return Promise.all([fetchText(RANGES_URL), fetchText(DATABASE_URL)]).then(function (texts) {
+      remember(texts[0], texts[1]);
+      return useCatalogue(buildCatalogue(texts[0], texts[1]));
+    });
+  }
+
+  function fromNetlify() {
+    return fetch('/.netlify/functions/schedule-products').then(function (response) {
+      if (!response.ok) throw new Error('Request failed (' + response.status + ').');
+      return response.json();
+    }).then(function (body) {
+      if (!body || !body.ranges || !body.database) throw new Error('The product lists could not be loaded.');
+      remember(body.ranges, body.database);
+      return useCatalogue(buildCatalogue(body.ranges, body.database));
+    });
+  }
+
   function load(force) {
     if (catalogue && !force) return Promise.resolve(catalogue);
     if (pending && !force) return pending;
     started = true;
-    catalogue = null;
     loadError = '';
-    pending = Promise.all([fetchText(RANGES_URL), fetchText(DATABASE_URL)]).then(function (texts) {
-      catalogue = buildCatalogue(texts[0], texts[1]);
+    if (!catalogue) {
+      var cached = remembered();
+      if (cached) useCatalogue(cached);
+    }
+    var request = fromNetlify().catch(function (err) {
+      if (catalogue) throw err;
+      return fromGoogle();
+    });
+    pending = request.then(function (next) {
       pending = null;
-      emit();
-      return catalogue;
+      return next;
     }).catch(function (err) {
-      catalogue = null;
       pending = null;
+      if (catalogue) return catalogue;
       loadError = err && err.message ? err.message : 'The product lists could not be loaded.';
       emit();
       throw err;
     });
-    emit();
+    if (!catalogue) emit();
     return pending;
   }
 

@@ -600,6 +600,8 @@
     if (statusCode === 'loading') return 'Loading schedule…';
     if (statusCode === 'saving') return 'Saving…';
     if (statusCode === 'unsaved') return 'Not saved on this computer. These changes will be sent when the connection returns.';
+    if (statusCode === 'save-failed') return 'Couldn\u2019t save these changes. They are still on this computer.';
+    if (statusCode === 'offline-changes') return 'Couldn\u2019t reach the schedule store. Changes on this computer have not been saved yet.';
     if (statusCode === 'offline') return 'Couldn\u2019t reach the schedule store. Showing the last copy saved on this computer.';
     if (statusCode === 'error') return 'Couldn\u2019t load the schedule.';
     if (statusCode === 'conflict') return 'A change needs a decision before it can be saved.';
@@ -610,13 +612,23 @@
   }
 
   function statusTone() {
-    if (statusCode === 'error' || statusCode === 'unsaved' || statusCode === 'offline') return 'error';
+    if (statusCode === 'error' || statusCode === 'unsaved' || statusCode === 'save-failed' || statusCode === 'offline' || statusCode === 'offline-changes') return 'error';
     if (statusCode === 'conflict' || statusCode === 'saved-fail' || (statusCode === 'saved' && backupStatus.failed)) return 'problem';
     if (statusCode === 'saved' && !backupStatus.configured) return 'problem';
     return '';
   }
 
+  function browserOffline() {
+    return root.navigator && root.navigator.onLine === false;
+  }
+
+  function pendingStatus() {
+    return browserOffline() ? 'unsaved' : 'save-failed';
+  }
+
   function setStatus(code) {
+    if ((code === 'unsaved' || code === 'save-failed') && !isDirty()) code = 'saved';
+    if (code === 'offline-changes' && !isDirty()) code = 'offline';
     statusCode = code;
     if (statusHandler) statusHandler({ code: code, message: statusMessage(), tone: statusTone(), backup: backupStatus });
   }
@@ -740,7 +752,7 @@
     if (cached.local) {
       restoreLocal(cached.local);
       acked = cached.acked || acked;
-      setStatus('unsaved');
+      setStatus(isDirty() ? pendingStatus() : 'saved');
     }
     return true;
   }
@@ -803,7 +815,7 @@
       handleResults(results, ops);
     }).catch(function (err) {
       if (err && err.auth) return;
-      setStatus('unsaved');
+      setStatus(pendingStatus());
       writeCache(state.loadedYear);
     }).then(function () {
       flights[scope] = null;
@@ -839,7 +851,7 @@
       writeCache(state.loadedYear);
       return;
     }
-    if (isDirty()) setStatus('unsaved');
+    if (isDirty()) setStatus(pendingStatus());
     else {
       setStatus('saved');
       writeCache(state.loadedYear);
@@ -1080,6 +1092,11 @@
       return postOps(replay).then(function (results) {
         handleResults(results);
         return payload;
+      }).catch(function (err) {
+        if (err && err.auth) throw err;
+        setStatus(pendingStatus());
+        writeCache(year);
+        return payload;
       });
     }).catch(function (err) {
       if (err && err.auth) throw err;
@@ -1090,7 +1107,7 @@
           restoreLocal(cached.local);
           acked = cached.acked || acked;
         }
-        setStatus(cached.local ? 'unsaved' : 'offline');
+        setStatus(cached.local && isDirty() ? 'offline-changes' : 'offline');
         emitStatus();
         return cached.server;
       }

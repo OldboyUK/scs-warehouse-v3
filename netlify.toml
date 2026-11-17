@@ -177,3 +177,6 @@
 
 [functions."schedule-backup"]
   schedule = "*/30 * * * *"
+
+[functions."schedule-products"]
+  timeout = 60
