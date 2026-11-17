@@ -170,9 +170,13 @@ function createSheet(maxRows) {
 }
 
 function seedHeaders(sheet) {
-  ['Maintenance ID', 'Date', 'User', 'Reporter', 'Line / Area', 'Machine / Equipment', 'Priority', 'Description of issue', 'Parts requested', 'Raise request'].forEach(function (text, index) {
-    sheet.seed(1, index + 1, { value: text });
+  ['Maintenance ID', 'Job', 'Date', 'User', 'Reporter', 'Line / Area', 'Machine / Equipment', 'Priority', '', 'Description of issue', 'Parts requested', 'Raise maintenance request', 'Folder'].forEach(function (text, index) {
+    if (text) sheet.seed(1, index + 1, { value: text });
   });
+}
+
+function driveNamed(name) {
+  return world.drive.nodes.filter(function (node) { return node.name === name; });
 }
 
 const world = {
@@ -204,7 +208,16 @@ const context = {
       const out = [];
       for (let i = 0; i < buf.length; i++) out.push(buf[i] > 127 ? buf[i] - 256 : buf[i]);
       return out;
-    }
+    },
+    newBlob: function (bytes, mime, name) {
+      return {
+        name: name,
+        getContentType: function () { return mime; },
+        getBytes: function () { return bytes; }
+      };
+    },
+    base64Decode: function (text) { return Buffer.from(String(text), 'base64'); },
+    base64Encode: function (bytes) { return Buffer.from(bytes).toString('base64'); }
   },
   LockService: {
     getScriptLock: function () {
@@ -238,13 +251,57 @@ const context = {
     },
     flush: function () {}
   },
+  encodeURIComponent: encodeURIComponent,
+  DriveApp: {
+    getFolderById: function (id) {
+      if (id !== '1AMvZj3XOytmfdiWSIT-EQ7mH8FVQsBxs') throw new Error('permission denied');
+      return { getName: function () { return 'Maintenance jobs'; } };
+    }
+  },
+  ScriptApp: {
+    getOAuthToken: function () { return 'test-token'; }
+  },
   UrlFetchApp: {
-    fetch: function (url) {
-      if (url !== core.DROPDOWNS_CSV_URL) throw new Error('Unexpected CSV url');
-      return {
-        getResponseCode: function () { return 200; },
-        getContentText: function () { return world.csv; }
+    fetch: function (url, options) {
+      options = options || {};
+      const method = String(options.method || 'get').toLowerCase();
+      const respond = function (code, text) {
+        return {
+          getResponseCode: function () { return code; },
+          getContentText: function () { return text; }
+        };
       };
+      if (url === core.DROPDOWNS_CSV_URL) return respond(200, world.csv);
+      if (String(url).indexOf('https://www.googleapis.com/upload/drive/') === 0) {
+        const meta = String(options.payload || '').match(/\{[\s\S]*?\}/);
+        const data = JSON.parse(meta[0]);
+        const id = 'file-' + world.drive.next++;
+        world.drive.nodes.push({ id: id, name: data.name, parentId: data.parents[0], mimeType: 'image/jpeg' });
+        return respond(200, JSON.stringify({ id: id, name: data.name }));
+      }
+      if (String(url).indexOf('https://www.googleapis.com/drive/v3/files') === 0 && method === 'get') {
+        const q = decodeURIComponent(String(url).split('q=')[1] || '');
+        const name = (q.match(/name = '((?:\\'|[^'])*)'/) || [])[1].replace(/\\'/g, "'");
+        const parentId = (q.match(/'([^']+)' in parents/) || [])[1];
+        const files = world.drive.nodes.filter(function (node) {
+          return node.parentId === parentId && node.name === name;
+        }).map(function (node) {
+          return { id: node.id, name: node.name, mimeType: node.mimeType };
+        });
+        return respond(200, JSON.stringify({ files: files }));
+      }
+      if (String(url).indexOf('https://www.googleapis.com/drive/v3/files') === 0 && method === 'post') {
+        const data = JSON.parse(options.payload);
+        const id = 'folder-' + world.drive.next++;
+        world.drive.nodes.push({
+          id: id,
+          name: data.name,
+          parentId: data.parents[0],
+          mimeType: data.mimeType || 'application/vnd.google-apps.folder'
+        });
+        return respond(200, JSON.stringify({ id: id, name: data.name }));
+      }
+      throw new Error('Unexpected fetch ' + url);
     }
   },
   ContentService: {
@@ -270,6 +327,7 @@ function fresh() {
   world.locked = false;
   world.now = new Date('2026-06-15T12:00:00Z');
   world.csv = FIXTURE;
+  world.drive = { next: 1, nodes: [] };
 }
 
 function cell(row, col) {
@@ -300,6 +358,8 @@ function post(extra) {
     reporterMode: 'self',
     user: 'Test User',
     reporter: '',
+    title: 'Filler guard missing',
+    photoNames: [],
     area: 'Laboratory',
     areaOther: '',
     equipment: 'DMA',
@@ -359,6 +419,7 @@ function testLists() {
     reporterMode: 'self',
     user: 'Someone Signed In',
     reporter: '',
+    title: 'Loose cable',
     area: 'Other',
     areaOther: 'Mezzanine',
     equipment: 'Other',
@@ -374,13 +435,16 @@ function testLists() {
   assertEqual(other.value.priority, 'High Priority', 'validated priority is short');
   assertEqual(other.value.maintenanceRequest, 'No', 'maintenance answer is No');
   assertEqual(other.value.user, 'Someone Signed In', 'signed-in user does not have to be in the dropdown');
-  assertEqual(other.value.reporter, '', 'self report stores no separate reporter');
+  assertEqual(other.value.title, 'Loose cable', 'title is stored');
+  assertEqual(other.value.reporter, 'Someone Signed In', 'self report stores the signed-in user as the reporter');
+  assertEqual(other.value.photoNames.length, 0, 'a report can have no photographs');
 
   const wrongMachine = core.validateFault({
     submissionId: 'sub-00000001',
     reporterMode: 'other',
     user: 'Test User',
     reporter: 'Jody R',
+    title: 'Wrong machine',
     area: 'Laboratory',
     equipment: 'Depalletiser',
     priority: 'Low Priority',
@@ -395,6 +459,7 @@ function testLists() {
     reporterMode: 'other',
     user: 'Test User',
     reporter: 'Jody R',
+    title: 'Noise',
     area: 'Laboratory',
     equipment: 'DMA',
     priority: 'Low Priority',
@@ -407,17 +472,20 @@ function testLists() {
 function testSheetWrites() {
   fresh();
   world.sheet.seed(2, 1, { value: 'MA0009' });
-  world.sheet.seed(2, 2, { value: '01/01/2026' });
-  world.sheet.seed(2, 3, { value: 'Old User' });
-  world.sheet.seed(2, 4, { value: 'Old Reporter' });
-  world.sheet.seed(2, 5, { value: 'Old Area' });
-  world.sheet.seed(2, 6, { value: 'Old Machine' });
-  world.sheet.seed(2, 7, { value: 'Low Priority' });
-  world.sheet.seed(2, 8, { value: 'Old fault' });
-  world.sheet.seed(2, 9, { value: 'Old part' });
-  world.sheet.seed(2, 10, { value: 'No' });
-  world.sheet.seed(2, 12, { formula: '=1+1', value: 2, display: '2' });
-  world.sheet.seed(3, 12, { formula: '=2+2', value: 4, display: '4' });
+  world.sheet.seed(2, 2, { value: 'MA0009 | Old title' });
+  world.sheet.seed(2, 3, { value: '01/01/2026' });
+  world.sheet.seed(2, 4, { value: 'Old User' });
+  world.sheet.seed(2, 5, { value: 'Old Reporter' });
+  world.sheet.seed(2, 6, { value: 'Old Area' });
+  world.sheet.seed(2, 7, { value: 'Old Machine' });
+  world.sheet.seed(2, 8, { value: 'Low Priority' });
+  world.sheet.seed(2, 9, { value: 'Leave this cell' });
+  world.sheet.seed(2, 10, { value: 'Old fault' });
+  world.sheet.seed(2, 11, { value: 'Old part' });
+  world.sheet.seed(2, 12, { value: 'No' });
+  world.sheet.seed(3, 9, { value: 'Leave this cell' });
+  world.sheet.seed(2, 15, { formula: '=1+1', value: 2, display: '2' });
+  world.sheet.seed(3, 15, { formula: '=2+2', value: 4, display: '4' });
   world.sheet.seed(5, 1, { formula: '=""', display: '', value: '' });
 
   const saved = post({
@@ -428,27 +496,34 @@ function testSheetWrites() {
   assertEqual(saved.maintenanceId, 'MA0010', 'next id follows the highest existing id');
   assertEqual(saved.submittedOn, '15/06/2026', 'date is generated on the server in London');
   assertEqual(cell(3, 1), 'MA0010', 'id is written to column A');
-  assertEqual(cell(3, 2), '15/06/2026', 'date is written to column B');
-  assertEqual(cell(3, 3), 'Test User', 'signed-in user is written to column C');
-  assertEqual(cell(3, 4), '', 'self report leaves Reporter blank');
-  assert(!world.sheet.writeLog.some(function (entry) { return entry.row === 3 && entry.col === 4; }), 'blank reporter cell is not written');
-  assertEqual(cell(3, 5), 'Laboratory', 'area is written to column E');
-  assertEqual(cell(3, 6), 'DMA', 'equipment is written to column F');
-  assertEqual(cell(3, 7), 'High Priority', 'priority category only is written to column G');
-  assert(String(cell(3, 7)).indexOf('Urgent') === -1, 'priority explanation is not stored');
-  assertEqual(cell(3, 8), 'Guard missing from the filler', 'description is written to column H');
-  assertEqual(cell(3, 9), 'Guard', 'parts are written to column I');
-  assertEqual(cell(3, 10), 'Yes', 'Yes is written to column J');
+  assertEqual(cell(3, 2), 'MA0010 | Filler guard missing', 'column B joins the id and title');
+  assertEqual(cell(3, 3), '15/06/2026', 'date is written to column C');
+  assertEqual(cell(3, 4), 'Test User', 'signed-in user is written to column D');
+  assertEqual(cell(3, 5), 'Test User', 'self report stores the signed-in user as the reporter');
+  assertEqual(cell(3, 6), 'Laboratory', 'area is written to column F');
+  assertEqual(cell(3, 7), 'DMA', 'equipment is written to column G');
+  assertEqual(cell(3, 8), 'High Priority', 'priority category only is written to column H');
+  assert(String(cell(3, 8)).indexOf('Urgent') === -1, 'priority explanation is not stored');
+  assertEqual(cell(3, 9), 'Leave this cell', 'column I is not written');
+  assert(!world.sheet.writeLog.some(function (entry) { return entry.col === 9; }), 'column I is never written');
+  assertEqual(cell(3, 10), 'Guard missing from the filler', 'description is written to column J');
+  assertEqual(cell(3, 11), 'Guard', 'parts are written to column K');
+  assertEqual(cell(3, 12), 'Yes', 'raising a request writes Yes to column L');
+  assert(String(formula(3, 13)).indexOf('HYPERLINK') !== -1, 'column M is a hyperlink');
+  assert(String(formula(3, 13)).indexOf(driveNamed('MA0010')[0].id) !== -1, 'column M links to the job folder');
+  assertEqual(driveNamed('MA0010 | Requests').length, 1, 'the Requests folder is created');
+  assertEqual(driveNamed('MA0010 | Completed').length, 0, 'a completed folder is not created');
   assertEqual(cell(2, 1), 'MA0009', 'existing id is not overwritten');
-  assertEqual(cell(2, 3), 'Old User', 'existing user is not overwritten');
-  assertEqual(cell(2, 4), 'Old Reporter', 'existing reporter is not overwritten');
-  assertEqual(cell(2, 8), 'Old fault', 'existing description is not overwritten');
-  assertEqual(formula(2, 12), '=1+1', 'unrelated formula is preserved');
-  assertEqual(formula(3, 12), '=2+2', 'formula beside the new row is preserved');
+  assertEqual(cell(2, 4), 'Old User', 'existing user is not overwritten');
+  assertEqual(cell(2, 5), 'Old Reporter', 'existing reporter is not overwritten');
+  assertEqual(cell(2, 9), 'Leave this cell', 'existing column I is not overwritten');
+  assertEqual(cell(2, 10), 'Old fault', 'existing description is not overwritten');
+  assertEqual(formula(2, 15), '=1+1', 'unrelated formula is preserved');
+  assertEqual(formula(3, 15), '=2+2', 'formula beside the new row is preserved');
   assertEqual(formula(5, 1), '=""', 'later blank formula is not the first row used');
   assertEqual(cell(1, 1), 'Maintenance ID', 'header row is not overwritten');
-  assertEqual(cell(1, 3), 'User', 'user header is not overwritten');
-  assertEqual(cell(1, 4), 'Reporter', 'reporter header is not overwritten');
+  assertEqual(cell(1, 4), 'User', 'user header is not overwritten');
+  assertEqual(cell(1, 5), 'Reporter', 'reporter header is not overwritten');
   assertEqual(display(8, 1), '', 'a later empty row is not used while an earlier row is free');
   assertEqual(idRows().length, 2, 'existing and new ids both remain');
 
@@ -460,14 +535,14 @@ function testSheetWrites() {
   const changed = post({ description: 'A different fault' });
   assertEqual(changed.result, 'error', 'changed retry is not saved as a new report');
   assert(String(changed.maintenanceId) === 'MA0010', 'changed retry names the original id');
-  assertEqual(cell(3, 8), 'Guard missing from the filler', 'original description stays in place');
+  assertEqual(cell(3, 10), 'Guard missing from the filler', 'original description stays in place');
   assertEqual(idRows().length, 2, 'changed retry does not add a row');
 
   fresh();
   const first = post({ submissionId: 'sub-00000011', parts: '' });
   assertEqual(first.maintenanceId, 'MA0001', 'empty log starts at MA0001');
-  assertEqual(cell(2, 9), '', 'blank parts stay blank');
-  assert(!world.sheet.writeLog.some(function (entry) { return entry.col === 9; }), 'blank parts cell is not written');
+  assertEqual(cell(2, 11), '', 'blank parts stay blank');
+  assert(!world.sheet.writeLog.some(function (entry) { return entry.col === 11; }), 'blank parts cell is not written');
   const second = post({ submissionId: 'sub-00000012', description: 'Second fault', parts: 'Seal' });
   assertEqual(second.maintenanceId, 'MA0002', 'second report increments');
   assertEqual(cell(3, 1), 'MA0002', 'second report uses the next row');
@@ -523,13 +598,13 @@ function testSheetWrites() {
     maintenanceRequest: 'No'
   });
   assertEqual(other.result, 'success', 'other area and equipment save');
-  assertEqual(cell(2, 3), 'Test User', 'signed-in user is column C');
-  assertEqual(cell(2, 4), 'Jody R', 'a different reporter is column D');
-  assertEqual(cell(2, 5), 'Mezzanine', 'free-text area is saved');
-  assertEqual(cell(2, 6), 'Loose cable', 'free-text equipment is saved');
-  assertEqual(cell(2, 7), 'Unsure', 'unsure priority is shortened');
-  assertEqual(cell(2, 10), 'No', 'No is saved rather than the button label');
-  assert(cell(2, 5) !== 'Other' && cell(2, 6) !== 'Other', 'the word Other is not saved');
+  assertEqual(cell(2, 4), 'Test User', 'signed-in user is column D');
+  assertEqual(cell(2, 5), 'Jody R', 'a different reporter is column E');
+  assertEqual(cell(2, 6), 'Mezzanine', 'free-text area is saved');
+  assertEqual(cell(2, 7), 'Loose cable', 'free-text equipment is saved');
+  assertEqual(cell(2, 8), 'Unsure', 'unsure priority is shortened');
+  assertEqual(cell(2, 12), 'No', 'marking the job completed writes No to column L');
+  assert(cell(2, 6) !== 'Other' && cell(2, 7) !== 'Other', 'the word Other is not saved');
 
   fresh();
   const samePerson = post({
@@ -539,8 +614,88 @@ function testSheetWrites() {
     reporter: 'Jody R'
   });
   assertEqual(samePerson.result, 'success', 'a reporter who is the signed-in user still saves');
-  assertEqual(cell(2, 3), 'Jody R', 'that person is stored as the user');
-  assertEqual(cell(2, 4), '', 'Reporter stays blank when it is the same person');
+  assertEqual(cell(2, 4), 'Jody R', 'that person is stored as the user');
+  assertEqual(cell(2, 5), 'Jody R', 'the selected reporter is stored even when it is the same person');
+
+  fresh();
+  world.sheet.seed(2, 9, { value: 'Leave this cell' });
+  const prepared = post({
+    submissionId: 'sub-photo-01',
+    title: 'Belt slip',
+    description: 'The belt slips under load',
+    photoNames: ['fault-01.jpg', 'fault-02.jpg']
+  });
+  assertEqual(prepared.result, 'pending', 'photographs are uploaded before the row is confirmed');
+  assertEqual(prepared.maintenanceId, 'MA0001', 'the job id is reserved before the photographs upload');
+  assertEqual(cell(2, 1), '', 'the row is not written before the photographs upload');
+  assertEqual(driveNamed('MA0001').length, 1, 'the job folder is created before the photographs upload');
+  assertEqual(driveNamed('MA0001 | Requests').length, 1, 'the Requests folder is created before the photographs upload');
+  const preparedAgain = post({
+    submissionId: 'sub-photo-01',
+    title: 'Belt slip',
+    description: 'The belt slips under load',
+    photoNames: ['fault-01.jpg', 'fault-02.jpg']
+  });
+  assertEqual(preparedAgain.maintenanceId, 'MA0001', 'preparing the same report again does not allocate another id');
+  assertEqual(driveNamed('MA0001').length, 1, 'preparing again does not create a second job folder');
+  function postPhoto(name) {
+    const out = context.doPost({
+      parameter: {},
+      postData: {
+        type: 'application/json',
+        contents: JSON.stringify({
+          token: 'J4PAN88',
+          action: 'fault_photo',
+          submissionId: 'sub-photo-01',
+          fileName: name,
+          mimeType: 'image/jpeg',
+          imageBase64: Buffer.from('photo-' + name).toString('base64')
+        })
+      }
+    });
+    return JSON.parse(out.getContent());
+  }
+  assertEqual(postPhoto('fault-01.jpg').result, 'ok', 'the first photograph uploads');
+  assertEqual(postPhoto('fault-02.jpg').result, 'ok', 'the second photograph uploads');
+  assertEqual(postPhoto('fault-01.jpg').result, 'ok', 'uploading the same photograph again does not fail');
+  const requestsFolder = driveNamed('MA0001 | Requests')[0];
+  const uploaded = world.drive.nodes.filter(function (node) {
+    return node.parentId === requestsFolder.id && node.mimeType !== 'application/vnd.google-apps.folder';
+  });
+  assertEqual(uploaded.length, 2, 'both photographs are in the Requests folder and the retry did not add a third');
+  assertEqual(uploaded.map(function (node) { return node.name; }).sort().join('|'), 'fault-01.jpg|fault-02.jpg', 'photograph file names are kept');
+  const committed = post({
+    action: 'fault_commit',
+    submissionId: 'sub-photo-01',
+    title: 'Belt slip',
+    description: 'The belt slips under load',
+    photoNames: ['fault-01.jpg', 'fault-02.jpg']
+  });
+  assertEqual(committed.result, 'success', 'the report is confirmed after the photographs upload');
+  assertEqual(committed.maintenanceId, 'MA0001', 'the confirmed id is the reserved id');
+  assertEqual(cell(2, 1), 'MA0001', 'the id is written after the photographs upload');
+  assertEqual(cell(2, 2), 'MA0001 | Belt slip', 'the title is joined to the id');
+  assertEqual(cell(2, 9), 'Leave this cell', 'column I stays untouched when photographs are saved');
+  assertEqual(cell(2, 10), 'The belt slips under load', 'the description is column J');
+  assert(String(formula(2, 13)).indexOf(driveNamed('MA0001')[0].id) !== -1, 'column M links to the top-level job folder');
+  const committedAgain = post({
+    action: 'fault_commit',
+    submissionId: 'sub-photo-01',
+    title: 'Belt slip',
+    description: 'The belt slips under load',
+    photoNames: ['fault-01.jpg', 'fault-02.jpg']
+  });
+  assertEqual(committedAgain.result, 'success', 'committing the same report again succeeds');
+  assertEqual(committedAgain.maintenanceId, 'MA0001', 'a second commit does not allocate another id');
+  assertEqual(idRows().length, 1, 'a second commit does not add a row');
+
+  fresh();
+  const noPhoto = post({ submissionId: 'sub-nophoto-1', title: 'No picture', description: 'Still a fault' });
+  assertEqual(noPhoto.result, 'success', 'a report with no photographs is saved');
+  assertEqual(noPhoto.maintenanceId, 'MA0001', 'a report with no photographs still gets an id');
+  assertEqual(driveNamed('MA0001').length, 1, 'a job folder is created when there are no photographs');
+  assertEqual(driveNamed('MA0001 | Requests').length, 1, 'the Requests folder is created when there are no photographs');
+  assertEqual(world.drive.nodes.filter(function (node) { return node.mimeType !== 'application/vnd.google-apps.folder'; }).length, 0, 'no photograph file is created when none were selected');
 
   fresh();
   const wrong = post({ submissionId: 'sub-wrong-001', area: 'Laboratory', equipment: 'Depalletiser' });
@@ -619,16 +774,16 @@ function testPages() {
     'Please select the operating line or area where the machine or equipment can be found',
     'Please select the Machine or piece of equipment that is faulty or in an unsafe condition.',
     'Please select a priority',
+    'Please write a descriptive title for the fault or unsafe condition. This will be used to later in conjunction with Maintenance ID to quickly identify the job.',
     'Please write a description of the fault or unsafe condition',
     'Parts requested',
-    'Would you like to raise Maintenance request?',
-    'Upload Photos of Faults',
-    'Work in Progress',
+    'Would you like to mark the job as completed or raise a maintenance request',
+    'Add photographs',
     'Submit Fault Report',
     'Self',
     'Another Operator',
-    'Yes - Raise Maintenance Request',
-    'No - Log as Maintenance Completed',
+    'Raise Maintenance Request',
+    'Mark job as completed',
     'High Priority - Urgent Risk to Safety of People or Food',
     'Medium Priority - A condition which must be addressed as it is likely to worsen, but does not pose an immediate risk',
     'Low Priority - A condition which must be improved, but is not urgent',
@@ -638,7 +793,10 @@ function testPages() {
     assert(form.indexOf(label) !== -1, 'form contains ' + label);
   });
   assert(form.indexOf('SCSAuth.getUsername()') !== -1, 'self uses the signed-in user');
-  assert(form.indexOf('type="file"') === -1 && form.indexOf('getUserMedia') === -1, 'photo control does not upload');
+  assert(form.indexOf('type="file"') !== -1 && form.indexOf('accept="image/*"') !== -1 && form.indexOf('multiple') !== -1, 'photographs can be selected');
+  assert(form.indexOf('getUserMedia') === -1, 'the form does not open the camera itself');
+  assert(form.indexOf('Work in Progress') === -1, 'the photo control is no longer a placeholder');
+  assert(form.indexOf('/.netlify/functions/uploadFaultPhoto') !== -1, 'photographs post to the upload function');
   assert(form.indexOf('J4PAN88') === -1 && form.indexOf('script.google.com') === -1, 'frontend has no script credential or web app URL');
   assert(form.indexOf('/.netlify/functions/submitFault') !== -1, 'form posts to the Netlify function');
   assert(script.indexOf('appendRow') === -1 && script.indexOf('setValues') === -1, 'writer does not append or bulk-write');
@@ -681,6 +839,7 @@ async function testHandlerAndLiveCsv() {
       reporterMode: 'other',
       user: 'Test User',
       reporter: 'Jody R',
+      title: 'Live list check',
       area: 'Laboratory',
       equipment: 'DMA',
       priority: 'High Priority',

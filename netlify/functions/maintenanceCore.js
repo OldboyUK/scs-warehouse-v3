@@ -192,16 +192,41 @@ function reportPeople(data, lists) {
   }
   var user = namedText(data.user, 'The signed-in user is missing. Nothing was saved.', 'The user name');
   if (!user.ok) return user;
-  var reporter = '';
+  var reporter = user.value;
   if (mode === 'other') {
     var chosen = namedText(data.reporter, 'Select an operator from the list.', 'The reporter name');
     if (!chosen.ok) return chosen;
     if (lists.operators.indexOf(chosen.value) === -1) {
       return { ok: false, message: 'Select an operator from the list.' };
     }
-    if (chosen.value !== user.value) reporter = chosen.value;
+    reporter = chosen.value;
   }
   return { ok: true, reporterMode: mode, user: user.value, reporter: reporter };
+}
+
+function photoNames(data) {
+  var raw = data.photoNames;
+  if (typeof raw === 'string') {
+    if (!String(raw).trim()) raw = [];
+    else {
+      try { raw = JSON.parse(raw); } catch (err) { raw = null; }
+    }
+  }
+  if (!raw) raw = [];
+  if (!Array.isArray(raw)) return { ok: false, message: 'The photographs could not be read. Nothing was saved.' };
+  if (raw.length > 10) return { ok: false, message: 'You can attach up to 10 photographs.' };
+  var names = [];
+  var seen = {};
+  for (var i = 0; i < raw.length; i++) {
+    var name = String(raw[i] || '').trim().toLowerCase();
+    if (!/^fault-\d{2}\.(jpg|jpeg|png|webp)$/.test(name)) {
+      return { ok: false, message: 'One of the photographs could not be accepted. Nothing was saved.' };
+    }
+    if (seen[name]) return { ok: false, message: 'Photograph names must be unique. Nothing was saved.' };
+    seen[name] = true;
+    names.push(name);
+  }
+  return { ok: true, value: names };
 }
 
 function validateFault(data, lists) {
@@ -214,6 +239,10 @@ function validateFault(data, lists) {
 
   var people = reportPeople(data, lists);
   if (!people.ok) return people;
+  var title = namedText(data.title, 'Enter a short title for the fault or unsafe condition.', 'The title');
+  if (!title.ok) return title;
+  var photos = photoNames(data);
+  if (!photos.ok) return photos;
 
   var areaChoice = String(data.area || '').trim();
   var lineArea;
@@ -255,7 +284,7 @@ function validateFault(data, lists) {
 
   var maintenanceRequest = String(data.maintenanceRequest || '').trim();
   if (maintenanceRequest !== 'Yes' && maintenanceRequest !== 'No') {
-    return { ok: false, message: 'Choose whether to raise a maintenance request.' };
+    return { ok: false, message: 'Choose whether to mark the job as completed or raise a maintenance request.' };
   }
 
   return {
@@ -265,6 +294,8 @@ function validateFault(data, lists) {
       reporterMode: people.reporterMode,
       user: people.user,
       reporter: people.reporter,
+      title: title.value,
+      photoNames: photos.value,
       lineArea: lineArea,
       equipment: equipment,
       priority: priority,

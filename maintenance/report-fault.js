@@ -2,6 +2,8 @@ var app = document.getElementById('app');
 
 var CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT9wb05WXLcP4IN6Dce9zaRWtPKpGgHKWsqo4ICB97Mpr3RTx8MMFidwWgSf6ulh_sJNgE_2XxX3N2D/pub?gid=1056635412&single=true&output=csv';
 var SCRIPT_URL = '/.netlify/functions/submitFault';
+var PHOTO_URL = '/.netlify/functions/uploadFaultPhoto';
+var MAX_PHOTOS = 10;
 var DRAFT_KEY = 'scs_fault_report_draft';
 var OTHER = 'Other';
 var PRIORITIES = [
@@ -23,9 +25,13 @@ var state = {
   equipment: '',
   equipmentOther: '',
   priority: '',
+  title: '',
   description: '',
   parts: '',
   maintenanceRequest: '',
+  photos: [],
+  photoSeq: 0,
+  progress: '',
   lists: { operators: [], areas: [], equipmentByArea: {} },
   listsLoading: true,
   listsError: '',
@@ -139,6 +145,7 @@ function restoreDraft() {
     state.equipment = String(draft.equipment || '');
     state.equipmentOther = String(draft.equipmentOther || '');
     state.priority = String(draft.priority || '');
+    state.title = String(draft.title || '');
     state.description = String(draft.description || '');
     state.parts = String(draft.parts || '');
     state.maintenanceRequest = draft.maintenanceRequest === 'Yes' || draft.maintenanceRequest === 'No' ? draft.maintenanceRequest : '';
@@ -156,6 +163,7 @@ function persist() {
       equipment: state.equipment,
       equipmentOther: state.equipmentOther,
       priority: state.priority,
+      title: state.title,
       description: state.description,
       parts: state.parts,
       maintenanceRequest: state.maintenanceRequest
@@ -212,7 +220,9 @@ function render() {
     app.innerHTML = UI.successScreen(
       'Fault report saved',
       '<span class="fault-id">' + escapeHTML(state.maintenanceId) + '</span> was saved' +
-        (state.submittedOn ? ' on ' + escapeHTML(state.submittedOn) : '') + '.',
+        (state.submittedOn ? ' on ' + escapeHTML(state.submittedOn) : '') +
+        '. Its Drive folder is ready' +
+        (state.photos.length ? ' and the photographs are in the Requests folder.' : '.'),
       '<a class="btn btn-primary" href="index.html">Back to Maintenance</a>' +
       '<button type="button" class="btn btn-secondary" id="anotherBtn">Submit another report</button>'
     );
@@ -301,6 +311,9 @@ function renderForm() {
       '<label class="fault-question" for="priority">Please select a priority <span class="fault-req">Required</span></label>' +
       '<select id="priority" class="' + invalidClass('priority') + '"' + describedBy('priority') + disabled + '>' + priorityOptions + '</select>' +
       fieldError('priority') +
+      '<label class="fault-question" for="title">Please write a descriptive title for the fault or unsafe condition. This will be used to later in conjunction with Maintenance ID to quickly identify the job. <span class="fault-req">Required</span></label>' +
+      '<input id="title" type="text" maxlength="200" value="' + escapeHTML(state.title) + '" class="' + invalidClass('title') + '"' + describedBy('title') + disabled + ' autocomplete="off" />' +
+      fieldError('title') +
       '<label class="fault-question" for="description">Please write a description of the fault or unsafe condition <span class="fault-req">Required</span></label>' +
       '<textarea id="description" rows="6" class="' + invalidClass('description') + '"' + describedBy('description') + disabled + '>' + escapeHTML(state.description) + '</textarea>' +
       fieldError('description') +
@@ -308,24 +321,24 @@ function renderForm() {
       '<textarea id="parts" rows="4"' + disabled + '>' + escapeHTML(state.parts) + '</textarea>' +
       '<p class="fault-hint">Leave this blank if no parts are required.</p>' +
       fieldError('parts') +
-      '<p class="fault-question" id="requestLabel">Would you like to raise Maintenance request? <span class="fault-req">Required</span></p>' +
+      '<p class="fault-question" id="requestLabel">Would you like to mark the job as completed or raise a maintenance request <span class="fault-req">Required</span></p>' +
       '<div class="fault-choices" role="group" aria-labelledby="requestLabel">' +
-        choiceButton('maintenance', 'Yes', 'Yes - Raise Maintenance Request') +
-        choiceButton('maintenance', 'No', 'No - Log as Maintenance Completed') +
+        choiceButton('maintenance', 'Yes', 'Raise Maintenance Request') +
+        choiceButton('maintenance', 'No', 'Mark job as completed') +
       '</div>' +
       fieldError('maintenanceRequest') +
-      '<p class="fault-question">Upload Photos of Faults</p>' +
-      '<button type="button" class="fault-photo" id="photoBtn" disabled aria-disabled="true">' +
-        '<span>Upload Photos of Faults</span>' +
-        '<span class="fault-wip">Work in Progress</span>' +
-      '</button>' +
-      '<p class="fault-photo-note">Photo upload is not available yet.</p>' +
+      '<p class="fault-question" id="photoLabel">Photographs of the fault or unsafe condition</p>' +
+      '<div class="fault-photos">' + photoCards() + '</div>' +
+      '<input id="photoInput" class="fault-photo-input" type="file" accept="image/*" multiple tabindex="-1"' + disabled + ' />' +
+      '<button type="button" class="btn fault-photo" id="photoBtn"' + disabled + '>Add photographs</button>' +
+      '<p class="fault-photo-note">You can add more than one. They are saved in this job’s Requests folder. The job folder is created even when there are no photographs.</p>' +
+      fieldError('photos') +
       '<div class="actions">' +
         '<button type="submit" class="btn btn-primary btn-block" id="submitBtn"' + disabled + '>' +
           (state.saving ? 'Saving…' : 'Submit Fault Report') +
         '</button>' +
       '</div>' +
-      (state.saving ? '<p class="status" role="status">Saving the fault report…</p>' : '') +
+      (state.saving ? '<p class="status" role="status">' + escapeHTML(state.progress || 'Saving the fault report…') + '</p>' : '') +
     '</form>';
 }
 
@@ -400,8 +413,28 @@ function wire() {
   bindSelect('priority', 'priority');
   bindText('areaOther', 'areaOther');
   bindText('equipmentOther', 'equipmentOther');
+  bindText('title', 'title');
   bindText('description', 'description');
   bindText('parts', 'parts');
+
+  var photoBtn = document.getElementById('photoBtn');
+  var photoInput = document.getElementById('photoInput');
+  if (photoBtn && photoInput) {
+    photoBtn.addEventListener('click', function () {
+      if (!state.saving) photoInput.click();
+    });
+    photoInput.addEventListener('change', function () {
+      addPhotos(photoInput.files);
+      photoInput.value = '';
+    });
+  }
+  var removeButtons = form.querySelectorAll('[data-remove-photo]');
+  for (var r = 0; r < removeButtons.length; r++) {
+    removeButtons[r].addEventListener('click', function (event) {
+      if (state.saving) return;
+      removePhoto(event.currentTarget.getAttribute('data-remove-photo'));
+    });
+  }
 }
 
 function bindSelect(id, key) {
@@ -431,6 +464,7 @@ function bindText(id, key) {
 function collect() {
   readValue('areaOther', 'areaOther');
   readValue('equipmentOther', 'equipmentOther');
+  readValue('title', 'title');
   readValue('description', 'description');
   readValue('parts', 'parts');
   readValue('operator', 'otherOperator');
@@ -462,9 +496,11 @@ function clientError() {
   else if (state.equipment === OTHER && !state.equipmentOther.trim()) fail('equipmentOther', 'Enter the machine or equipment.');
   else if (state.area === OTHER && state.equipment !== OTHER) fail('equipment', 'Choose Other and describe the machine or equipment.');
   if (!state.priority) fail('priority', 'Select a priority.');
+  if (!state.title.trim()) fail('title', 'Enter a short title for the fault or unsafe condition.');
   if (!state.description.trim()) fail('description', 'Describe the fault or unsafe condition.');
+  if (state.photos.length > MAX_PHOTOS) fail('photos', 'You can attach up to 10 photographs.');
   if (state.maintenanceRequest !== 'Yes' && state.maintenanceRequest !== 'No') {
-    fail('maintenanceRequest', 'Choose whether to raise a maintenance request.');
+    fail('maintenanceRequest', 'Choose whether to mark the job as completed or raise a maintenance request.');
   }
   var names = Object.keys(fields);
   if (!names.length) return null;
@@ -482,10 +518,110 @@ function payload() {
     equipment: state.equipment.trim(),
     equipmentOther: state.equipmentOther.trim(),
     priority: state.priority.trim(),
+    title: state.title.trim(),
     description: state.description.trim(),
     parts: state.parts.trim(),
-    maintenanceRequest: state.maintenanceRequest
+    maintenanceRequest: state.maintenanceRequest,
+    photoNames: state.photos.map(function (photo) { return photo.fileName; })
   };
+}
+
+function photoCards() {
+  var html = '';
+  for (var i = 0; i < state.photos.length; i++) {
+    var photo = state.photos[i];
+    html += '<figure class="fault-photo-card">' +
+      '<img src="' + escapeHTML(photo.dataUrl) + '" alt="Selected photograph ' + (i + 1) + '" />' +
+      '<figcaption>' + escapeHTML(photo.fileName) + '</figcaption>' +
+      '<button type="button" class="btn fault-photo-remove" data-remove-photo="' + escapeHTML(photo.id) + '"' + (state.saving ? ' disabled' : '') + '>Remove</button>' +
+      '</figure>';
+  }
+  return html;
+}
+
+function nextPhotoName() {
+  state.photoSeq += 1;
+  var n = String(state.photoSeq);
+  if (n.length < 2) n = '0' + n;
+  return 'fault-' + n + '.jpg';
+}
+
+function removePhoto(id) {
+  var kept = [];
+  for (var i = 0; i < state.photos.length; i++) {
+    if (state.photos[i].id !== id) kept.push(state.photos[i]);
+  }
+  state.photos = kept;
+  delete state.fieldErrors.photos;
+  state.error = '';
+  render();
+}
+
+function compressImageFile(file) {
+  return new Promise(function (resolve, reject) {
+    var url = URL.createObjectURL(file);
+    var img = new Image();
+    img.onload = function () {
+      var max = 1920;
+      var w = img.naturalWidth || img.width;
+      var h = img.naturalHeight || img.height;
+      if (w > max || h > max) {
+        var scale = Math.min(max / w, max / h);
+        w = Math.round(w * scale);
+        h = Math.round(h * scale);
+      }
+      var canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/jpeg', 0.8));
+    };
+    img.onerror = function () {
+      URL.revokeObjectURL(url);
+      reject(new Error('Could not process the selected image.'));
+    };
+    img.src = url;
+  });
+}
+
+async function addPhotos(fileList) {
+  var files = [];
+  for (var i = 0; fileList && i < fileList.length; i++) files.push(fileList[i]);
+  if (!files.length || state.saving) return;
+  var room = MAX_PHOTOS - state.photos.length;
+  if (room <= 0) {
+    state.error = 'You can attach up to 10 photographs.';
+    render();
+    return;
+  }
+  if (files.length > room) {
+    state.error = 'You can attach up to 10 photographs. Extra photographs were not added.';
+    files = files.slice(0, room);
+  } else {
+    state.error = '';
+  }
+  for (var n = 0; n < files.length; n++) {
+    try {
+      var dataUrl = await compressImageFile(files[n]);
+      var name = nextPhotoName();
+      state.photos.push({ id: name, fileName: name, dataUrl: dataUrl });
+    } catch (err) {
+      state.error = 'A photograph could not be prepared. Use a JPEG or PNG. Your other answers are still here.';
+    }
+  }
+  delete state.fieldErrors.photos;
+  render();
+}
+
+async function postJson(url, body) {
+  var response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  var text = await response.text();
+  try { return JSON.parse(text); } catch (err) { return null; }
 }
 
 async function submitReport() {
@@ -507,32 +643,56 @@ async function submitReport() {
   }
 
   state.saving = true;
+  state.progress = state.photos.length ? 'Creating the job folder…' : 'Saving the fault report…';
   state.error = '';
   state.fieldErrors = {};
   render();
 
   try {
-    var response = await fetch(SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload())
-    });
-    var text = await response.text();
-    var data = null;
-    try { data = JSON.parse(text); } catch (err) { data = null; }
-    if (data && data.result === 'success' && /^MA\d{4}$/.test(String(data.maintenanceId || ''))) {
+    var prepared = await postJson(SCRIPT_URL, payload());
+    if (prepared && prepared.result === 'pending' && /^MA\d{4}$/.test(String(prepared.maintenanceId || ''))) {
+      var uploadedAll = true;
+      for (var i = 0; i < state.photos.length; i++) {
+        state.progress = 'Uploading photograph ' + (i + 1) + ' of ' + state.photos.length + '…';
+        render();
+        var uploaded = await postJson(PHOTO_URL, {
+          submissionId: state.submissionId,
+          fileName: state.photos[i].fileName,
+          imageBase64: state.photos[i].dataUrl
+        });
+        if (!uploaded || uploaded.result !== 'ok') {
+          state.error = (uploaded && uploaded.message) || 'The photograph was not uploaded. Your answers are still here.';
+          uploadedAll = false;
+          break;
+        }
+      }
+      if (uploadedAll) {
+        state.progress = 'Saving the fault report…';
+        render();
+        var done = await postJson(SCRIPT_URL, Object.assign(payload(), { action: 'fault_commit' }));
+        if (done && done.result === 'success' && /^MA\d{4}$/.test(String(done.maintenanceId || ''))) {
+          state.mode = 'success';
+          state.maintenanceId = done.maintenanceId;
+          state.submittedOn = done.submittedOn || '';
+          clearDraft();
+        } else {
+          state.error = (done && done.message) || 'The fault report was not saved. Your answers are still here.';
+        }
+      }
+    } else if (prepared && prepared.result === 'success' && /^MA\d{4}$/.test(String(prepared.maintenanceId || ''))) {
       state.mode = 'success';
-      state.maintenanceId = data.maintenanceId;
-      state.submittedOn = data.submittedOn || '';
+      state.maintenanceId = prepared.maintenanceId;
+      state.submittedOn = prepared.submittedOn || '';
       clearDraft();
     } else {
-      state.error = (data && data.message) || 'The fault report was not saved. Your answers are still here.';
+      state.error = (prepared && prepared.message) || 'The fault report was not saved. Your answers are still here.';
     }
   } catch (err) {
     state.error = 'The fault report was not saved. Your answers are still here.';
   }
 
   state.saving = false;
+  state.progress = '';
   render();
 }
 
@@ -546,11 +706,15 @@ function startAnother() {
   state.equipment = '';
   state.equipmentOther = '';
   state.priority = '';
+  state.title = '';
   state.description = '';
   state.parts = '';
   state.maintenanceRequest = '';
   state.error = '';
   state.fieldErrors = {};
+  state.photos = [];
+  state.photoSeq = 0;
+  state.progress = '';
   state.maintenanceId = '';
   state.submittedOn = '';
   state.saving = false;

@@ -82,14 +82,15 @@ function explainScriptPage(text) {
 }
 
 async function readScriptText(scriptURL, body) {
+  const raw = typeof body === 'string' ? body : body.toString();
   const first = await fetch(scriptURL, {
     method: 'POST',
     redirect: 'manual',
     headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
+      'Content-Type': raw.charAt(0) === '{' ? 'application/json' : 'application/x-www-form-urlencoded',
       'User-Agent': 'SCS-WMS-Maintenance'
     },
-    body: body,
+    body: raw,
     timeout: 30000
   });
   const location = first.headers.get('location') || '';
@@ -127,6 +128,9 @@ function confirmed(text) {
   var parsed = null;
   try { parsed = JSON.parse(text); } catch (err) { parsed = null; }
   if (parsed && parsed.result === 'error') return jsonResponse(400, parsed);
+  if (parsed && parsed.result === 'pending' && isMaintenanceId(parsed.maintenanceId)) {
+    return jsonResponse(200, parsed);
+  }
   if (parsed && parsed.result === 'success' && isMaintenanceId(parsed.maintenanceId)) {
     return jsonResponse(200, parsed);
   }
@@ -135,6 +139,7 @@ function confirmed(text) {
 
 exports.explainScriptPage = explainScriptPage;
 exports.scriptResultUrl = scriptResultUrl;
+exports.readScriptText = readScriptText;
 exports.SIGN_IN_PAGE = SIGN_IN_PAGE;
 
 exports.handler = async function (event) {
@@ -184,12 +189,16 @@ exports.handler = async function (event) {
 
     const value = validated.value;
     const body = new URLSearchParams();
+    var action = String(payload.action || 'fault_create').trim().toLowerCase();
+    if (action !== 'fault_commit') action = 'fault_create';
     body.append('token', SHARED_TOKEN);
-    body.append('action', 'fault_create');
+    body.append('action', action);
     body.append('submissionId', value.submissionId);
     body.append('reporterMode', value.reporterMode);
     body.append('user', value.user);
     body.append('reporter', value.reporter);
+    body.append('title', value.title);
+    body.append('photoNames', JSON.stringify(value.photoNames));
     body.append('area', String(payload.area || '').trim());
     body.append('areaOther', String(payload.areaOther || '').trim());
     body.append('equipment', String(payload.equipment || '').trim());
