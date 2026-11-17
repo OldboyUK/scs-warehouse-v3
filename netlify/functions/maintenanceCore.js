@@ -10,7 +10,6 @@
 var DROPDOWNS_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT9wb05WXLcP4IN6Dce9zaRWtPKpGgHKWsqo4ICB97Mpr3RTx8MMFidwWgSf6ulh_sJNgE_2XxX3N2D/pub?gid=1056635412&single=true&output=csv';
 var SSID_MAINTENANCE = '1k0y2ieC4Sg5gYNOFLgcCxLNMUjImCdZNOJTBPg-V-KE';
 var SHEET_SUBMISSIONS = 'Submission Log';
-var SHEET_HELPER = 'Helper';
 var DEPARTMENTS = ['Quality', 'Engineering', 'Logistics', 'Management'];
 var OTHER = 'Other';
 var PRIORITY_OPTIONS = [
@@ -340,6 +339,17 @@ function preserveText(value, emptyMessage, label) {
   return { ok: true, value: text };
 }
 
+function reviewDepartment(data) {
+  var choice = String(data.department || '').trim();
+  if (choice === OTHER) {
+    return namedText(data.departmentOther, 'Enter the department.', 'The department');
+  }
+  if (DEPARTMENTS.indexOf(choice) === -1) {
+    return { ok: false, message: 'Select a department. Nothing was saved.' };
+  }
+  return { ok: true, value: choice };
+}
+
 function validateReview(data, owners) {
   data = data || {};
   owners = owners || [];
@@ -360,10 +370,8 @@ function validateReview(data, owners) {
   if (owners.indexOf(owner.value) === -1) {
     return { ok: false, message: 'Select an owner from the list. Nothing was saved.' };
   }
-  var department = String(data.department || '').trim();
-  if (DEPARTMENTS.indexOf(department) === -1) {
-    return { ok: false, message: 'Select a department. Nothing was saved.' };
-  }
+  var department = reviewDepartment(data);
+  if (!department.ok) return department;
   var due = reviewDueDate(data.dueDate);
   if (!due.ok) return due;
   var permit = String(data.permit || '').trim();
@@ -380,7 +388,7 @@ function validateReview(data, owners) {
       label: label,
       maintenanceId: maintenanceId,
       owner: owner.value,
-      department: department,
+      department: department.value,
       dueDate: due.value,
       permit: permit,
       assessment: assessment.value
@@ -396,7 +404,6 @@ module.exports = {
   DROPDOWNS_CSV_URL: DROPDOWNS_CSV_URL,
   SSID_MAINTENANCE: SSID_MAINTENANCE,
   SHEET_SUBMISSIONS: SHEET_SUBMISSIONS,
-  SHEET_HELPER: SHEET_HELPER,
   DEPARTMENTS: DEPARTMENTS,
   OTHER: OTHER,
   PRIORITY_OPTIONS: PRIORITY_OPTIONS,

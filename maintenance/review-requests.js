@@ -3,6 +3,7 @@ var app = document.getElementById('app');
 var SCRIPT_URL = '/.netlify/functions/reviewMaintenance';
 var DRAFT_KEY = 'scs_review_request_draft';
 var DEPARTMENTS = ['Quality', 'Engineering', 'Logistics', 'Management'];
+var OTHER = 'Other';
 
 var state = {
   mode: 'form',
@@ -10,10 +11,10 @@ var state = {
   loggedInUser: (window.SCSAuth && SCSAuth.getUsername()) || '',
   requests: [],
   owners: [],
-  query: '',
   label: '',
   owner: '',
   department: '',
+  departmentOther: '',
   dueDate: '',
   permit: '',
   assessment: '',
@@ -65,14 +66,6 @@ function selectedRequest() {
   return null;
 }
 
-function visibleRequests() {
-  var query = String(state.query || '').trim().toLowerCase();
-  return state.requests.filter(function (item) {
-    if (!query) return true;
-    return item.label.toLowerCase().indexOf(query) !== -1;
-  });
-}
-
 function restoreDraft() {
   state.submissionId = createSubmissionId();
   try {
@@ -81,10 +74,10 @@ function restoreDraft() {
     var draft = JSON.parse(raw);
     if (!draft || typeof draft !== 'object') return;
     if (draft.submissionId) state.submissionId = String(draft.submissionId);
-    state.query = String(draft.query || '');
     state.label = String(draft.label || '');
     state.owner = String(draft.owner || '');
-    state.department = DEPARTMENTS.indexOf(draft.department) === -1 ? '' : draft.department;
+    state.department = DEPARTMENTS.indexOf(draft.department) === -1 && draft.department !== OTHER ? '' : String(draft.department || '');
+    state.departmentOther = String(draft.departmentOther || '');
     state.dueDate = /^\d{4}-\d{2}-\d{2}$/.test(String(draft.dueDate || '')) ? String(draft.dueDate) : '';
     state.permit = draft.permit === 'Yes' || draft.permit === 'No' ? draft.permit : '';
     state.assessment = String(draft.assessment || '');
@@ -95,10 +88,10 @@ function persist() {
   try {
     sessionStorage.setItem(DRAFT_KEY, JSON.stringify({
       submissionId: state.submissionId,
-      query: state.query,
       label: state.label,
       owner: state.owner,
       department: state.department,
+      departmentOther: state.departmentOther,
       dueDate: state.dueDate,
       permit: state.permit,
       assessment: state.assessment
@@ -148,31 +141,20 @@ function render() {
     document.getElementById('retryLists').addEventListener('click', loadLists);
     return;
   }
-  var focusSearch = document.activeElement && document.activeElement.id === 'requestSearch';
-  var selectionStart = focusSearch ? document.activeElement.selectionStart : null;
   app.innerHTML = renderForm();
   wire();
-  if (focusSearch) {
-    var search = document.getElementById('requestSearch');
-    if (search) {
-      search.focus();
-      if (selectionStart != null && search.setSelectionRange) search.setSelectionRange(selectionStart, selectionStart);
-    }
-  }
   var banner = document.querySelector('.fault-banner');
-  if (banner && !focusSearch && banner.scrollIntoView) banner.scrollIntoView({ block: 'start' });
+  if (banner && banner.scrollIntoView) banner.scrollIntoView({ block: 'start' });
 }
 
 function renderForm() {
   var disabled = state.saving ? ' disabled' : '';
-  var requests = visibleRequests();
   var selected = selectedRequest();
-  if (selected && requests.indexOf(selected) === -1) requests = [selected].concat(requests);
   var options = '<option value="">Select a maintenance request…</option>';
-  for (var i = 0; i < requests.length; i++) {
-    options += '<option value="' + escapeHTML(requests[i].label) + '"' +
-      (requests[i].label === state.label ? ' selected' : '') + '>' +
-      escapeHTML(requests[i].label) + '</option>';
+  for (var i = 0; i < state.requests.length; i++) {
+    options += '<option value="' + escapeHTML(state.requests[i].label) + '"' +
+      (state.requests[i].label === state.label ? ' selected' : '') + '>' +
+      escapeHTML(state.requests[i].label) + '</option>';
   }
   var owners = '<option value="">Select an owner…</option>';
   for (var o = 0; o < state.owners.length; o++) {
@@ -180,16 +162,18 @@ function renderForm() {
       (state.owners[o] === state.owner ? ' selected' : '') + '>' +
       escapeHTML(state.owners[o]) + '</option>';
   }
+  var departmentChoices = DEPARTMENTS.concat([OTHER]);
   var departments = '<option value="">Select a department…</option>';
-  for (var d = 0; d < DEPARTMENTS.length; d++) {
-    departments += '<option value="' + DEPARTMENTS[d] + '"' +
-      (state.department === DEPARTMENTS[d] ? ' selected' : '') + '>' +
-      DEPARTMENTS[d] + '</option>';
+  for (var d = 0; d < departmentChoices.length; d++) {
+    departments += '<option value="' + departmentChoices[d] + '"' +
+      (state.department === departmentChoices[d] ? ' selected' : '') + '>' +
+      departmentChoices[d] + '</option>';
   }
-  var matchCount = visibleRequests().length;
-  var countText = state.query
-    ? (matchCount + (matchCount === 1 ? ' match' : ' matches'))
-    : (state.requests.length + (state.requests.length === 1 ? ' request' : ' requests'));
+  var departmentOther = state.department === OTHER
+    ? '<label for="departmentOther">Department <span class="fault-req">Required</span></label>' +
+      '<input id="departmentOther" type="text" maxlength="200" value="' + escapeHTML(state.departmentOther) + '" class="' + invalidClass('departmentOther') + '"' + describedBy('departmentOther') + disabled + ' autocomplete="off" />' +
+      fieldError('departmentOther')
+    : '';
   var selectedLine = selected
     ? '<p class="review-selected">This will update <strong>' + escapeHTML(selected.label) + '</strong>.</p>'
     : '';
@@ -197,9 +181,6 @@ function renderForm() {
   return bannerHtml() +
     '<form id="reviewForm" novalidate>' +
       '<p class="fault-intro">Review an existing maintenance request. This does not create a new maintenance ID.</p>' +
-      '<label class="fault-question" for="requestSearch">Find a maintenance request</label>' +
-      '<input id="requestSearch" type="search" value="' + escapeHTML(state.query) + '" placeholder="Search by maintenance ID or title" autocomplete="off"' + disabled + ' />' +
-      '<p class="review-count" id="requestCount">' + escapeHTML(countText) + '</p>' +
       '<label class="fault-question" for="request">Select a maintenance request <span class="fault-req">Required</span></label>' +
       '<select id="request" class="' + invalidClass('request') + '"' + describedBy('request') + disabled + '>' + options + '</select>' +
       fieldError('request') +
@@ -213,6 +194,7 @@ function renderForm() {
       '<label class="fault-question" for="department">Please assign a department <span class="fault-req">Required</span></label>' +
       '<select id="department" class="' + invalidClass('department') + '"' + describedBy('department') + disabled + '>' + departments + '</select>' +
       fieldError('department') +
+      departmentOther +
       '<label class="fault-question" for="dueDate">Please enter a due date <span class="fault-req">Required</span></label>' +
       '<input id="dueDate" type="date" value="' + escapeHTML(state.dueDate) + '" class="' + invalidClass('dueDate') + '"' + describedBy('dueDate') + disabled + ' />' +
       (shownDate ? '<p class="review-count">Saved as ' + escapeHTML(shownDate) + '</p>' : '<p class="fault-hint">Saved as DD/MM/YYYY.</p>') +
@@ -272,14 +254,6 @@ function wire() {
     event.preventDefault();
     submitReview();
   });
-  var search = document.getElementById('requestSearch');
-  search.addEventListener('input', function () {
-    if (state.saving) return;
-    state.query = search.value;
-    state.error = '';
-    persist();
-    render();
-  });
   document.getElementById('request').addEventListener('change', function (event) {
     if (state.saving) return;
     state.label = event.target.value;
@@ -299,9 +273,21 @@ function wire() {
     if (state.saving) return;
     state.department = event.target.value;
     delete state.fieldErrors.department;
+    delete state.fieldErrors.departmentOther;
     state.error = '';
     persist();
+    render();
   });
+  var departmentOther = document.getElementById('departmentOther');
+  if (departmentOther) {
+    departmentOther.addEventListener('input', function (event) {
+      if (state.saving) return;
+      state.departmentOther = event.target.value;
+      delete state.fieldErrors.departmentOther;
+      state.error = '';
+      persist();
+    });
+  }
   document.getElementById('dueDate').addEventListener('change', function (event) {
     if (state.saving) return;
     state.dueDate = event.target.value;
@@ -340,7 +326,8 @@ function validateForm() {
   }
   if (!state.loggedInUser) errors.user = 'Your sign-in could not be read. Sign in again.';
   if (!state.owner || state.owners.indexOf(state.owner) === -1) errors.owner = 'Select an owner for this job.';
-  if (DEPARTMENTS.indexOf(state.department) === -1) errors.department = 'Select a department.';
+  if (DEPARTMENTS.indexOf(state.department) === -1 && state.department !== OTHER) errors.department = 'Select a department.';
+  if (state.department === OTHER && !String(state.departmentOther || '').trim()) errors.departmentOther = 'Enter the department.';
   if (!state.dueDate || !ukDate(state.dueDate)) errors.dueDate = 'Enter a due date.';
   if (state.permit !== 'Yes' && state.permit !== 'No') errors.permit = 'Choose whether a permit to work is required.';
   if (!String(state.assessment || '').trim()) errors.assessment = 'Assess the impact to Food Safety or Health and Safety.';
@@ -377,6 +364,7 @@ function submitReview() {
     maintenanceId: request.maintenanceId,
     owner: state.owner,
     department: state.department,
+    departmentOther: state.department === OTHER ? state.departmentOther : '',
     dueDate: state.dueDate,
     permit: state.permit,
     assessment: state.assessment
@@ -413,10 +401,10 @@ function submitReview() {
 function startAnother() {
   state.mode = 'form';
   state.submissionId = createSubmissionId();
-  state.query = '';
   state.label = '';
   state.owner = '';
   state.department = '';
+  state.departmentOther = '';
   state.dueDate = '';
   state.permit = '';
   state.assessment = '';

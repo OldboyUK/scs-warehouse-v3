@@ -832,8 +832,10 @@ function testPages() {
   assert(review.indexOf('/.netlify/functions/reviewMaintenance') !== -1, 'review posts to the Netlify function');
   assert(review.indexOf('J4PAN88') === -1 && review.indexOf('script.google.com') === -1, 'review page has no script credential or web app URL');
   assert(review.indexOf('order_parts') === -1, 'parts ordering is not submitted');
+  assert(review.indexOf('Find a maintenance request') === -1, 'the separate request search is not shown');
+  assert(review.indexOf("OTHER = 'Other'") !== -1 && review.indexOf('departmentOther') !== -1, 'department can be Other with free text');
   assert(script.indexOf('var REVIEW_LAST_COL = 19') !== -1, 'review stops at column S');
-  assert(script.indexOf("var SHEET_HELPER = 'Helper'") !== -1, 'owners are read from the Helper sheet');
+  assert(script.indexOf('SHEET_HELPER') === -1 && script.indexOf('dropdownOwners_') !== -1, 'owners come from the Drop Downs list');
   assert(page.indexOf('report-fault.js') !== -1, 'report page loads its script');
   [
     'Please use this form for reporting faults or an unsafe condition with the machines or equipment',
@@ -906,7 +908,7 @@ function postReview(extra) {
     user: 'Test User',
     label: 'MA0042 | Conveyor belt motor failure',
     maintenanceId: 'MA0042',
-    owner: 'Alex P',
+    owner: 'Jody R',
     department: 'Engineering',
     dueDate: '2026-11-17',
     permit: 'Yes',
@@ -935,19 +937,23 @@ function testReview() {
     user: 'Test User',
     label: 'MA0042 | Conveyor belt motor failure',
     maintenanceId: 'ma0042',
-    owner: 'Alex P',
+    owner: 'Jody R',
     department: 'Engineering',
     dueDate: '2026-11-17',
     permit: 'Yes',
     assessment: 'Line one\r\nLine two'
-  }, ['Alex P']);
+  }, ['Jody R']);
   assert(kept.ok, 'a complete review passes validation');
   assertEqual(kept.value.maintenanceId, 'MA0042', 'the maintenance id is normalised');
   assertEqual(kept.value.assessment, 'Line one\nLine two', 'assessment line breaks are preserved');
-  assert(!core.validateReview(Object.assign({}, kept.value, { dueDate: '2026-02-31' }), ['Alex P']).ok, 'an impossible due date is rejected');
-  assert(!core.validateReview(Object.assign({}, kept.value, { department: 'Warehouse' }), ['Alex P']).ok, 'an unknown department is rejected');
-  assert(!core.validateReview(Object.assign({}, kept.value, { assessment: ' \n ' }), ['Alex P']).ok, 'a blank assessment is rejected');
-  assert(!core.validateReview(Object.assign({}, kept.value, { owner: 'Nobody' }), ['Alex P']).ok, 'an owner who is not on the list is rejected');
+  assert(!core.validateReview(Object.assign({}, kept.value, { dueDate: '2026-02-31' }), ['Jody R']).ok, 'an impossible due date is rejected');
+  assert(!core.validateReview(Object.assign({}, kept.value, { department: 'Warehouse' }), ['Jody R']).ok, 'an unknown department is rejected');
+  assert(!core.validateReview(Object.assign({}, kept.value, { department: 'Other', departmentOther: ' ' }), ['Jody R']).ok, 'Other without a department is rejected');
+  const otherDepartment = core.validateReview(Object.assign({}, kept.value, { department: 'Other', departmentOther: 'Night shift' }), ['Jody R']);
+  assert(otherDepartment.ok, 'Other with a typed department passes validation');
+  assertEqual(otherDepartment.value.department, 'Night shift', 'Other stores the typed department');
+  assert(!core.validateReview(Object.assign({}, kept.value, { assessment: ' \n ' }), ['Jody R']).ok, 'a blank assessment is rejected');
+  assert(!core.validateReview(Object.assign({}, kept.value, { owner: 'Nobody' }), ['Jody R']).ok, 'an owner who is not on the list is rejected');
 
   fresh();
   seedRequest(2, 'MA0001', 'Hidden first row');
@@ -960,7 +966,7 @@ function testReview() {
 
   const listed = reviewLists();
   assertEqual(listed.result, 'ok', 'the review list loads');
-  assertEqual(listed.owners.join('|'), 'Alex P|Sam K', 'Helper column A supplies owners, skipping blanks and duplicates');
+  assertEqual(listed.owners.join('|'), 'Jody R|Zoe I', 'Drop Downs column A supplies owners from the second row');
   assertEqual(listed.requests.map(function (item) { return item.label; }).join('|'), 'MA0042 | Conveyor belt motor failure|MA0043 | Second job', 'column B from row 3 is listed and row 2 is not');
   assertEqual(listed.requests[0].row, 3, 'the selected request remembers its spreadsheet row');
   assertEqual(listed.requests[0].maintenanceId, 'MA0042', 'the request keeps the id from column A');
@@ -981,7 +987,7 @@ function testReview() {
   assertEqual(saved.row, 3, 'the review writes the row whose label still matches');
   assertEqual(saved.dueOn, '17/11/2026', 'the due date is confirmed in UK format');
   assertEqual(cell(3, 14), 'Test User', 'column N stores the signed-in user');
-  assertEqual(cell(3, 15), 'Alex P', 'column O stores the owner');
+  assertEqual(cell(3, 15), 'Jody R', 'column O stores the owner from Drop Downs');
   assertEqual(cell(3, 16), 'Engineering', 'column P stores the department');
   assert(cell(3, 17) instanceof Date, 'column Q stores a date value');
   assertEqual(formatDate(cell(3, 17), 'Europe/London', 'dd/MM/yyyy'), '17/11/2026', 'column Q displays as DD/MM/YYYY');
@@ -1008,9 +1014,9 @@ function testReview() {
   assertEqual(again.maintenanceId, 'MA0042', 'the repeated review keeps the same id');
   assertEqual(world.sheet.writeLog.length, writes, 'the repeated review does not write again');
 
-  const changed = postReview({ owner: 'Sam K' });
+  const changed = postReview({ owner: 'Zoe I' });
   assertEqual(changed.result, 'error', 'changing a saved review under the same submission does not write');
-  assertEqual(cell(3, 15), 'Alex P', 'the saved owner stays in place');
+  assertEqual(cell(3, 15), 'Jody R', 'the saved owner stays in place');
 
   const duplicate = postReview({
     submissionId: 'review-0002',
@@ -1024,13 +1030,13 @@ function testReview() {
   world.sheet.seed(3, 2, { value: 'MA0042 | Renamed after selection' });
   const moved = postReview({ submissionId: 'review-0003' });
   assertEqual(moved.result, 'error', 'a request whose title changed is not updated');
-  assertEqual(cell(3, 15), 'Alex P', 'the earlier review remains after the title changes');
+  assertEqual(cell(3, 15), 'Jody R', 'the earlier review remains after the title changes');
   world.sheet.seed(3, 2, { value: 'MA0042 | Conveyor belt motor failure' });
 
-  const updated = postReview({ submissionId: 'review-0004', owner: 'Sam K', permit: 'No' });
+  const updated = postReview({ submissionId: 'review-0004', owner: 'Zoe I', permit: 'No' });
   assertEqual(updated.result, 'success', 'a later review can update the same request');
   assertEqual(updated.maintenanceId, 'MA0042', 'the later review still does not create an id');
-  assertEqual(cell(3, 15), 'Sam K', 'column O is updated on the same row');
+  assertEqual(cell(3, 15), 'Zoe I', 'column O is updated on the same row');
   assertEqual(cell(3, 18), 'No', 'column R is updated on the same row');
   assertEqual(cell(3, 1), 'MA0042', 'the later review still does not change column A');
 
@@ -1043,10 +1049,14 @@ function testReview() {
   assertEqual(cell(3, 15), '', 'later review columns are not written after a formula is found');
 
   fresh();
-  world.helper = null;
-  const missingHelper = reviewLists();
-  assertEqual(missingHelper.result, 'error', 'a missing Helper sheet does not pretend to load');
-  assert(String(missingHelper.message).indexOf('Helper') !== -1, 'the missing Helper sheet is named');
+  seedRequest(3, 'MA0042', 'Conveyor belt motor failure');
+  const other = postReview({ submissionId: 'review-other-01', department: 'Other', departmentOther: 'Night shift' });
+  assertEqual(other.result, 'success', 'Other saves a typed department');
+  assertEqual(cell(3, 16), 'Night shift', 'column P stores the typed department');
+  assert(cell(3, 16) !== 'Other', 'the word Other is not saved');
+  const blankOther = postReview({ submissionId: 'review-other-02', department: 'Other', departmentOther: ' ' });
+  assertEqual(blankOther.result, 'error', 'Other without text is not saved');
+  assertEqual(cell(3, 16), 'Night shift', 'a blank Other does not replace the saved department');
 }
 
 function testScriptPages() {

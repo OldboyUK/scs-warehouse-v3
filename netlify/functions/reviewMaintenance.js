@@ -1,4 +1,7 @@
+const fetch = require('node-fetch');
 const {
+  DROPDOWNS_CSV_URL,
+  listsFromCsv,
   validateReview,
   isMaintenanceId,
   jsonResponse
@@ -11,6 +14,16 @@ const FAILURE = 'The server did not confirm that the review was saved. Your answ
 
 function isHtml(text) {
   return /^\s*<!DOCTYPE/i.test(text) || /<html[\s>]/i.test(text);
+}
+
+async function loadOwners() {
+  const csvResponse = await fetch(DROPDOWNS_CSV_URL, { timeout: 20000 });
+  if (!csvResponse.ok) throw new Error('Dropdown list request failed (' + csvResponse.status + ').');
+  const csvText = await csvResponse.text();
+  if (!csvText || csvText.trim().charAt(0) === '<') throw new Error('Dropdown list did not return spreadsheet data.');
+  const lists = listsFromCsv(csvText);
+  if (!lists.operators.length) throw new Error('The owner list was empty.');
+  return lists.operators;
 }
 
 function confirmedReview(text, action) {
@@ -48,13 +61,36 @@ exports.handler = async function (event) {
       return jsonResponse(400, { result: 'error', retryable: false, message: 'Unknown action.' });
     }
 
+    let owners = [];
+    try {
+      owners = await loadOwners();
+    } catch (err) {
+      return jsonResponse(502, {
+        result: 'error',
+        retryable: true,
+        message: action === 'review_save'
+          ? 'The owner list could not be loaded, so the review was not saved. Your answers are still here.'
+          : 'The owner list could not be loaded.'
+      });
+    }
+
     if (action === 'review_save') {
-      const owners = payload.owner ? [String(payload.owner)] : [];
       const validated = validateReview(payload, owners);
       if (!validated.ok) {
         return jsonResponse(400, { result: 'error', retryable: true, message: validated.message });
       }
-      payload = validated.value;
+      payload = {
+        submissionId: validated.value.submissionId,
+        user: validated.value.user,
+        label: validated.value.label,
+        maintenanceId: validated.value.maintenanceId,
+        owner: validated.value.owner,
+        department: String(payload.department || '').trim(),
+        departmentOther: String(payload.departmentOther || '').trim(),
+        dueDate: validated.value.dueDate,
+        permit: validated.value.permit,
+        assessment: validated.value.assessment
+      };
     }
 
     const scriptURL = scriptConfig.getMaintenanceScriptUrl();
@@ -72,6 +108,7 @@ exports.handler = async function (event) {
       body.append('maintenanceId', payload.maintenanceId);
       body.append('owner', payload.owner);
       body.append('department', payload.department);
+      body.append('departmentOther', payload.departmentOther || '');
       body.append('dueDate', payload.dueDate);
       body.append('permit', payload.permit);
       body.append('assessment', payload.assessment);
@@ -90,7 +127,13 @@ exports.handler = async function (event) {
       console.error('Maintenance web app returned HTML:', message);
       return jsonResponse(502, { result: 'error', retryable: true, message: message });
     }
-    return confirmedReview(text, action);
+    const confirmed = confirmedReview(text, action);
+    if (action === 'review_lists' && confirmed.statusCode === 200) {
+      const listed = JSON.parse(confirmed.body);
+      listed.owners = owners;
+      return jsonResponse(200, listed);
+    }
+    return confirmed;
   } catch (err) {
     console.error('Maintenance review error:', err);
     return jsonResponse(500, {

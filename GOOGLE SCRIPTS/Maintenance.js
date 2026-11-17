@@ -68,7 +68,6 @@ var MAINTENANCE_SCOPES = [
 var API_TOKEN = 'J4PAN88';
 var SSID_MAINTENANCE = '1k0y2ieC4Sg5gYNOFLgcCxLNMUjImCdZNOJTBPg-V-KE';
 var SHEET_SUBMISSIONS = 'Submission Log';
-var SHEET_HELPER = 'Helper';
 var REVIEW_START_ROW = 3;
 var REVIEW_FIRST_COL = 14;
 var REVIEW_LAST_COL = 19;
@@ -1152,7 +1151,7 @@ function handleReviewLists_() {
     return json({ result: 'error', retryable: true, message: 'The maintenance list is busy. Wait a moment and try again.' });
   }
   try {
-    return json({ result: 'ok', requests: reviewRequests_(), owners: helperOwners_() });
+    return json({ result: 'ok', requests: reviewRequests_(), owners: dropdownOwners_() });
   } catch (err) {
     return json({
       result: 'error',
@@ -1174,7 +1173,7 @@ function handleReviewSave_(p) {
     });
   }
   try {
-    var owners = helperOwners_();
+    var owners = dropdownOwners_();
     var validated = validateReview_(p, owners);
     if (!validated.ok) return json({ result: 'error', retryable: true, message: validated.message });
     return saveReview_(validated.value);
@@ -1222,24 +1221,19 @@ function reviewRequests_() {
   return requests;
 }
 
-function helperOwners_() {
-  var ss = SpreadsheetApp.openById(SSID_MAINTENANCE);
-  var sheet = ss.getSheetByName(SHEET_HELPER);
-  if (!sheet || sheet.getName() !== SHEET_HELPER) {
-    throw new Error('Worksheet not found: ' + SHEET_HELPER + '.');
+function dropdownOwners_() {
+  return loadLists_().operators;
+}
+
+function reviewDepartment_(data) {
+  var choice = String(data.department || '').trim();
+  if (choice === OTHER) {
+    return namedText_(data.departmentOther, 'Enter the department.', 'The department');
   }
-  var maxRows = sheet.getMaxRows();
-  if (maxRows < 2) return [];
-  var values = sheet.getRange(2, 1, maxRows - 1, 1).getDisplayValues();
-  var owners = [];
-  var seen = {};
-  for (var i = 0; i < values.length; i++) {
-    var name = String(values[i][0] == null ? '' : values[i][0]).trim();
-    if (!name || seen[name]) continue;
-    seen[name] = true;
-    owners.push(name);
+  if (DEPARTMENTS.indexOf(choice) === -1) {
+    return { ok: false, message: 'Select a department. Nothing was saved.' };
   }
-  return owners;
+  return { ok: true, value: choice };
 }
 
 function labelId_(label) {
@@ -1292,10 +1286,8 @@ function validateReview_(data, owners) {
   if (owners.indexOf(owner.value) === -1) {
     return { ok: false, message: 'Select an owner from the list. Nothing was saved.' };
   }
-  var department = String(data.department || '').trim();
-  if (DEPARTMENTS.indexOf(department) === -1) {
-    return { ok: false, message: 'Select a department. Nothing was saved.' };
-  }
+  var department = reviewDepartment_(data);
+  if (!department.ok) return department;
   var due = reviewDueDate_(data.dueDate);
   if (!due) return { ok: false, message: 'Enter a valid due date. Nothing was saved.' };
   var permit = String(data.permit || '').trim();
@@ -1312,7 +1304,7 @@ function validateReview_(data, owners) {
       label: label,
       maintenanceId: maintenanceId,
       owner: owner.value,
-      department: department,
+      department: department.value,
       dueDate: String(data.dueDate).trim(),
       permit: permit,
       assessment: assessment.value
@@ -1524,7 +1516,7 @@ function saveReview_(value) {
       message: 'This review was not fully saved. Check the maintenance record before writing anything else.'
     });
   }
-  if (helperOwners_().indexOf(value.owner) === -1) {
+  if (dropdownOwners_().indexOf(value.owner) === -1) {
     return json({ result: 'error', retryable: true, message: 'Select an owner from the list. Nothing was saved.' });
   }
   var sheet = requireSheet_(SpreadsheetApp.openById(SSID_MAINTENANCE));
