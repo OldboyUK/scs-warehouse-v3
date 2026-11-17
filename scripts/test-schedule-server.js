@@ -45,6 +45,12 @@ assert.ok(cookie.indexOf('HttpOnly') !== -1);
 assert.ok(cookie.indexOf('Secure') !== -1);
 const read = session.readCookie({ headers: { cookie: 'other=1; ' + cookie.split(';')[0] } }, 'scs_session');
 assert.strictEqual(session.verifySession(read).username, 'Alex');
+const commaJoined = session.readCookie({
+  headers: { cookie: 'nf_ab=1, ' + cookie.split(';')[0] }
+}, 'scs_session');
+assert.strictEqual(session.verifySession(commaJoined).username, 'Alex');
+const fromList = session.readCookie({ cookies: [cookie.split(';')[0]] }, 'scs_session');
+assert.strictEqual(session.verifySession(fromList).username, 'Alex');
 assert.strictEqual(session.requireUser({ headers: {} }), null);
 
 const created = sync.planChanges(empty, { blocks: [block({ version: 0 })], dayNotes: {}, weeks: {} }, 'block');

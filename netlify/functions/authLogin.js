@@ -49,19 +49,15 @@ exports.handler = async function (event) {
       };
     }
 
-    const headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
     let parsed = null;
     try { parsed = JSON.parse(text); } catch (err) { parsed = null; }
+    let cookie = '';
     if (parsed && parsed.result === 'success') {
       const token = session.signSession(String(payload.username || '').trim());
-      if (token) headers['Set-Cookie'] = session.cookieHeader(token, session.requestIsSecure(event));
+      if (token) cookie = session.cookieHeader(token, session.requestIsSecure(event));
     }
 
-    return {
-      statusCode: response.status || 200,
-      headers: headers,
-      body: text
-    };
+    return session.cookieResponse(response.status || 200, text, cookie);
   } catch (err) {
     console.error('Auth login error:', err);
     return { statusCode: 500, body: JSON.stringify({ result: 'failure' }) };

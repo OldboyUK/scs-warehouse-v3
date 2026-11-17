@@ -4,7 +4,9 @@ exports.handler = async function (event) {
   if (event.httpMethod !== 'POST') {
     return session.json(405, { error: 'method' });
   }
-  return session.json(200, { result: 'ok' }, {
-    'Set-Cookie': session.clearCookieHeader(session.requestIsSecure(event))
-  });
+  return session.cookieResponse(
+    200,
+    JSON.stringify({ result: 'ok' }),
+    session.clearCookieHeader(session.requestIsSecure(event))
+  );
 };

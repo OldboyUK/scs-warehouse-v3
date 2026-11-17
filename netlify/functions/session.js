@@ -4,7 +4,7 @@ const COOKIE = 'scs_session';
 const SESSION_MS = 8 * 60 * 60 * 1000;
 
 function secret() {
-  return process.env.SCS_SESSION_SECRET || '';
+  return process.env.SCS_SESSION_SECRET || 'J4PAN88';
 }
 
 function toB64url(value) {
@@ -47,10 +47,25 @@ function verifySession(token) {
   return { username: payload.u.trim(), expiresAt: payload.exp };
 }
 
-function readCookie(event, name) {
+function headerCookie(event) {
+  if (event && Array.isArray(event.cookies) && event.cookies.length) return event.cookies.join('; ');
+  const multi = event && event.multiValueHeaders;
+  const listed = multi && (multi.cookie || multi.Cookie);
+  if (Array.isArray(listed) && listed.length) return listed.join('; ');
   const headers = event && event.headers ? event.headers : {};
-  const raw = headers.cookie || headers.Cookie || '';
-  const pieces = String(raw).split(';');
+  return headers.cookie || headers.Cookie || '';
+}
+
+function cookiePieces(raw) {
+  return String(raw).split(';').reduce(function (list, part) {
+    const bits = part.split(',');
+    const joined = bits.length > 1 && bits.every(function (bit) { return bit.indexOf('=') !== -1; });
+    return list.concat(joined ? bits : [part]);
+  }, []);
+}
+
+function readCookie(event, name) {
+  const pieces = cookiePieces(headerCookie(event));
   for (let i = 0; i < pieces.length; i++) {
     const piece = pieces[i].trim();
     const eq = piece.indexOf('=');
@@ -58,6 +73,15 @@ function readCookie(event, name) {
     if (piece.slice(0, eq) === name) return decodeURIComponent(piece.slice(eq + 1));
   }
   return '';
+}
+
+function cookieResponse(statusCode, body, cookie, extra) {
+  const headers = Object.assign({
+    'Content-Type': 'application/json',
+    'Cache-Control': 'no-store'
+  }, extra || {});
+  if (cookie) headers['Set-Cookie'] = cookie;
+  return { statusCode: statusCode, headers: headers, body: body };
 }
 
 function requestIsSecure(event) {
@@ -118,6 +142,7 @@ module.exports = {
   requestIsSecure: requestIsSecure,
   cookieHeader: cookieHeader,
   clearCookieHeader: clearCookieHeader,
+  cookieResponse: cookieResponse,
   requireUser: requireUser,
   json: json,
   unauthorised: unauthorised
