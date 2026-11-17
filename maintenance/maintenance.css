@@ -166,6 +166,32 @@ body.fault-page .btn:disabled {
   letter-spacing: 0.02em;
 }
 
+body.fault-page #assessment {
+  min-height: 180px;
+}
+
+.review-count {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.review-selected {
+  margin: 8px 0 0;
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.review-note {
+  margin: 12px 0 0;
+  padding: 14px 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  white-space: pre-line;
+}
+
 @media (max-width: 640px) {
   .fault-choices {
     flex-direction: column;

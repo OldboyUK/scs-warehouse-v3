@@ -27,16 +27,24 @@
  * F line/area
  * G machine/equipment
  * H priority category
- * I is never written
+ * I descriptive title
  * J description
  * K parts
  * L Yes when a maintenance request is raised, No when the job is marked completed
  * M hyperlink to the Drive folder named with the maintenance ID
+ * A review of an existing request writes only:
+ * N signed-in user
+ * O assigned owner
+ * P department
+ * Q due date
+ * R permit to work, Yes or No
+ * S food safety / health and safety assessment
+ * Column T is never written. Columns A:M are not changed by a review.
  * That folder contains one subfolder named "[Maintenance ID] | Requests".
  * Photographs are uploaded there. A completed-job folder is not created.
  * No column or header is added. A formula in column A that displays nothing
  * is an available ID cell.
- * Other formulas, the header row, column I, and unrelated cells are left alone.
+ * Other formulas, the header row, and unrelated cells are left alone.
  *
  * This project must use GOOGLE SCRIPTS/maintenance-appsscript.json, not the
  * Warehouse manifest. The web app runs as the deploying account
@@ -60,6 +68,12 @@ var MAINTENANCE_SCOPES = [
 var API_TOKEN = 'J4PAN88';
 var SSID_MAINTENANCE = '1k0y2ieC4Sg5gYNOFLgcCxLNMUjImCdZNOJTBPg-V-KE';
 var SHEET_SUBMISSIONS = 'Submission Log';
+var SHEET_HELPER = 'Helper';
+var REVIEW_START_ROW = 3;
+var REVIEW_FIRST_COL = 14;
+var REVIEW_LAST_COL = 19;
+var REVIEW_INDEX_KEY = 'REVIEW_SUBMISSION_INDEX';
+var DEPARTMENTS = ['Quality', 'Engineering', 'Logistics', 'Management'];
 var DROPDOWNS_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT9wb05WXLcP4IN6Dce9zaRWtPKpGgHKWsqo4ICB97Mpr3RTx8MMFidwWgSf6ulh_sJNgE_2XxX3N2D/pub?gid=1056635412&single=true&output=csv';
 var OTHER = 'Other';
 var PRIORITY_OPTIONS = [
@@ -70,7 +84,6 @@ var PRIORITY_OPTIONS = [
   { value: 'Unsure', label: 'Unsure - Please Allocate the Priority for Me' }
 ];
 var DRIVE_FAULT_PARENT = '1AMvZj3XOytmfdiWSIT-EQ7mH8FVQsBxs';
-var COL_UNUSED = 9;
 var LAST_DATA_COL = 13;
 var MAX_PHOTOS = 10;
 var MAX_PHOTO_CHARS = 5500000;
@@ -92,6 +105,8 @@ function doPost(e) {
     var action = String(p.action || '').trim().toLowerCase();
     if (action === 'fault_create' || action === 'fault_commit') return handleCreate_(p);
     if (action === 'fault_photo') return handlePhoto_(p);
+    if (action === 'review_lists') return handleReviewLists_();
+    if (action === 'review_save') return handleReviewSave_(p);
     return json({ result: 'error', retryable: false, message: 'Unknown action.' });
   } catch (err) {
     return json({ result: 'error', retryable: true, message: publicMessage_(err) });
@@ -393,6 +408,7 @@ function faultCells_(maintenanceId, submittedOn, value, folderUrl) {
     { col: 6, value: value.lineArea },
     { col: 7, value: value.equipment },
     { col: 8, value: value.priority },
+    { col: 9, value: value.title },
     { col: 10, value: value.description },
     { col: 11, value: value.parts },
     { col: 12, value: value.maintenanceRequest },
@@ -401,7 +417,11 @@ function faultCells_(maintenanceId, submittedOn, value, folderUrl) {
 }
 
 function isRecordCol_(col) {
-  return col >= 1 && col <= LAST_DATA_COL && col !== COL_UNUSED;
+  return col >= 1 && col <= LAST_DATA_COL;
+}
+
+function isReviewCol_(col) {
+  return col >= REVIEW_FIRST_COL && col <= REVIEW_LAST_COL;
 }
 
 function alignFault_(sheet, row, cells, written) {
@@ -484,8 +504,11 @@ function writeFormulaCell_(sheet, row, col, formula, written) {
 
 function writeTextCell_(sheet, row, col, value, written) {
   if (row < 2) throw new Error('Refusing to write on the header row.');
-  if (!isRecordCol_(col)) {
+  if (!isRecordCol_(col) && !isReviewCol_(col)) {
     throw new Error('Refusing to write outside the maintenance record.');
+  }
+  if (isReviewCol_(col) && row < REVIEW_START_ROW) {
+    throw new Error('Refusing to write above the maintenance requests.');
   }
   var range = sheet.getRange(row, col);
   var formula = String(range.getFormula() || '');
@@ -560,7 +583,6 @@ function rowIsSafeForCreate_(sheet, row) {
   var aFormula = String(sheet.getRange(row, 1).getFormula() || '');
   if (aFormula.toUpperCase().replace(/\s/g, '').indexOf('ARRAYFORMULA(') !== -1) return false;
   for (var col = 2; col <= LAST_DATA_COL; col++) {
-    if (col === COL_UNUSED) continue;
     var range = sheet.getRange(row, col);
     if (String(range.getFormula() || '').trim() !== '') return false;
     if (normalizeStored_(range.getValue()) !== '') return false;
@@ -1122,6 +1144,454 @@ function createDriveFileInFolder_(folderId, blob, fileName) {
   var text = resp.getContentText() || '';
   if (code < 200 || code >= 300) throw new Error('The photograph was not saved to Drive (' + code + ').');
   return JSON.parse(text);
+}
+
+function handleReviewLists_() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(15000)) {
+    return json({ result: 'error', retryable: true, message: 'The maintenance list is busy. Wait a moment and try again.' });
+  }
+  try {
+    return json({ result: 'ok', requests: reviewRequests_(), owners: helperOwners_() });
+  } catch (err) {
+    return json({
+      result: 'error',
+      retryable: true,
+      message: 'The maintenance requests could not be loaded. ' + publicMessage_(err)
+    });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function handleReviewSave_(p) {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    return json({
+      result: 'error',
+      retryable: true,
+      message: 'Another maintenance update is being saved. Wait a moment and try again. Your answers are still here.'
+    });
+  }
+  try {
+    var owners = helperOwners_();
+    var validated = validateReview_(p, owners);
+    if (!validated.ok) return json({ result: 'error', retryable: true, message: validated.message });
+    return saveReview_(validated.value);
+  } catch (err) {
+    return json({
+      result: 'error',
+      retryable: true,
+      message: 'The review was not saved. ' + publicMessage_(err) + ' Your answers are still here.'
+    });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function reviewRequests_() {
+  var sheet = requireSheet_(SpreadsheetApp.openById(SSID_MAINTENANCE));
+  var maxRows = sheet.getMaxRows();
+  if (maxRows < REVIEW_START_ROW) return [];
+  var height = maxRows - REVIEW_START_ROW + 1;
+  var ids = sheet.getRange(REVIEW_START_ROW, 1, height, 1).getDisplayValues();
+  var labels = sheet.getRange(REVIEW_START_ROW, 2, height, 1).getDisplayValues();
+  var grouped = {};
+  var order = [];
+  for (var i = 0; i < labels.length; i++) {
+    var label = String(labels[i][0] == null ? '' : labels[i][0]).trim();
+    if (!label) continue;
+    var id = String(ids[i][0] == null ? '' : ids[i][0]).trim().toUpperCase();
+    if (!grouped[label]) {
+      grouped[label] = { label: label, maintenanceId: id, row: i + REVIEW_START_ROW, count: 0, mismatch: false };
+      order.push(label);
+    }
+    grouped[label].count++;
+    if (grouped[label].maintenanceId !== id) grouped[label].mismatch = true;
+  }
+  var requests = [];
+  for (var n = 0; n < order.length; n++) {
+    var item = grouped[order[n]];
+    requests.push({
+      label: item.label,
+      maintenanceId: item.maintenanceId,
+      row: item.count === 1 && !item.mismatch ? item.row : 0,
+      duplicate: item.count > 1 || item.mismatch
+    });
+  }
+  return requests;
+}
+
+function helperOwners_() {
+  var ss = SpreadsheetApp.openById(SSID_MAINTENANCE);
+  var sheet = ss.getSheetByName(SHEET_HELPER);
+  if (!sheet || sheet.getName() !== SHEET_HELPER) {
+    throw new Error('Worksheet not found: ' + SHEET_HELPER + '.');
+  }
+  var maxRows = sheet.getMaxRows();
+  if (maxRows < 2) return [];
+  var values = sheet.getRange(2, 1, maxRows - 1, 1).getDisplayValues();
+  var owners = [];
+  var seen = {};
+  for (var i = 0; i < values.length; i++) {
+    var name = String(values[i][0] == null ? '' : values[i][0]).trim();
+    if (!name || seen[name]) continue;
+    seen[name] = true;
+    owners.push(name);
+  }
+  return owners;
+}
+
+function labelId_(label) {
+  var text = String(label || '').trim();
+  var cut = text.indexOf(' | ');
+  if (cut < 0) return '';
+  var id = text.slice(0, cut).trim().toUpperCase();
+  if (!MAINTENANCE_ID_RE.test(id)) return '';
+  if (!text.slice(cut + 3).trim()) return '';
+  return id;
+}
+
+function reviewDueDate_(value) {
+  var text = String(value || '').trim();
+  var match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (!match) return null;
+  var year = Number(match[1]);
+  var month = Number(match[2]);
+  var day = Number(match[3]);
+  if (year < 2000 || year > 2100) return null;
+  var probe = new Date(Date.UTC(year, month - 1, day));
+  if (probe.getUTCFullYear() !== year || probe.getUTCMonth() !== month - 1 || probe.getUTCDate() !== day) return null;
+  return new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+}
+
+function preserveText_(value, emptyMessage, label) {
+  var text = String(value == null ? '' : value).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  if (!String(text).trim()) return { ok: false, message: emptyMessage };
+  if (text.length > MAX_TEXT) return { ok: false, message: label + ' is too long.' };
+  return { ok: true, value: text };
+}
+
+function validateReview_(data, owners) {
+  data = data || {};
+  owners = owners || [];
+  var submissionId = String(data.submissionId || '').trim();
+  if (!/^[A-Za-z0-9-]{8,80}$/.test(submissionId)) {
+    return { ok: false, message: 'The review could not be identified. Reload the page and try again. Nothing was saved.' };
+  }
+  var user = namedText_(data.user, 'The signed-in user is missing. Nothing was saved.', 'The user name');
+  if (!user.ok) return user;
+  var label = String(data.label == null ? '' : data.label).trim();
+  var maintenanceId = String(data.maintenanceId || '').trim().toUpperCase();
+  var prefix = labelId_(label);
+  if (!prefix || prefix !== maintenanceId) {
+    return { ok: false, message: 'Select a maintenance request. Nothing was saved.' };
+  }
+  var owner = namedText_(data.owner, 'Select an owner for this job.', 'The owner');
+  if (!owner.ok) return owner;
+  if (owners.indexOf(owner.value) === -1) {
+    return { ok: false, message: 'Select an owner from the list. Nothing was saved.' };
+  }
+  var department = String(data.department || '').trim();
+  if (DEPARTMENTS.indexOf(department) === -1) {
+    return { ok: false, message: 'Select a department. Nothing was saved.' };
+  }
+  var due = reviewDueDate_(data.dueDate);
+  if (!due) return { ok: false, message: 'Enter a valid due date. Nothing was saved.' };
+  var permit = String(data.permit || '').trim();
+  if (permit !== 'Yes' && permit !== 'No') {
+    return { ok: false, message: 'Choose whether a permit to work is required. Nothing was saved.' };
+  }
+  var assessment = preserveText_(data.assessment, 'Assess the impact to Food Safety or Health and Safety.', 'The assessment');
+  if (!assessment.ok) return assessment;
+  return {
+    ok: true,
+    value: {
+      submissionId: submissionId,
+      user: user.value,
+      label: label,
+      maintenanceId: maintenanceId,
+      owner: owner.value,
+      department: department,
+      dueDate: String(data.dueDate).trim(),
+      permit: permit,
+      assessment: assessment.value
+    }
+  };
+}
+
+function findReviewRow_(sheet, maintenanceId, label) {
+  var maxRows = sheet.getMaxRows();
+  if (maxRows < REVIEW_START_ROW) {
+    return { ok: false, message: 'That maintenance request is no longer on the Submission Log. Select it again. Nothing was written.' };
+  }
+  var height = maxRows - REVIEW_START_ROW + 1;
+  var ids = sheet.getRange(REVIEW_START_ROW, 1, height, 1).getDisplayValues();
+  var labels = sheet.getRange(REVIEW_START_ROW, 2, height, 1).getDisplayValues();
+  var matches = [];
+  for (var i = 0; i < labels.length; i++) {
+    var cellLabel = String(labels[i][0] == null ? '' : labels[i][0]).trim();
+    if (cellLabel !== label) continue;
+    matches.push({
+      row: i + REVIEW_START_ROW,
+      id: String(ids[i][0] == null ? '' : ids[i][0]).trim().toUpperCase()
+    });
+  }
+  if (!matches.length) {
+    return { ok: false, message: 'That maintenance request is no longer on the Submission Log. Select it again. Nothing was written.' };
+  }
+  if (matches.length > 1) {
+    return { ok: false, message: 'That maintenance request appears more than once. Nothing was written.' };
+  }
+  if (matches[0].id !== maintenanceId) {
+    return { ok: false, message: 'The selected request no longer matches ' + maintenanceId + '. Nothing was written.' };
+  }
+  return { ok: true, row: matches[0].row };
+}
+
+function reviewFingerprint_(value) {
+  var canonical = JSON.stringify({
+    submissionId: value.submissionId,
+    user: value.user,
+    label: value.label,
+    maintenanceId: value.maintenanceId,
+    owner: value.owner,
+    department: value.department,
+    dueDate: value.dueDate,
+    permit: value.permit,
+    assessment: value.assessment
+  });
+  var digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, canonical, Utilities.Charset.UTF_8);
+  var hex = '';
+  for (var i = 0; i < digest.length; i++) {
+    var b = digest[i] < 0 ? digest[i] + 256 : digest[i];
+    hex += (b < 16 ? '0' : '') + b.toString(16);
+  }
+  return hex;
+}
+
+function loadReview_(submissionId) {
+  var raw = props_().getProperty('REVIEW_SUB_' + submissionId);
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch (err) { return null; }
+}
+
+function saveReviewRecord_(submissionId, record) {
+  record.at = Date.now();
+  var props = props_();
+  props.setProperty('REVIEW_SUB_' + submissionId, JSON.stringify(record));
+  var index = [];
+  try { index = JSON.parse(props.getProperty(REVIEW_INDEX_KEY) || '[]'); } catch (err) { index = []; }
+  if (!Array.isArray(index)) index = [];
+  index = index.filter(function (item) { return item !== submissionId; });
+  index.push(submissionId);
+  while (index.length > 100) {
+    var oldId = index.shift();
+    props.deleteProperty('REVIEW_SUB_' + oldId);
+  }
+  props.setProperty(REVIEW_INDEX_KEY, JSON.stringify(index));
+}
+
+function cellToken_(value) {
+  if (value == null) return '';
+  if (Object.prototype.toString.call(value) === '[object Date]') {
+    if (isNaN(value.getTime())) return '';
+    return 'd:' + value.getTime();
+  }
+  return 'v:' + String(value);
+}
+
+function snapshotCols_(sheet, row, cols) {
+  var out = [];
+  for (var i = 0; i < cols.length; i++) {
+    var range = sheet.getRange(row, cols[i]);
+    out.push({
+      col: cols[i],
+      formula: String(range.getFormula() || ''),
+      token: cellToken_(range.getValue())
+    });
+  }
+  return out;
+}
+
+function sameSnapshot_(sheet, row, snap) {
+  for (var i = 0; i < snap.length; i++) {
+    var range = sheet.getRange(row, snap[i].col);
+    if (String(range.getFormula() || '') !== snap[i].formula) return false;
+    if (cellToken_(range.getValue()) !== snap[i].token) return false;
+  }
+  return true;
+}
+
+function protectedReviewCols_() {
+  var cols = [];
+  var col;
+  for (col = 1; col <= LAST_DATA_COL; col++) cols.push(col);
+  cols.push(20);
+  return cols;
+}
+
+function applyReviewCells_(sheet, row, cells, written) {
+  if (row < REVIEW_START_ROW) throw new Error('Refusing to write above the maintenance requests.');
+  for (var i = 0; i < cells.length; i++) {
+    var cell = cells[i];
+    if (!isReviewCol_(cell.col)) throw new Error('Refusing to write outside columns N to S.');
+    var range = sheet.getRange(row, cell.col);
+    var formula = String(range.getFormula() || '');
+    if (formula.trim() !== '') {
+      throw new Error('Column ' + columnLetter_(cell.col) + ' contains a formula. It was not overwritten.');
+    }
+    if (cell.date) {
+      var currentUk = '';
+      var current = range.getValue();
+      if (Object.prototype.toString.call(current) === '[object Date]' && !isNaN(current.getTime())) {
+        currentUk = Utilities.formatDate(current, 'Europe/London', 'dd/MM/yyyy');
+      }
+      if (currentUk === cell.uk) continue;
+      writeDateCell_(sheet, row, cell.col, cell.date, written);
+      continue;
+    }
+    var expected = String(cell.value);
+    var currentText = range.getValue();
+    if (currentText == null) currentText = '';
+    if (String(currentText) === expected) continue;
+    writeTextCell_(sheet, row, cell.col, expected, written);
+  }
+}
+
+function verifyReviewCells_(sheet, row, cells) {
+  for (var i = 0; i < cells.length; i++) {
+    var range = sheet.getRange(row, cells[i].col);
+    if (String(range.getFormula() || '').trim() !== '') {
+      throw new Error('Saved review cells on row ' + row + ' could not be confirmed.');
+    }
+    if (cells[i].date) {
+      var current = range.getValue();
+      if (Object.prototype.toString.call(current) !== '[object Date]' || isNaN(current.getTime())) {
+        throw new Error('The due date on row ' + row + ' could not be confirmed.');
+      }
+      if (Utilities.formatDate(current, 'Europe/London', 'dd/MM/yyyy') !== cells[i].uk) {
+        throw new Error('The due date on row ' + row + ' could not be confirmed.');
+      }
+      continue;
+    }
+    if (String(range.getValue() == null ? '' : range.getValue()) !== String(cells[i].value)) {
+      throw new Error('Saved review cells on row ' + row + ' could not be confirmed.');
+    }
+  }
+}
+
+function writeDateCell_(sheet, row, col, date, written) {
+  if (row < REVIEW_START_ROW) throw new Error('Refusing to write above the maintenance requests.');
+  if (col !== 17) throw new Error('Refusing to write outside the review.');
+  var range = sheet.getRange(row, col);
+  var formula = String(range.getFormula() || '');
+  if (formula.toUpperCase().replace(/\s/g, '').indexOf('ARRAYFORMULA(') !== -1) {
+    throw new Error('Column Q contains an array formula. Nothing was overwritten.');
+  }
+  written.push({
+    sheet: sheet,
+    row: row,
+    col: col,
+    formula: formula,
+    value: range.getValue(),
+    format: range.getNumberFormat()
+  });
+  range.setNumberFormat('dd/MM/yyyy');
+  range.setValue(date);
+}
+
+function saveReview_(value) {
+  var fingerprint = reviewFingerprint_(value);
+  var existing = loadReview_(value.submissionId);
+  if (existing && existing.status === 'success') {
+    if (existing.fingerprint !== fingerprint) {
+      return json({
+        result: 'error',
+        retryable: false,
+        maintenanceId: existing.maintenanceId,
+        message: 'This review was already saved for ' + existing.maintenanceId + '. It was not changed.'
+      });
+    }
+    return json(existing.result);
+  }
+  if (existing && existing.status === 'partial') {
+    return json(existing.result || {
+      result: 'error',
+      partial: true,
+      retryable: false,
+      maintenanceId: existing.maintenanceId || '',
+      message: 'This review was not fully saved. Check the maintenance record before writing anything else.'
+    });
+  }
+  if (helperOwners_().indexOf(value.owner) === -1) {
+    return json({ result: 'error', retryable: true, message: 'Select an owner from the list. Nothing was saved.' });
+  }
+  var sheet = requireSheet_(SpreadsheetApp.openById(SSID_MAINTENANCE));
+  var found = findReviewRow_(sheet, value.maintenanceId, value.label);
+  if (!found.ok) return json({ result: 'error', retryable: true, message: found.message });
+  var before = snapshotCols_(sheet, found.row, protectedReviewCols_());
+  var due = reviewDueDate_(value.dueDate);
+  if (!due) return json({ result: 'error', retryable: true, message: 'Enter a valid due date. Nothing was saved.' });
+  var uk = Utilities.formatDate(due, 'Europe/London', 'dd/MM/yyyy');
+  var cells = [
+    { col: 14, value: value.user },
+    { col: 15, value: value.owner },
+    { col: 16, value: value.department },
+    { col: 17, date: due, uk: uk },
+    { col: 18, value: value.permit },
+    { col: 19, value: value.assessment }
+  ];
+  var written = [];
+  try {
+    applyReviewCells_(sheet, found.row, cells, written);
+    verifyReviewCells_(sheet, found.row, cells);
+    if (!sameSnapshot_(sheet, found.row, before)) {
+      throw new Error('Columns outside the review changed. The review was not kept.');
+    }
+  } catch (err) {
+    var failed = rollbackWritten_(written);
+    if (failed.length || !sameSnapshot_(sheet, found.row, before)) {
+      saveReviewRecord_(value.submissionId, {
+        status: 'partial',
+        fingerprint: fingerprint,
+        maintenanceId: value.maintenanceId,
+        result: {
+          result: 'error',
+          partial: true,
+          retryable: false,
+          maintenanceId: value.maintenanceId,
+          message: 'The review may be incomplete on row ' + found.row + '. Check that record before trying again.'
+        }
+      });
+      return json({
+        result: 'error',
+        partial: true,
+        retryable: false,
+        maintenanceId: value.maintenanceId,
+        message: 'The review may be incomplete. Check ' + value.maintenanceId + ' before trying again.'
+      });
+    }
+    return json({
+      result: 'error',
+      retryable: true,
+      message: publicMessage_(err) + ' Your answers are still here.'
+    });
+  }
+  var result = {
+    result: 'success',
+    maintenanceId: value.maintenanceId,
+    label: value.label,
+    row: found.row,
+    dueOn: uk
+  };
+  saveReviewRecord_(value.submissionId, {
+    status: 'success',
+    fingerprint: fingerprint,
+    maintenanceId: value.maintenanceId,
+    result: result
+  });
+  return json(result);
 }
 
 function json(obj) {

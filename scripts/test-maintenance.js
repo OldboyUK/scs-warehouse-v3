@@ -59,14 +59,14 @@ const FIXTURE = [
   ',Bottling Line,Cimec Filler,'
 ].join('\n');
 
-function createSheet(maxRows) {
+function createSheet(maxRows, sheetName) {
   const cells = new Map();
   const sheet = {
     maxRows: maxRows || 8,
     failOnCol: 0,
     writeLog: [],
     clearLog: [],
-    getName: function () { return 'Submission Log'; },
+    getName: function () { return sheetName || 'Submission Log'; },
     getMaxRows: function () { return sheet.maxRows; },
     getMaxColumns: function () { return 26; },
     insertRowsAfter: function (after, count) { sheet.maxRows += count; },
@@ -245,7 +245,9 @@ const context = {
       if (id !== core.SSID_MAINTENANCE) throw new Error('Unexpected spreadsheet');
       return {
         getSheetByName: function (name) {
-          return name === 'Submission Log' ? world.sheet : null;
+          if (name === 'Submission Log') return world.sheet;
+          if (name === 'Helper') return world.helper;
+          return null;
         }
       };
     },
@@ -349,6 +351,12 @@ context.londonNow_ = function () { return world.now; };
 function fresh() {
   world.sheet = createSheet(8);
   seedHeaders(world.sheet);
+  world.helper = createSheet(6, 'Helper');
+  world.helper.seed(1, 1, { value: 'Owner' });
+  world.helper.seed(2, 1, { value: 'Alex P' });
+  world.helper.seed(3, 1, { value: ' ' });
+  world.helper.seed(4, 1, { value: 'Sam K' });
+  world.helper.seed(5, 1, { value: 'Alex P' });
   world.props = {};
   world.locked = false;
   world.now = new Date('2026-06-15T12:00:00Z');
@@ -509,7 +517,6 @@ function testSheetWrites() {
   world.sheet.seed(2, 10, { value: 'Old fault' });
   world.sheet.seed(2, 11, { value: 'Old part' });
   world.sheet.seed(2, 12, { value: 'No' });
-  world.sheet.seed(3, 9, { value: 'Leave this cell' });
   world.sheet.seed(2, 15, { formula: '=1+1', value: 2, display: '2' });
   world.sheet.seed(3, 15, { formula: '=2+2', value: 4, display: '4' });
   world.sheet.seed(5, 1, { formula: '=""', display: '', value: '' });
@@ -530,8 +537,7 @@ function testSheetWrites() {
   assertEqual(cell(3, 7), 'DMA', 'equipment is written to column G');
   assertEqual(cell(3, 8), 'High Priority', 'priority category only is written to column H');
   assert(String(cell(3, 8)).indexOf('Urgent') === -1, 'priority explanation is not stored');
-  assertEqual(cell(3, 9), 'Leave this cell', 'column I is not written');
-  assert(!world.sheet.writeLog.some(function (entry) { return entry.col === 9; }), 'column I is never written');
+  assertEqual(cell(3, 9), 'Filler guard missing', 'the descriptive title is written to column I');
   assertEqual(cell(3, 10), 'Guard missing from the filler', 'description is written to column J');
   assertEqual(cell(3, 11), 'Guard', 'parts are written to column K');
   assertEqual(cell(3, 12), 'Yes', 'raising a request writes Yes to column L');
@@ -644,7 +650,14 @@ function testSheetWrites() {
   assertEqual(cell(2, 5), 'Jody R', 'the selected reporter is stored even when it is the same person');
 
   fresh();
-  world.sheet.seed(2, 9, { value: 'Leave this cell' });
+  world.sheet.seed(2, 9, { value: 'Already titled' });
+  const occupiedTitle = post({ submissionId: 'sub-title-0001', title: 'New title' });
+  assertEqual(occupiedTitle.maintenanceId, 'MA0001', 'a filled title cell does not block the next id');
+  assertEqual(cell(2, 9), 'Already titled', 'an existing title is not overwritten');
+  assertEqual(cell(3, 1), 'MA0001', 'the report uses the next row when column I is already filled');
+  assertEqual(cell(3, 9), 'New title', 'the descriptive title is written on that next row');
+
+  fresh();
   const prepared = post({
     submissionId: 'sub-photo-01',
     title: 'Belt slip',
@@ -701,7 +714,7 @@ function testSheetWrites() {
   assertEqual(committed.maintenanceId, 'MA0001', 'the confirmed id is the reserved id');
   assertEqual(cell(2, 1), 'MA0001', 'the id is written after the photographs upload');
   assertEqual(cell(2, 2), 'MA0001 | Belt slip', 'the title is joined to the id');
-  assertEqual(cell(2, 9), 'Leave this cell', 'column I stays untouched when photographs are saved');
+  assertEqual(cell(2, 9), 'Belt slip', 'the descriptive title is written to column I when photographs are saved');
   assertEqual(cell(2, 10), 'The belt slips under load', 'the description is column J');
   assert(String(formula(2, 13)).indexOf(driveNamed('MA0001')[0].id) !== -1, 'column M links to the top-level job folder');
   const committedAgain = post({
@@ -793,6 +806,34 @@ function testPages() {
   assert(menu.indexOf('href="/warehouse/"') !== -1 && menu.indexOf('href="/hr/"') !== -1, 'Warehouse and HR links remain');
   assert(menu.indexOf('href="/health-safety/"') !== -1, 'Health and Safety link remains');
   assert(home.indexOf('>Report Fault<') !== -1 && home.indexOf('href="report-fault.html"') !== -1, 'Maintenance opens Report Fault');
+  assert(home.indexOf('>Review Maintenance Requests<') !== -1 && home.indexOf('href="review-requests.html"') !== -1, 'Maintenance opens Review Maintenance Requests');
+  const reviewPage = fs.readFileSync(path.join(root, 'maintenance/review-requests.html'), 'utf8');
+  const review = fs.readFileSync(path.join(root, 'maintenance/review-requests.js'), 'utf8');
+  assert(reviewPage.indexOf('review-requests.js') !== -1, 'review page loads its script');
+  [
+    'Please assign an owner to this job',
+    'Please assign a department',
+    'Please enter a due date',
+    'Is a permit to work required?',
+    'Assessing the task, is there any impact to Food Safety or Health and Safety that has not been considered?',
+    'Would you like to order parts now or later?',
+    'Order Parts Now',
+    'Order Parts Later',
+    'Ordering parts is not available yet. Nothing else was saved.',
+    'You can order parts later. Nothing else was saved.',
+    'Quality',
+    'Engineering',
+    'Logistics',
+    'Management'
+  ].forEach(function (label) {
+    assert(review.indexOf(label) !== -1, 'review form contains ' + label);
+  });
+  assert(review.indexOf('type="date"') !== -1, 'due date uses a date picker');
+  assert(review.indexOf('/.netlify/functions/reviewMaintenance') !== -1, 'review posts to the Netlify function');
+  assert(review.indexOf('J4PAN88') === -1 && review.indexOf('script.google.com') === -1, 'review page has no script credential or web app URL');
+  assert(review.indexOf('order_parts') === -1, 'parts ordering is not submitted');
+  assert(script.indexOf('var REVIEW_LAST_COL = 19') !== -1, 'review stops at column S');
+  assert(script.indexOf("var SHEET_HELPER = 'Helper'") !== -1, 'owners are read from the Helper sheet');
   assert(page.indexOf('report-fault.js') !== -1, 'report page loads its script');
   [
     'Please use this form for reporting faults or an unsafe condition with the machines or equipment',
@@ -849,6 +890,165 @@ function testDriveAuthorisation() {
   assert(probes[0].trashed, 'authorisation removes the probe folder');
 }
 
+function reviewLists() {
+  const out = context.doPost({
+    parameter: { token: 'J4PAN88', action: 'review_lists' },
+    postData: { type: 'application/x-www-form-urlencoded', contents: '' }
+  });
+  return JSON.parse(out.getContent());
+}
+
+function postReview(extra) {
+  const params = Object.assign({
+    token: 'J4PAN88',
+    action: 'review_save',
+    submissionId: 'review-0001',
+    user: 'Test User',
+    label: 'MA0042 | Conveyor belt motor failure',
+    maintenanceId: 'MA0042',
+    owner: 'Alex P',
+    department: 'Engineering',
+    dueDate: '2026-11-17',
+    permit: 'Yes',
+    assessment: 'No extra food safety impact.\nGuarding already considered.'
+  }, extra || {});
+  const out = context.doPost({
+    parameter: params,
+    postData: { type: 'application/x-www-form-urlencoded', contents: '' }
+  });
+  return JSON.parse(out.getContent());
+}
+
+function seedRequest(row, id, title) {
+  world.sheet.seed(row, 1, { value: id });
+  world.sheet.seed(row, 2, { value: id + ' | ' + title });
+  world.sheet.seed(row, 3, { value: '01/06/2026' });
+  world.sheet.seed(row, 4, { value: 'Reporter User' });
+  world.sheet.seed(row, 9, { value: title });
+  world.sheet.seed(row, 10, { value: 'Original description' });
+  world.sheet.seed(row, 13, { formula: '=HYPERLINK("https://drive.google.com/drive/folders/job","' + id + '")', value: id });
+}
+
+function testReview() {
+  const kept = core.validateReview({
+    submissionId: 'review-0001',
+    user: 'Test User',
+    label: 'MA0042 | Conveyor belt motor failure',
+    maintenanceId: 'ma0042',
+    owner: 'Alex P',
+    department: 'Engineering',
+    dueDate: '2026-11-17',
+    permit: 'Yes',
+    assessment: 'Line one\r\nLine two'
+  }, ['Alex P']);
+  assert(kept.ok, 'a complete review passes validation');
+  assertEqual(kept.value.maintenanceId, 'MA0042', 'the maintenance id is normalised');
+  assertEqual(kept.value.assessment, 'Line one\nLine two', 'assessment line breaks are preserved');
+  assert(!core.validateReview(Object.assign({}, kept.value, { dueDate: '2026-02-31' }), ['Alex P']).ok, 'an impossible due date is rejected');
+  assert(!core.validateReview(Object.assign({}, kept.value, { department: 'Warehouse' }), ['Alex P']).ok, 'an unknown department is rejected');
+  assert(!core.validateReview(Object.assign({}, kept.value, { assessment: ' \n ' }), ['Alex P']).ok, 'a blank assessment is rejected');
+  assert(!core.validateReview(Object.assign({}, kept.value, { owner: 'Nobody' }), ['Alex P']).ok, 'an owner who is not on the list is rejected');
+
+  fresh();
+  seedRequest(2, 'MA0001', 'Hidden first row');
+  seedRequest(3, 'MA0042', 'Conveyor belt motor failure');
+  world.sheet.seed(3, 14, { value: 'Old reviewer' });
+  world.sheet.seed(3, 20, { formula: '=ROW()', value: 3, display: '3' });
+  seedRequest(5, 'MA0043', 'Second job');
+  world.sheet.seed(6, 1, { value: 'MA0099' });
+  world.sheet.seed(6, 2, { value: 'MA0043 | Second job' });
+
+  const listed = reviewLists();
+  assertEqual(listed.result, 'ok', 'the review list loads');
+  assertEqual(listed.owners.join('|'), 'Alex P|Sam K', 'Helper column A supplies owners, skipping blanks and duplicates');
+  assertEqual(listed.requests.map(function (item) { return item.label; }).join('|'), 'MA0042 | Conveyor belt motor failure|MA0043 | Second job', 'column B from row 3 is listed and row 2 is not');
+  assertEqual(listed.requests[0].row, 3, 'the selected request remembers its spreadsheet row');
+  assertEqual(listed.requests[0].maintenanceId, 'MA0042', 'the request keeps the id from column A');
+  assert(listed.requests[1].duplicate, 'a repeated request is marked so it cannot be updated');
+
+  let refused = false;
+  try { context.writeTextCell_(world.sheet, 3, 20, 'no', []); } catch (err) { refused = true; }
+  assert(refused, 'column T cannot be written');
+  assertEqual(formula(3, 20), '=ROW()', 'trying column T leaves its formula in place');
+
+  const wrongDepartment = postReview({ department: 'Warehouse' });
+  assertEqual(wrongDepartment.result, 'error', 'an unknown department is not saved');
+  assertEqual(world.sheet.writeLog.length, 0, 'a rejected review writes nothing');
+
+  const saved = postReview();
+  assertEqual(saved.result, 'success', 'the review updates the existing request');
+  assertEqual(saved.maintenanceId, 'MA0042', 'the review does not create a maintenance id');
+  assertEqual(saved.row, 3, 'the review writes the row whose label still matches');
+  assertEqual(saved.dueOn, '17/11/2026', 'the due date is confirmed in UK format');
+  assertEqual(cell(3, 14), 'Test User', 'column N stores the signed-in user');
+  assertEqual(cell(3, 15), 'Alex P', 'column O stores the owner');
+  assertEqual(cell(3, 16), 'Engineering', 'column P stores the department');
+  assert(cell(3, 17) instanceof Date, 'column Q stores a date value');
+  assertEqual(formatDate(cell(3, 17), 'Europe/London', 'dd/MM/yyyy'), '17/11/2026', 'column Q displays as DD/MM/YYYY');
+  assertEqual(world.sheet.cell(3, 17).format, 'dd/MM/yyyy', 'column Q uses a UK date format');
+  assertEqual(cell(3, 18), 'Yes', 'column R stores the permit answer');
+  assertEqual(cell(3, 19), 'No extra food safety impact.\nGuarding already considered.', 'column S preserves the assessment and its line break');
+  assertEqual(cell(3, 1), 'MA0042', 'column A is not overwritten');
+  assertEqual(cell(3, 2), 'MA0042 | Conveyor belt motor failure', 'column B is not overwritten');
+  assertEqual(cell(3, 4), 'Reporter User', 'column D is not overwritten');
+  assertEqual(cell(3, 9), 'Conveyor belt motor failure', 'column I is not overwritten');
+  assertEqual(cell(3, 10), 'Original description', 'column J is not overwritten');
+  assert(String(formula(3, 13)).indexOf('HYPERLINK') !== -1, 'column M keeps its hyperlink');
+  assertEqual(formula(3, 20), '=ROW()', 'column T keeps its formula');
+  assertEqual(cell(2, 1), 'MA0001', 'the row above the review range is not updated');
+  assert(world.sheet.writeLog.every(function (entry) { return entry.col >= 14 && entry.col <= 19; }), 'only columns N to S are written');
+  assert(!world.sheet.writeLog.some(function (entry) { return entry.col === 20 || entry.col <= 13; }), 'columns A to M and T are not written');
+  assertEqual(world.drive.nodes.length, 0, 'a review does not create a Drive folder');
+  assert(!Object.prototype.hasOwnProperty.call(world.props, 'FAULT_SUBMISSION_INDEX'), 'a review does not join the fault id sequence');
+  assertEqual(idRows().length, 4, 'a review does not add a row');
+
+  const writes = world.sheet.writeLog.length;
+  const again = postReview();
+  assertEqual(again.result, 'success', 'submitting the same review again succeeds');
+  assertEqual(again.maintenanceId, 'MA0042', 'the repeated review keeps the same id');
+  assertEqual(world.sheet.writeLog.length, writes, 'the repeated review does not write again');
+
+  const changed = postReview({ owner: 'Sam K' });
+  assertEqual(changed.result, 'error', 'changing a saved review under the same submission does not write');
+  assertEqual(cell(3, 15), 'Alex P', 'the saved owner stays in place');
+
+  const duplicate = postReview({
+    submissionId: 'review-0002',
+    label: 'MA0043 | Second job',
+    maintenanceId: 'MA0043'
+  });
+  assertEqual(duplicate.result, 'error', 'a repeated request is not updated');
+  assertEqual(cell(5, 14), '', 'the first copy of a repeated request is not written');
+  assertEqual(cell(6, 14), '', 'the second copy of a repeated request is not written');
+
+  world.sheet.seed(3, 2, { value: 'MA0042 | Renamed after selection' });
+  const moved = postReview({ submissionId: 'review-0003' });
+  assertEqual(moved.result, 'error', 'a request whose title changed is not updated');
+  assertEqual(cell(3, 15), 'Alex P', 'the earlier review remains after the title changes');
+  world.sheet.seed(3, 2, { value: 'MA0042 | Conveyor belt motor failure' });
+
+  const updated = postReview({ submissionId: 'review-0004', owner: 'Sam K', permit: 'No' });
+  assertEqual(updated.result, 'success', 'a later review can update the same request');
+  assertEqual(updated.maintenanceId, 'MA0042', 'the later review still does not create an id');
+  assertEqual(cell(3, 15), 'Sam K', 'column O is updated on the same row');
+  assertEqual(cell(3, 18), 'No', 'column R is updated on the same row');
+  assertEqual(cell(3, 1), 'MA0042', 'the later review still does not change column A');
+
+  fresh();
+  seedRequest(3, 'MA0042', 'Conveyor belt motor failure');
+  world.sheet.seed(3, 14, { formula: '=A3', value: 'MA0042' });
+  const protectedCell = postReview({ submissionId: 'review-0005' });
+  assertEqual(protectedCell.result, 'error', 'a formula in the review columns stops the save');
+  assertEqual(formula(3, 14), '=A3', 'the formula in column N is not overwritten');
+  assertEqual(cell(3, 15), '', 'later review columns are not written after a formula is found');
+
+  fresh();
+  world.helper = null;
+  const missingHelper = reviewLists();
+  assertEqual(missingHelper.result, 'error', 'a missing Helper sheet does not pretend to load');
+  assert(String(missingHelper.message).indexOf('Helper') !== -1, 'the missing Helper sheet is named');
+}
+
 function testScriptPages() {
   const submit = require('../netlify/functions/submitFault');
   const moved = '<HTML><HEAD><TITLE>Moved Temporarily</TITLE></HEAD><BODY>The document has moved <A HREF="https://script.googleusercontent.com/macros/echo?user_content_key=abc">here</A>.</BODY></HTML>';
@@ -874,6 +1074,16 @@ async function testHandlerAndLiveCsv() {
   const bad = await submit({ httpMethod: 'POST', body: '{' });
   assertEqual(bad.statusCode, 400, 'invalid JSON is rejected');
   assertEqual(JSON.parse(bad.body).result, 'error', 'invalid JSON is not a success');
+
+  const reviewHandler = require('../netlify/functions/reviewMaintenance').handler;
+  const reviewGet = await reviewHandler({ httpMethod: 'GET', body: '' });
+  assertEqual(reviewGet.statusCode, 405, 'review GET is rejected');
+  const reviewBad = await reviewHandler({
+    httpMethod: 'POST',
+    body: JSON.stringify({ action: 'review_save', submissionId: 'review-0001' })
+  });
+  assertEqual(reviewBad.statusCode, 400, 'an incomplete review is rejected before the script');
+  assertEqual(JSON.parse(reviewBad.body).result, 'error', 'an incomplete review is not a success');
 
   const previous = process.env.MAINTENANCE_SCRIPT_URL;
   delete process.env.MAINTENANCE_SCRIPT_URL;
@@ -918,6 +1128,7 @@ async function main() {
   testLists();
   testSheetWrites();
   testDriveAuthorisation();
+  testReview();
   testPages();
   testScriptPages();
   await testHandlerAndLiveCsv();

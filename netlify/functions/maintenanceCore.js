@@ -10,6 +10,8 @@
 var DROPDOWNS_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT9wb05WXLcP4IN6Dce9zaRWtPKpGgHKWsqo4ICB97Mpr3RTx8MMFidwWgSf6ulh_sJNgE_2XxX3N2D/pub?gid=1056635412&single=true&output=csv';
 var SSID_MAINTENANCE = '1k0y2ieC4Sg5gYNOFLgcCxLNMUjImCdZNOJTBPg-V-KE';
 var SHEET_SUBMISSIONS = 'Submission Log';
+var SHEET_HELPER = 'Helper';
+var DEPARTMENTS = ['Quality', 'Engineering', 'Logistics', 'Management'];
 var OTHER = 'Other';
 var PRIORITY_OPTIONS = [
   { value: 'High Priority', label: 'High Priority - Urgent Risk to Safety of People or Food' },
@@ -306,6 +308,86 @@ function validateFault(data, lists) {
   };
 }
 
+function labelId(label) {
+  var text = String(label || '').trim();
+  var cut = text.indexOf(' | ');
+  if (cut < 0) return '';
+  var id = text.slice(0, cut).trim().toUpperCase();
+  if (!MAINTENANCE_ID_RE.test(id)) return '';
+  if (!text.slice(cut + 3).trim()) return '';
+  return id;
+}
+
+function reviewDueDate(value) {
+  var text = String(value || '').trim();
+  var match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (!match) return { ok: false, message: 'Enter a valid due date. Nothing was saved.' };
+  var year = Number(match[1]);
+  var month = Number(match[2]);
+  var day = Number(match[3]);
+  if (year < 2000 || year > 2100) return { ok: false, message: 'Enter a valid due date. Nothing was saved.' };
+  var probe = new Date(Date.UTC(year, month - 1, day));
+  if (probe.getUTCFullYear() !== year || probe.getUTCMonth() !== month - 1 || probe.getUTCDate() !== day) {
+    return { ok: false, message: 'Enter a valid due date. Nothing was saved.' };
+  }
+  return { ok: true, value: text };
+}
+
+function preserveText(value, emptyMessage, label) {
+  var text = String(value == null ? '' : value).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  if (!String(text).trim()) return { ok: false, message: emptyMessage };
+  if (text.length > MAX_TEXT) return { ok: false, message: label + ' is too long.' };
+  return { ok: true, value: text };
+}
+
+function validateReview(data, owners) {
+  data = data || {};
+  owners = owners || [];
+  var submissionId = String(data.submissionId || '').trim();
+  if (!submissionIdOk(submissionId)) {
+    return { ok: false, message: 'The review could not be identified. Reload the page and try again. Nothing was saved.' };
+  }
+  var user = namedText(data.user, 'The signed-in user is missing. Nothing was saved.', 'The user name');
+  if (!user.ok) return user;
+  var label = String(data.label == null ? '' : data.label).trim();
+  var maintenanceId = String(data.maintenanceId || '').trim().toUpperCase();
+  var prefix = labelId(label);
+  if (!prefix || prefix !== maintenanceId) {
+    return { ok: false, message: 'Select a maintenance request. Nothing was saved.' };
+  }
+  var owner = namedText(data.owner, 'Select an owner for this job.', 'The owner');
+  if (!owner.ok) return owner;
+  if (owners.indexOf(owner.value) === -1) {
+    return { ok: false, message: 'Select an owner from the list. Nothing was saved.' };
+  }
+  var department = String(data.department || '').trim();
+  if (DEPARTMENTS.indexOf(department) === -1) {
+    return { ok: false, message: 'Select a department. Nothing was saved.' };
+  }
+  var due = reviewDueDate(data.dueDate);
+  if (!due.ok) return due;
+  var permit = String(data.permit || '').trim();
+  if (permit !== 'Yes' && permit !== 'No') {
+    return { ok: false, message: 'Choose whether a permit to work is required. Nothing was saved.' };
+  }
+  var assessment = preserveText(data.assessment, 'Assess the impact to Food Safety or Health and Safety.', 'The assessment');
+  if (!assessment.ok) return assessment;
+  return {
+    ok: true,
+    value: {
+      submissionId: submissionId,
+      user: user.value,
+      label: label,
+      maintenanceId: maintenanceId,
+      owner: owner.value,
+      department: department,
+      dueDate: due.value,
+      permit: permit,
+      assessment: assessment.value
+    }
+  };
+}
+
 function jsonResponse(statusCode, body) {
   return { statusCode: statusCode, body: JSON.stringify(body) };
 }
@@ -314,6 +396,8 @@ module.exports = {
   DROPDOWNS_CSV_URL: DROPDOWNS_CSV_URL,
   SSID_MAINTENANCE: SSID_MAINTENANCE,
   SHEET_SUBMISSIONS: SHEET_SUBMISSIONS,
+  SHEET_HELPER: SHEET_HELPER,
+  DEPARTMENTS: DEPARTMENTS,
   OTHER: OTHER,
   PRIORITY_OPTIONS: PRIORITY_OPTIONS,
   MAINTENANCE_ID_RE: MAINTENANCE_ID_RE,
@@ -324,5 +408,6 @@ module.exports = {
   parseCsv: parseCsv,
   listsFromCsv: listsFromCsv,
   validateFault: validateFault,
+  validateReview: validateReview,
   jsonResponse: jsonResponse
 };

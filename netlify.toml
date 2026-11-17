@@ -175,6 +175,11 @@
   to = "/maintenance/report-fault.html"
   status = 301
 
+[[redirects]]
+  from = "/maintenance/review-requests"
+  to = "/maintenance/review-requests.html"
+  status = 301
+
 [functions."schedule-backup"]
   schedule = "*/30 * * * *"
 
