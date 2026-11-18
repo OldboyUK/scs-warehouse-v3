@@ -9,8 +9,17 @@
   var LIQUID_COLUMN = 0;
   var CUSTOMER_COLUMN = 1;
   var PRODUCT_COLUMN = 3;
+  var PACKING_TYPE_COLUMN = 6;
   var STATUS_COLUMN = 32;
   var FORMAT_COLUMN = 3;
+  // Ranges sheet column D, using the sheet's own row numbers.
+  var FORMAT_RANGES = {
+    bottles: [2, 8],
+    keg: [9, 10],
+    owk: [11, 14],
+    bibs: [15, 24],
+    bulk: [25, 26]
+  };
 
   var CACHE_KEY = 'scs_schedule_products_v1';
   var catalogue = null;
@@ -80,17 +89,35 @@
     return String(customer || '').trim().toLowerCase() + '\u0000' + String(product || '').trim().toLowerCase();
   }
 
+  function columnSlice(rows, index, startRow, endRow) {
+    var seen = {};
+    var values = [];
+    for (var row = startRow; row <= endRow; row++) {
+      var value = String((rows[row - 1] && rows[row - 1][index]) || '').trim();
+      if (!value) continue;
+      var key = value.toLowerCase();
+      if (seen[key]) continue;
+      seen[key] = true;
+      values.push(value);
+    }
+    return values;
+  }
+
   function indexDatabase(rows) {
     var customers = uniqueColumn(rows, CUSTOMER_COLUMN);
     var productsByCustomer = {};
     var seenProduct = {};
     var byPair = {};
+    var whiteLabels = {};
     for (var i = 1; i < rows.length; i++) {
       var record = rows[i] || [];
       var status = String(record[STATUS_COLUMN] || '').trim().toLowerCase();
       if (status !== 'active') continue;
       var customer = String(record[CUSTOMER_COLUMN] || '').trim();
       var product = String(record[PRODUCT_COLUMN] || '').trim();
+      var code = String(record[LIQUID_COLUMN] || '').trim();
+      var packingType = String(record[PACKING_TYPE_COLUMN] || '').trim().toLowerCase();
+      if (code && packingType === 'white label') whiteLabels[code.toLowerCase()] = true;
       if (!customer || !product) continue;
       var customerKey = customer.toLowerCase();
       var productKey = product.toLowerCase();
@@ -100,7 +127,6 @@
         productsByCustomer[customerKey].push(product);
       }
       var key = pairKey(customer, product);
-      var code = String(record[LIQUID_COLUMN] || '').trim();
       if (!byPair[key]) {
         byPair[key] = { customer: customer, product: product, codes: [], seen: {} };
       }
@@ -120,13 +146,18 @@
       entry.liquidCode = entry.codes[0] || '';
       delete entry.seen;
     });
-    return { customers: customers, productsByCustomer: productsByCustomer, byPair: byPair };
+    return { customers: customers, productsByCustomer: productsByCustomer, byPair: byPair, whiteLabels: whiteLabels };
   }
 
   function buildCatalogue(rangesText, databaseText) {
     var ranges = parseCsv(rangesText);
     var database = parseCsv(databaseText);
     var formats = uniqueColumn(ranges, FORMAT_COLUMN);
+    var formatsByCategory = {};
+    Object.keys(FORMAT_RANGES).forEach(function (category) {
+      var range = FORMAT_RANGES[category];
+      formatsByCategory[category] = columnSlice(ranges, FORMAT_COLUMN, range[0], range[1]);
+    });
     var indexed = indexDatabase(database);
     if (!indexed.customers.length || !formats.length || !Object.keys(indexed.byPair).length) {
       throw new Error('The published sheets did not contain the product lists.');
@@ -135,7 +166,9 @@
       customers: indexed.customers,
       productsByCustomer: indexed.productsByCustomer,
       byPair: indexed.byPair,
-      formats: formats
+      formats: formats,
+      formatsByCategory: formatsByCategory,
+      whiteLabels: indexed.whiteLabels
     };
   }
 
@@ -251,8 +284,14 @@
     return {
       customer: entry.customer,
       product: entry.product,
-      liquidCode: entry.liquidCode
+      liquidCode: entry.liquidCode,
+      whiteLabel: !!catalogue.whiteLabels[entry.liquidCode.toLowerCase()]
     };
+  }
+
+  function isWhiteLabel(code) {
+    if (!catalogue || !code) return false;
+    return !!catalogue.whiteLabels[String(code).trim().toLowerCase()];
   }
 
   var api = {
@@ -272,6 +311,12 @@
       return list ? list.slice() : [];
     },
     formats: function () { return catalogue ? catalogue.formats.slice() : []; },
+    formatsFor: function (category) {
+      if (!catalogue) return [];
+      var list = catalogue.formatsByCategory[category];
+      return list ? list.slice() : [];
+    },
+    isWhiteLabel: isWhiteLabel,
     ready: function () { return !!catalogue; }
   };
 

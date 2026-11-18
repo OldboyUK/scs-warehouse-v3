@@ -9,6 +9,7 @@
   var editorMode = null;
   var editorSnapshot = null;
   var draft = null;
+  var editorCategory = '';
   var currentMatch = null;
   var filling = false;
   var drag = null;
@@ -121,9 +122,23 @@
     node.style.background = block.backgroundColour;
     node.style.color = data.textColour(block.backgroundColour);
     node.querySelector('.prod-text').textContent = block.text || '';
+    var white = products.isWhiteLabel(block.liquidCode);
+    node.classList.toggle('has-flag', white);
+    var flag = node.querySelector('.prod-flag');
+    if (white) {
+      if (!flag) {
+        flag = document.createElement('span');
+        flag.className = 'prod-flag';
+        node.appendChild(flag);
+      }
+      flag.textContent = (block.endOffset - block.startOffset) <= 60 ? 'WL' : 'WHITE LABEL';
+    } else if (flag) {
+      flag.remove();
+    }
     var spoken = (block.text || 'Empty block').replace(/\s*\n\s*/g, ', ');
     var label = spoken + ', ' +
       data.minutesToLabel(block.startOffset) + ' to ' + endOptionLabel(block.endOffset);
+    if (white) label += ', white label';
     node.title = label;
     node.setAttribute('aria-label', label);
   }
@@ -386,6 +401,7 @@
     editingId = null;
     editorMode = null;
     editorSnapshot = null;
+    editorCategory = '';
     modal.hidden = true;
     editorActions.classList.remove('is-adding');
   }
@@ -677,7 +693,7 @@
       product
     );
     editorProduct.disabled = !products.ready() || !canonical;
-    fillSelect(editorFormat, products.formats(), 'Select a packing format', format);
+    fillSelect(editorFormat, products.formatsFor(editorCategory), 'Select a packing format', format);
     applyLiquid();
   }
 
@@ -771,6 +787,7 @@
       if (previous) previous.classList.remove('is-editing');
     }
     editingId = id;
+    editorCategory = block.category;
     draft = null;
     editorSnapshot = copyBlock(block);
     setEditorMode(mode);
@@ -795,6 +812,7 @@
     if (navigating) return;
     if (editorMode === 'edit') dismissEditor();
     else if (editorMode === 'add') closeEditor();
+    editorCategory = category;
     draft = {
       day: day,
       category: category,
@@ -936,6 +954,7 @@
     if (drag.kind === 'move') {
       var length = end - start;
       var lane = laneUnderPoint(clientX, clientY);
+      if (lane && lane.dataset.category !== drag.category) lane = null;
       clearDropTarget();
       var otherWeek = lane && lane.dataset.week !== drag.week;
       if (otherWeek) {
@@ -1646,6 +1665,13 @@
     sourceStatus.classList.toggle('is-error', failed);
     sourceMessage.textContent = current.state === 'ready' ? '' : current.message;
     sourceRetry.hidden = !failed;
+    if (current.state === 'ready' && !drag) {
+      renderBlocks();
+      if (editingId) {
+        var editing = blockElement(editingId);
+        if (editing) editing.classList.add('is-editing');
+      }
+    }
     if (!modal.hidden) {
       if (current.state === 'ready') {
         fillForm(editorCustomer.value, editorProduct.value, editorFormat.value);

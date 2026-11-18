@@ -835,7 +835,8 @@
   right: 2px;
   z-index: 2;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   justify-content: center;
   box-sizing: border-box;
   padding: 2px 3px;
@@ -846,6 +847,10 @@
   text-align: center;
   touch-action: none;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+.prod-block.has-flag {
+  padding-bottom: 8px;
 }
 
 .prod-block:hover {
@@ -866,7 +871,8 @@
 
 .prod-text {
   width: 100%;
-  max-height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
   margin: 0;
   overflow: hidden;
   font-size: 10px;
@@ -874,6 +880,24 @@
   line-height: 1.15;
   white-space: pre-line;
   word-break: break-word;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.prod-flag {
+  flex: 0 0 auto;
+  margin: 1px -3px 0;
+  padding: 0 2px;
+  background: #000;
+  color: #fff;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  line-height: 12px;
+  text-align: center;
+  white-space: nowrap;
   pointer-events: none;
 }
 
