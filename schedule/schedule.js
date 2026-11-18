@@ -131,7 +131,7 @@
         flag.className = 'prod-flag';
         node.appendChild(flag);
       }
-      flag.textContent = (block.endOffset - block.startOffset) <= 60 ? 'WL' : 'WHITE LABEL';
+      flag.textContent = 'White Label';
     } else if (flag) {
       flag.remove();
     }

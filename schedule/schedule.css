@@ -887,17 +887,21 @@
 }
 
 .prod-flag {
+  align-self: center;
   flex: 0 0 auto;
-  margin: 1px -3px 0;
-  padding: 0 2px;
-  background: #000;
-  color: #fff;
+  max-width: calc(100% - 2px);
+  margin-top: 1px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #fff;
+  color: #111;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
   font-size: 8px;
   font-weight: 800;
-  letter-spacing: 0.03em;
   line-height: 12px;
   text-align: center;
   white-space: nowrap;
+  overflow: hidden;
   pointer-events: none;
 }
 
