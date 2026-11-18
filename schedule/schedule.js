@@ -1475,6 +1475,7 @@
     tabBlending.setAttribute('aria-selected', view === 'blending' ? 'true' : 'false');
     scheduleTitle.textContent = view === 'blending' ? 'Blending Schedule' : 'Production Schedule';
     scroll.setAttribute('aria-label', view === 'blending' ? 'Blending schedule' : 'Production schedule');
+    renderLegend();
     var iso = data.getState().weekCommencing;
     renderYear(data.loadedYear() || Number(yearSelect.value));
     window.requestAnimationFrame(function () { scrollToWeek(iso, false); });
@@ -1747,12 +1748,14 @@
   }
 
   function renderLegend() {
+    var blending = view === 'blending';
     statusLegend.innerHTML = '';
+    statusLegend.setAttribute('aria-label', blending ? 'Blending colours' : 'Production status');
     data.STATUSES.forEach(function (status) {
       var item = document.createElement('div');
       item.className = 'sch-legend-item';
       item.style.background = status.colour;
-      item.textContent = status.label;
+      item.textContent = blending ? 'Placeholder' : status.label;
       statusLegend.appendChild(item);
     });
   }
