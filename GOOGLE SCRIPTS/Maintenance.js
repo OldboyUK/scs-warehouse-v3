@@ -46,7 +46,16 @@
  * nothing does not make the row occupied. Receipt updates write only
  * F date ordered, G date arrived, H received by, I checked by, and J status.
  * That folder contains one subfolder named "[Maintenance ID] | Requests".
- * Photographs are uploaded there. A completed-job folder is not created.
+ * Photographs of the fault are uploaded there.
+ * Completing an existing job writes only:
+ * V permit to work number
+ * W work undertaken
+ * X work outstanding
+ * Y Yes or No
+ * Z Close Job, or the typed explanation when Other is chosen
+ * AA hyperlink to the Drive subfolder "[Maintenance ID] | Work Undertaken"
+ * Columns A:U are not changed. The primary job folder is not created again.
+ * Photographs of the work are uploaded into that subfolder.
  * No column or header is added. A formula in column A that displays nothing
  * is an available ID cell.
  * Other formulas, the header row, and unrelated cells are left alone.
@@ -82,6 +91,11 @@ var DEPARTMENTS = ['Quality', 'Engineering', 'Logistics', 'Management'];
 var RECEIPT_STATUSES = ['As Described', 'Purchased Wrong Item', 'Received Wrong Item', 'Arrived Broken'];
 var PARTS_INDEX_KEY = 'PARTS_SUBMISSION_INDEX';
 var RECEIPT_INDEX_KEY = 'RECEIPT_SUBMISSION_INDEX';
+var COMPLETE_INDEX_KEY = 'COMPLETE_SUBMISSION_INDEX';
+var COMPLETE_FIRST_COL = 22;
+var COMPLETE_LAST_COL = 26;
+var COMPLETE_LINK_COL = 27;
+var CLOSE_JOB = 'Close Job';
 var MAX_PARTS = 20;
 var DROPDOWNS_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT9wb05WXLcP4IN6Dce9zaRWtPKpGgHKWsqo4ICB97Mpr3RTx8MMFidwWgSf6ulh_sJNgE_2XxX3N2D/pub?gid=1056635412&single=true&output=csv';
 var OTHER = 'Other';
@@ -120,6 +134,11 @@ function doPost(e) {
     if (action === 'parts_orders') return handlePartsOrders_(p);
     if (action === 'parts_add') return handlePartsAdd_(p);
     if (action === 'parts_receipt') return handlePartsReceipt_(p);
+    if (action === 'complete_jobs') return handleCompleteJobs_();
+    if (action === 'complete_detail') return handleCompleteDetail_(p);
+    if (action === 'complete_prepare') return handleCompletePrepare_(p);
+    if (action === 'complete_photo') return handleCompletePhoto_(p);
+    if (action === 'complete_commit') return handleCompleteCommit_(p);
     return json({ result: 'error', retryable: false, message: 'Unknown action.' });
   } catch (err) {
     return json({ result: 'error', retryable: true, message: publicMessage_(err) });
@@ -2295,6 +2314,572 @@ function saveReceipt_(value, people) {
   rememberRecord_('RECEIPT_SUB_', RECEIPT_INDEX_KEY, value.submissionId, {
     status: 'success',
     fingerprint: fingerprint,
+    result: result
+  });
+  return json(result);
+}
+
+function handleCompleteJobs_() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(15000)) {
+    return json({ result: 'error', retryable: true, message: 'The maintenance list is busy. Wait a moment and try again.' });
+  }
+  try {
+    return json({ result: 'ok', requests: reviewRequests_() });
+  } catch (err) {
+    return json({
+      result: 'error',
+      retryable: true,
+      message: 'The maintenance jobs could not be loaded. ' + publicMessage_(err)
+    });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function handleCompleteDetail_(p) {
+  var label = String(p.label == null ? '' : p.label).trim();
+  var maintenanceId = String(p.maintenanceId || '').trim().toUpperCase();
+  var prefix = labelId_(label);
+  if (!prefix || prefix !== maintenanceId) {
+    return json({ result: 'error', retryable: true, message: 'Select a maintenance job.' });
+  }
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(15000)) {
+    return json({ result: 'error', retryable: true, message: 'The job is busy. Wait a moment and try again.' });
+  }
+  try {
+    var sheet = requireSheet_(SpreadsheetApp.openById(SSID_MAINTENANCE));
+    var found = findReviewRow_(sheet, maintenanceId, label);
+    if (!found.ok) return json({ result: 'error', retryable: true, message: found.message });
+    return json({
+      result: 'ok',
+      maintenanceId: maintenanceId,
+      label: label,
+      orders: partsForJob_(maintenanceId),
+      completion: completionFromRow_(sheet, found.row)
+    });
+  } catch (err) {
+    return json({
+      result: 'error',
+      retryable: true,
+      message: 'The job could not be loaded. ' + publicMessage_(err)
+    });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function withCompleteLock_(fn) {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    return json({
+      result: 'error',
+      retryable: true,
+      message: 'Another job update is being saved. Wait a moment and try again. Your answers are still here.'
+    });
+  }
+  try {
+    return fn();
+  } catch (err) {
+    return json({
+      result: 'error',
+      retryable: true,
+      message: 'The job was not saved. ' + publicMessage_(err) + ' Your answers are still here.'
+    });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function handleCompletePrepare_(p) {
+  return withCompleteLock_(function () {
+    var validated = validateComplete_(p);
+    if (!validated.ok) return json({ result: 'error', retryable: true, message: validated.message });
+    return prepareComplete_(validated.value);
+  });
+}
+
+function handleCompleteCommit_(p) {
+  return withCompleteLock_(function () {
+    var validated = validateComplete_(p);
+    if (!validated.ok) return json({ result: 'error', retryable: true, message: validated.message });
+    var value = validated.value;
+    var fingerprint = completeFingerprint_(value);
+    var existing = loadRecordKey_('COMPLETE_SUB_', value.submissionId);
+    if (existing && existing.status === 'success') {
+      if (existing.fingerprint !== fingerprint) {
+        return json({
+          result: 'error',
+          retryable: false,
+          maintenanceId: existing.maintenanceId,
+          message: 'This job update was already saved for ' + existing.maintenanceId + '. It was not changed.'
+        });
+      }
+      return json(existing.result);
+    }
+    if (existing && existing.status === 'partial') {
+      return json(existing.result || {
+        result: 'error',
+        partial: true,
+        retryable: false,
+        maintenanceId: value.maintenanceId,
+        message: 'This job update was not fully saved. Check the maintenance record before writing anything else.'
+      });
+    }
+    if (!existing || existing.status !== 'pending' || existing.fingerprint !== fingerprint) {
+      return json({
+        result: 'error',
+        retryable: true,
+        message: 'The photographs were not attached to this job update. Submit the form again. Your answers are still here.'
+      });
+    }
+    for (var i = 0; i < value.photoNames.length; i++) {
+      if ((existing.photosUploaded || []).indexOf(value.photoNames[i]) === -1) {
+        return json({
+          result: 'error',
+          retryable: true,
+          maintenanceId: value.maintenanceId,
+          message: 'Not every photograph was uploaded, so the job was not saved. Your answers are still here.'
+        });
+      }
+    }
+    return commitComplete_(value, existing);
+  });
+}
+
+function handleCompletePhoto_(p) {
+  var submissionId = String(p.submissionId || '').trim();
+  if (!submissionIdOk_(submissionId)) {
+    return json({ result: 'error', retryable: true, message: 'The job could not be identified. Reload the page and try again. Nothing was saved.' });
+  }
+  var fileName = String(p.fileName || '').trim().toLowerCase();
+  if (!/^work-\d{2}\.(jpg|jpeg|png|webp)$/.test(fileName)) {
+    return json({ result: 'error', retryable: true, message: 'That photograph could not be accepted. Your answers are still here.' });
+  }
+  var image = cleanPhoto_(p.imageBase64);
+  if (!image.ok) return json({ result: 'error', retryable: true, message: image.message });
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    return json({
+      result: 'error',
+      retryable: true,
+      message: 'Another job update is being saved. Wait a moment and try again. Your answers are still here.'
+    });
+  }
+  try {
+    var record = loadRecordKey_('COMPLETE_SUB_', submissionId);
+    if (!record || (record.status !== 'pending' && record.status !== 'success')) {
+      return json({ result: 'error', retryable: true, message: 'Submit the job before uploading photographs. Your answers are still here.' });
+    }
+    if (record.status === 'success') {
+      if ((record.photosUploaded || []).indexOf(fileName) !== -1) {
+        return json({ result: 'ok', fileName: fileName, maintenanceId: record.maintenanceId });
+      }
+      return json({
+        result: 'error',
+        retryable: false,
+        maintenanceId: record.maintenanceId,
+        message: 'This job update was already saved for ' + record.maintenanceId + '. The photograph was not added.'
+      });
+    }
+    if ((record.photosExpected || []).indexOf(fileName) === -1) {
+      return json({ result: 'error', retryable: true, message: 'That photograph is not part of this job update. Your answers are still here.' });
+    }
+    uploadFaultPhoto_(record.workId, fileName, image.value, p.mimeType);
+    var uploaded = record.photosUploaded || [];
+    if (uploaded.indexOf(fileName) === -1) uploaded.push(fileName);
+    record.photosUploaded = uploaded;
+    rememberRecord_('COMPLETE_SUB_', COMPLETE_INDEX_KEY, submissionId, record);
+    return json({ result: 'ok', fileName: fileName, maintenanceId: record.maintenanceId });
+  } catch (err) {
+    return json({
+      result: 'error',
+      retryable: true,
+      message: 'The photograph was not uploaded. ' + publicMessage_(err) + ' Your answers are still here.'
+    });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function optionalNamed_(value, label) {
+  var text = String(value == null ? '' : value).trim();
+  if (text.length > MAX_NAME) return { ok: false, message: label + ' is too long.' };
+  return { ok: true, value: text };
+}
+
+function optionalLong_(value, label) {
+  var text = String(value == null ? '' : value).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  if (!String(text).trim()) return { ok: true, value: '' };
+  if (text.length > MAX_TEXT) return { ok: false, message: label + ' is too long.' };
+  return { ok: true, value: text };
+}
+
+function workPhotoNames_(data) {
+  var raw = data.photoNames;
+  if (typeof raw === 'string') {
+    if (!String(raw).trim()) raw = [];
+    else {
+      try { raw = JSON.parse(raw); } catch (err) { raw = null; }
+    }
+  }
+  if (!raw) raw = [];
+  if (Object.prototype.toString.call(raw) !== '[object Array]') {
+    return { ok: false, message: 'The photographs could not be read. Nothing was saved.' };
+  }
+  if (raw.length > MAX_PHOTOS) return { ok: false, message: 'You can attach up to 10 photographs.' };
+  var names = [];
+  var seen = {};
+  for (var i = 0; i < raw.length; i++) {
+    var name = String(raw[i] || '').trim().toLowerCase();
+    if (!/^work-\d{2}\.(jpg|jpeg|png|webp)$/.test(name)) {
+      return { ok: false, message: 'One of the photographs could not be accepted. Nothing was saved.' };
+    }
+    if (seen[name]) return { ok: false, message: 'Photograph names must be unique. Nothing was saved.' };
+    seen[name] = true;
+    names.push(name);
+  }
+  return { ok: true, value: names };
+}
+
+function completeOutcome_(data) {
+  var choice = String(data.outcome || '').trim();
+  if (choice === CLOSE_JOB) return { ok: true, value: CLOSE_JOB };
+  if (choice === OTHER) {
+    var text = preserveText_(data.outcomeOther, 'Explain the other outcome. Nothing was saved.', 'The explanation');
+    if (!text.ok) return text;
+    if (text.value === CLOSE_JOB) {
+      return { ok: false, message: 'Choose Close Job for that outcome. Nothing was saved.' };
+    }
+    return { ok: true, value: text.value };
+  }
+  return { ok: false, message: 'Choose Close Job or Other. Nothing was saved.' };
+}
+
+function validateComplete_(data) {
+  data = data || {};
+  var submissionId = String(data.submissionId || '').trim();
+  if (!submissionIdOk_(submissionId)) {
+    return { ok: false, message: 'The job completion could not be identified. Reload the page and try again. Nothing was saved.' };
+  }
+  var label = String(data.label == null ? '' : data.label).trim();
+  var maintenanceId = String(data.maintenanceId || '').trim().toUpperCase();
+  var prefix = labelId_(label);
+  if (!prefix || prefix !== maintenanceId) {
+    return { ok: false, message: 'Select a maintenance job. Nothing was saved.' };
+  }
+  var permit = optionalNamed_(data.permit, 'The permit number');
+  if (!permit.ok) return permit;
+  var workUndertaken = optionalLong_(data.workUndertaken, 'Work undertaken');
+  if (!workUndertaken.ok) return workUndertaken;
+  var workOutstanding = optionalLong_(data.workOutstanding, 'Work outstanding');
+  if (!workOutstanding.ok) return workOutstanding;
+  var completed = String(data.completed || '').trim();
+  if (completed !== 'Yes' && completed !== 'No') {
+    return { ok: false, message: 'Choose whether the job has been completed. Nothing was saved.' };
+  }
+  var outcome = completeOutcome_(data);
+  if (!outcome.ok) return outcome;
+  var photos = workPhotoNames_(data);
+  if (!photos.ok) return photos;
+  return {
+    ok: true,
+    value: {
+      submissionId: submissionId,
+      label: label,
+      maintenanceId: maintenanceId,
+      permit: permit.value,
+      workUndertaken: workUndertaken.value,
+      workOutstanding: workOutstanding.value,
+      completed: completed,
+      outcome: outcome.value,
+      photoNames: photos.value
+    }
+  };
+}
+
+function completionFromRow_(sheet, row) {
+  function text(col) {
+    var value = sheet.getRange(row, col).getValue();
+    if (value == null) return '';
+    return String(value).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  }
+  var completedRaw = String(text(25)).trim();
+  var outcomeRaw = text(26);
+  var outcome = '';
+  var outcomeOther = '';
+  if (String(outcomeRaw).trim() === CLOSE_JOB) outcome = CLOSE_JOB;
+  else if (String(outcomeRaw).trim()) {
+    outcome = OTHER;
+    outcomeOther = outcomeRaw;
+  }
+  return {
+    permit: String(text(22)).trim(),
+    workUndertaken: String(text(23)).trim() ? text(23) : '',
+    workOutstanding: String(text(24)).trim() ? text(24) : '',
+    completed: completedRaw === 'Yes' || completedRaw === 'No' ? completedRaw : '',
+    outcome: outcome,
+    outcomeOther: outcomeOther
+  };
+}
+
+function findJobFolder_(maintenanceId) {
+  DriveApp.getFolderById(DRIVE_FAULT_PARENT);
+  var found = driveFoldersNamed_(DRIVE_FAULT_PARENT, maintenanceId);
+  if (found.length > 1) throw new Error('More than one Drive folder is named ' + maintenanceId + '.');
+  if (!found.length) throw new Error('The job folder for ' + maintenanceId + ' was not found, so nothing was saved.');
+  return found[0];
+}
+
+function ensureWorkFolder_(maintenanceId) {
+  var job = findJobFolder_(maintenanceId);
+  var name = maintenanceId + ' | Work Undertaken';
+  var work = driveEnsureFolder_(job.id, name);
+  return {
+    jobId: job.id,
+    workId: work.id,
+    workUrl: 'https://drive.google.com/drive/folders/' + work.id
+  };
+}
+
+function completeLink_(maintenanceId, workUrl) {
+  return '=HYPERLINK("' + String(workUrl).replace(/"/g, '') + '","' + maintenanceId + ' | Work Undertaken")';
+}
+
+function completeFingerprint_(value) {
+  return digest_(JSON.stringify({
+    submissionId: value.submissionId,
+    label: value.label,
+    maintenanceId: value.maintenanceId,
+    permit: value.permit,
+    workUndertaken: value.workUndertaken,
+    workOutstanding: value.workOutstanding,
+    completed: value.completed,
+    outcome: value.outcome,
+    photoNames: value.photoNames
+  }));
+}
+
+function prepareComplete_(value) {
+  var fingerprint = completeFingerprint_(value);
+  var existing = loadRecordKey_('COMPLETE_SUB_', value.submissionId);
+  if (existing && existing.status === 'success') {
+    if (existing.fingerprint !== fingerprint) {
+      return json({
+        result: 'error',
+        retryable: false,
+        maintenanceId: existing.maintenanceId,
+        message: 'This job update was already saved for ' + existing.maintenanceId + '. It was not changed.'
+      });
+    }
+    return json(existing.result);
+  }
+  if (existing && existing.status === 'partial') {
+    return json(existing.result || {
+      result: 'error',
+      partial: true,
+      retryable: false,
+      maintenanceId: existing.maintenanceId || value.maintenanceId,
+      message: 'This job update was not fully saved. Check the maintenance record before writing anything else.'
+    });
+  }
+  var sheet = requireSheet_(SpreadsheetApp.openById(SSID_MAINTENANCE));
+  var found = findReviewRow_(sheet, value.maintenanceId, value.label);
+  if (!found.ok) return json({ result: 'error', retryable: true, message: found.message });
+  var folders;
+  try {
+    folders = ensureWorkFolder_(value.maintenanceId);
+  } catch (err) {
+    return json({
+      result: 'error',
+      retryable: true,
+      maintenanceId: value.maintenanceId,
+      message: publicMessage_(err) + ' Your answers are still here.'
+    });
+  }
+  var uploaded = [];
+  if (existing && existing.status === 'pending') {
+    uploaded = existing.photosUploaded || [];
+    if (existing.fingerprint !== fingerprint) {
+      uploaded = uploaded.filter(function (name) {
+        return value.photoNames.indexOf(name) !== -1;
+      });
+    }
+  }
+  var pending = {
+    status: 'pending',
+    fingerprint: fingerprint,
+    maintenanceId: value.maintenanceId,
+    label: value.label,
+    row: found.row,
+    workId: folders.workId,
+    workUrl: folders.workUrl,
+    photosExpected: value.photoNames,
+    photosUploaded: uploaded
+  };
+  rememberRecord_('COMPLETE_SUB_', COMPLETE_INDEX_KEY, value.submissionId, pending);
+  if (value.photoNames.length) {
+    return json({
+      result: 'pending',
+      retryable: true,
+      maintenanceId: value.maintenanceId,
+      folderUrl: folders.workUrl
+    });
+  }
+  return commitComplete_(value, pending);
+}
+
+function protectedCompleteCols_() {
+  var cols = [];
+  var col;
+  for (col = 1; col <= 21; col++) cols.push(col);
+  return cols;
+}
+
+function assertCompleteWritable_(sheet, row, link) {
+  var col;
+  for (col = COMPLETE_FIRST_COL; col <= COMPLETE_LAST_COL; col++) {
+    var formula = String(sheet.getRange(row, col).getFormula() || '');
+    if (formula.trim() !== '') {
+      throw new Error('Column ' + columnLetter_(col) + ' contains a formula. It was not overwritten.');
+    }
+  }
+  var linkRange = sheet.getRange(row, COMPLETE_LINK_COL);
+  var current = String(linkRange.getFormula() || '');
+  if (current === link) return;
+  if (current.trim() !== '' || String(linkRange.getValue() == null ? '' : linkRange.getValue()).trim() !== '') {
+    throw new Error('Column AA already has different data. It was not overwritten.');
+  }
+}
+
+function applyCompleteText_(sheet, row, col, value, written) {
+  if (row < REVIEW_START_ROW) throw new Error('Refusing to write above the maintenance requests.');
+  if (col < COMPLETE_FIRST_COL || col > COMPLETE_LAST_COL) throw new Error('Refusing to write outside columns V to Z.');
+  var range = sheet.getRange(row, col);
+  var formula = String(range.getFormula() || '');
+  if (formula.trim() !== '') throw new Error('Column ' + columnLetter_(col) + ' contains a formula. It was not overwritten.');
+  var expected = String(value);
+  var current = range.getValue();
+  if (current == null) current = '';
+  if (String(current) === expected) return;
+  var stored = {
+    sheet: sheet,
+    row: row,
+    col: col,
+    formula: formula,
+    value: range.getValue(),
+    format: range.getNumberFormat()
+  };
+  written.push(stored);
+  if (expected === '') {
+    range.clearContent();
+    return;
+  }
+  range.setNumberFormat('@');
+  range.setValue(expected);
+}
+
+function applyCompleteLink_(sheet, row, formula, written) {
+  if (row < REVIEW_START_ROW) throw new Error('Refusing to write above the maintenance requests.');
+  var range = sheet.getRange(row, COMPLETE_LINK_COL);
+  var current = String(range.getFormula() || '');
+  if (current === formula) return;
+  if (current.trim() !== '' || String(range.getValue() == null ? '' : range.getValue()).trim() !== '') {
+    throw new Error('Column AA already has different data. It was not overwritten.');
+  }
+  written.push({
+    sheet: sheet,
+    row: row,
+    col: COMPLETE_LINK_COL,
+    formula: current,
+    value: range.getValue(),
+    format: range.getNumberFormat()
+  });
+  range.setFormula(formula);
+}
+
+function verifyComplete_(sheet, row, value, link) {
+  var expected = [value.permit, value.workUndertaken, value.workOutstanding, value.completed, value.outcome];
+  var col;
+  for (col = 0; col < expected.length; col++) {
+    var range = sheet.getRange(row, COMPLETE_FIRST_COL + col);
+    if (String(range.getFormula() || '').trim() !== '') {
+      throw new Error('Saved completion cells on row ' + row + ' could not be confirmed.');
+    }
+    var current = range.getValue();
+    if (current == null) current = '';
+    if (String(current) !== String(expected[col])) {
+      throw new Error('Saved completion cells on row ' + row + ' could not be confirmed.');
+    }
+  }
+  if (String(sheet.getRange(row, COMPLETE_LINK_COL).getFormula() || '') !== link) {
+    throw new Error('The work folder link on row ' + row + ' could not be confirmed.');
+  }
+}
+
+function commitComplete_(value, pending) {
+  var fingerprint = completeFingerprint_(value);
+  var sheet = requireSheet_(SpreadsheetApp.openById(SSID_MAINTENANCE));
+  var found = findReviewRow_(sheet, value.maintenanceId, value.label);
+  if (!found.ok) return json({ result: 'error', retryable: true, message: found.message });
+  var folders = ensureWorkFolder_(value.maintenanceId);
+  var link = completeLink_(value.maintenanceId, folders.workUrl);
+  var before = snapshotCols_(sheet, found.row, protectedCompleteCols_());
+  var written = [];
+  try {
+    assertCompleteWritable_(sheet, found.row, link);
+    applyCompleteText_(sheet, found.row, 22, value.permit, written);
+    applyCompleteText_(sheet, found.row, 23, value.workUndertaken, written);
+    applyCompleteText_(sheet, found.row, 24, value.workOutstanding, written);
+    applyCompleteText_(sheet, found.row, 25, value.completed, written);
+    applyCompleteText_(sheet, found.row, 26, value.outcome, written);
+    applyCompleteLink_(sheet, found.row, link, written);
+    verifyComplete_(sheet, found.row, value, link);
+    if (!sameSnapshot_(sheet, found.row, before)) {
+      throw new Error('Columns A to U changed. The job update was not kept.');
+    }
+    if (pending && pending.workId && pending.workId !== folders.workId) {
+      throw new Error('The work folder changed before the job was saved.');
+    }
+  } catch (err) {
+    var failed = rollbackWritten_(written);
+    if (failed.length || !sameSnapshot_(sheet, found.row, before)) {
+      var partial = {
+        result: 'error',
+        partial: true,
+        retryable: false,
+        maintenanceId: value.maintenanceId,
+        message: 'The job update may be incomplete. Check ' + value.maintenanceId + ' before trying again.'
+      };
+      rememberRecord_('COMPLETE_SUB_', COMPLETE_INDEX_KEY, value.submissionId, {
+        status: 'partial',
+        fingerprint: fingerprint,
+        maintenanceId: value.maintenanceId,
+        result: partial
+      });
+      return json(partial);
+    }
+    return json({
+      result: 'error',
+      retryable: true,
+      message: publicMessage_(err) + ' Your answers are still here.'
+    });
+  }
+  var result = {
+    result: 'success',
+    maintenanceId: value.maintenanceId,
+    label: value.label,
+    row: found.row,
+    folderUrl: folders.workUrl
+  };
+  rememberRecord_('COMPLETE_SUB_', COMPLETE_INDEX_KEY, value.submissionId, {
+    status: 'success',
+    fingerprint: fingerprint,
+    maintenanceId: value.maintenanceId,
+    workId: folders.workId,
+    workUrl: folders.workUrl,
+    photosUploaded: pending && pending.photosUploaded ? pending.photosUploaded : [],
     result: result
   });
   return json(result);

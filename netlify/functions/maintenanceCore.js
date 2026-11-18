@@ -561,6 +561,100 @@ function validatePartsReceipt(data) {
   };
 }
 
+function optionalLong(value, label) {
+  var text = String(value == null ? '' : value).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  if (!String(text).trim()) return { ok: true, value: '' };
+  if (text.length > MAX_TEXT) return { ok: false, message: label + ' is too long.' };
+  return { ok: true, value: text };
+}
+
+function optionalNamed(value, label) {
+  var text = String(value == null ? '' : value).trim();
+  if (text.length > MAX_NAME) return { ok: false, message: label + ' is too long.' };
+  return { ok: true, value: text };
+}
+
+function workPhotoNames(data) {
+  var raw = data && data.photoNames;
+  if (typeof raw === 'string') {
+    if (!String(raw).trim()) raw = [];
+    else {
+      try { raw = JSON.parse(raw); } catch (err) { raw = null; }
+    }
+  }
+  if (!raw) raw = [];
+  if (!Array.isArray(raw)) return { ok: false, message: 'The photographs could not be read. Nothing was saved.' };
+  if (raw.length > 10) return { ok: false, message: 'You can attach up to 10 photographs.' };
+  var names = [];
+  var seen = {};
+  for (var i = 0; i < raw.length; i++) {
+    var name = String(raw[i] || '').trim().toLowerCase();
+    if (!/^work-\d{2}\.(jpg|jpeg|png|webp)$/.test(name)) {
+      return { ok: false, message: 'One of the photographs could not be accepted. Nothing was saved.' };
+    }
+    if (seen[name]) return { ok: false, message: 'Photograph names must be unique. Nothing was saved.' };
+    seen[name] = true;
+    names.push(name);
+  }
+  return { ok: true, value: names };
+}
+
+function completeOutcome(data) {
+  var choice = String(data.outcome || '').trim();
+  if (choice === 'Close Job') return { ok: true, value: 'Close Job' };
+  if (choice === OTHER) {
+    var text = preserveText(data.outcomeOther, 'Explain the other outcome. Nothing was saved.', 'The explanation');
+    if (!text.ok) return text;
+    if (text.value === 'Close Job') {
+      return { ok: false, message: 'Choose Close Job for that outcome. Nothing was saved.' };
+    }
+    return { ok: true, value: text.value };
+  }
+  return { ok: false, message: 'Choose Close Job or Other. Nothing was saved.' };
+}
+
+function validateComplete(data) {
+  data = data || {};
+  var submissionId = String(data.submissionId || '').trim();
+  if (!submissionIdOk(submissionId)) {
+    return { ok: false, message: 'The job completion could not be identified. Reload the page and try again. Nothing was saved.' };
+  }
+  var label = String(data.label == null ? '' : data.label).trim();
+  var maintenanceId = String(data.maintenanceId || '').trim().toUpperCase();
+  var prefix = labelId(label);
+  if (!prefix || prefix !== maintenanceId) {
+    return { ok: false, message: 'Select a maintenance job. Nothing was saved.' };
+  }
+  var permit = optionalNamed(data.permit, 'The permit number');
+  if (!permit.ok) return permit;
+  var workUndertaken = optionalLong(data.workUndertaken, 'Work undertaken');
+  if (!workUndertaken.ok) return workUndertaken;
+  var workOutstanding = optionalLong(data.workOutstanding, 'Work outstanding');
+  if (!workOutstanding.ok) return workOutstanding;
+  var completed = String(data.completed || '').trim();
+  if (completed !== 'Yes' && completed !== 'No') {
+    return { ok: false, message: 'Choose whether the job has been completed. Nothing was saved.' };
+  }
+  var outcome = completeOutcome(data);
+  if (!outcome.ok) return outcome;
+  var photos = workPhotoNames(data);
+  if (!photos.ok) return photos;
+  return {
+    ok: true,
+    value: {
+      submissionId: submissionId,
+      label: label,
+      maintenanceId: maintenanceId,
+      permit: permit.value,
+      workUndertaken: workUndertaken.value,
+      workOutstanding: workOutstanding.value,
+      completed: completed,
+      outcome: outcome.value,
+      photoNames: photos.value
+    }
+  };
+}
+
 function jsonResponse(statusCode, body) {
   return { statusCode: statusCode, body: JSON.stringify(body) };
 }
@@ -583,6 +677,7 @@ module.exports = {
   validateReview: validateReview,
   validatePartsAdd: validatePartsAdd,
   validatePartsReceipt: validatePartsReceipt,
+  validateComplete: validateComplete,
   cellBlank: cellBlank,
   partRowEmpty: partRowEmpty,
   nextPartIds: nextPartIds,

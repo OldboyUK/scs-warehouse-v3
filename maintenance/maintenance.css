@@ -8,7 +8,9 @@ body.fault-page textarea {
   line-height: 1.45;
 }
 
-body.fault-page #description {
+body.fault-page #description,
+body.fault-page #workUndertaken,
+body.fault-page #workOutstanding {
   min-height: 160px;
 }
 

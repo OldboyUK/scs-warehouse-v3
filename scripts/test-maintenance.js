@@ -863,6 +863,34 @@ function testPages() {
   });
   assert(order.indexOf('/.netlify/functions/orderParts') !== -1, 'order page posts to the Netlify function');
   assert(order.indexOf('J4PAN88') === -1 && order.indexOf('script.google.com') === -1, 'order page has no script credential or web app URL');
+  assert(home.indexOf('>Complete Job<') !== -1 && home.indexOf('href="complete-job.html"') !== -1, 'Maintenance opens Complete Job');
+  const completePage = fs.readFileSync(path.join(root, 'maintenance/complete-job.html'), 'utf8');
+  const complete = fs.readFileSync(path.join(root, 'maintenance/complete-job.js'), 'utf8');
+  assert(completePage.indexOf('complete-job.js') !== -1, 'complete page loads its script');
+  [
+    'Please select job',
+    'Ordered Parts',
+    'Please enter the Permit to Work number',
+    'Work Undertaken',
+    'Work Outstanding',
+    'Has the job been completed?',
+    'Close Job',
+    'Other',
+    'Add Photos',
+    'parts-status-ok',
+    'parts-status-warn',
+    'parts-status-bad',
+    '>Show<',
+    '>Hide<'
+  ].forEach(function (label) {
+    assert(complete.indexOf(label) !== -1, 'complete form contains ' + label);
+  });
+  assert(complete.indexOf('/.netlify/functions/completeJob') !== -1, 'complete page posts to the Netlify function');
+  assert(complete.indexOf('/.netlify/functions/completeJobPhoto') !== -1, 'work photographs post to the upload function');
+  assert(complete.indexOf('J4PAN88') === -1 && complete.indexOf('script.google.com') === -1, 'complete page has no script credential or web app URL');
+  assert(complete.indexOf('data-save-receipt') === -1, 'complete job does not save receipts');
+  assert(script.indexOf('var COMPLETE_LINK_COL = 27') !== -1, 'completion writes the work folder link in column AA');
+  assert(script.indexOf('Work Undertaken') !== -1, 'completion creates a Work Undertaken folder');
   assert(script.indexOf("var SHEET_PARTS = 'Parts Requested'") !== -1, 'parts are written to Parts Requested');
   assert(review.indexOf('Find a maintenance request') === -1, 'the separate request search is not shown');
   assert(review.indexOf("OTHER = 'Other'") !== -1 && review.indexOf('departmentOther') !== -1, 'department can be Other with free text');
@@ -1306,6 +1334,226 @@ function testParts() {
   assert(shown.orders.some(function (order) { return order.partId === 'MA0007-P01' && order.name === 'Motor'; }), 'the selected job shows its existing part');
 }
 
+function seedJobFolder(id) {
+  world.drive.nodes.push({
+    id: 'job-' + id,
+    name: id,
+    parentId: '1AMvZj3XOytmfdiWSIT-EQ7mH8FVQsBxs',
+    mimeType: 'application/vnd.google-apps.folder'
+  });
+}
+
+function foldersNamed(name) {
+  return world.drive.nodes.filter(function (node) {
+    return node.name === name && node.mimeType === 'application/vnd.google-apps.folder';
+  });
+}
+
+function postComplete(extra) {
+  const params = Object.assign({
+    token: 'J4PAN88',
+    action: 'complete_prepare',
+    submissionId: 'complete-0001',
+    label: 'MA0007 | Conveyor belt motor failure',
+    maintenanceId: 'MA0007',
+    permit: 'PTW-15',
+    workUndertaken: 'Replaced the motor',
+    workOutstanding: 'Paint the guard',
+    completed: 'No',
+    outcome: 'Close Job',
+    outcomeOther: '',
+    photoNames: []
+  }, extra || {});
+  if (Array.isArray(params.photoNames)) params.photoNames = JSON.stringify(params.photoNames);
+  const out = context.doPost({
+    parameter: params,
+    postData: { type: 'application/x-www-form-urlencoded', contents: '' }
+  });
+  return JSON.parse(out.getContent());
+}
+
+function postCompletePhoto(submissionId, fileName) {
+  const out = context.doPost({
+    parameter: {
+      token: 'J4PAN88',
+      action: 'complete_photo',
+      submissionId: submissionId,
+      fileName: fileName,
+      mimeType: 'image/jpeg',
+      imageBase64: Buffer.from('photo-' + fileName).toString('base64')
+    },
+    postData: { type: 'application/x-www-form-urlencoded', contents: '' }
+  });
+  return JSON.parse(out.getContent());
+}
+
+function testComplete() {
+  const kept = core.validateComplete({
+    submissionId: 'complete-0001',
+    label: 'MA0007 | Conveyor belt motor failure',
+    maintenanceId: 'ma0007',
+    permit: ' PTW-15 ',
+    workUndertaken: 'Line one\r\nLine two',
+    workOutstanding: 'Paint the guard',
+    completed: 'No',
+    outcome: 'Close Job',
+    photoNames: []
+  });
+  assert(kept.ok, 'a job can be closed while work is outstanding and completion is No');
+  assertEqual(kept.value.maintenanceId, 'MA0007', 'the completion id is normalised');
+  assertEqual(kept.value.workUndertaken, 'Line one\nLine two', 'work undertaken keeps line breaks');
+  assertEqual(kept.value.permit, 'PTW-15', 'the permit number is trimmed');
+  assert(!core.validateComplete(Object.assign({}, kept.value, { completed: '' })).ok, 'completion Yes or No is required');
+  assert(!core.validateComplete(Object.assign({}, kept.value, { outcome: 'Other', outcomeOther: ' ' })).ok, 'Other needs an explanation');
+  const other = core.validateComplete(Object.assign({}, kept.value, { outcome: 'Other', outcomeOther: 'Waiting for a part' }));
+  assert(other.ok && other.value.outcome === 'Waiting for a part', 'Other stores the explanation');
+  assert(!core.validateComplete(Object.assign({}, kept.value, { photoNames: ['fault-01.jpg'] })).ok, 'fault photographs are not accepted as work photographs');
+
+  fresh();
+  seedRequest(2, 'MA0006', 'Hidden on row 2');
+  seedRequest(3, 'MA0007', 'Conveyor belt motor failure');
+  seedRequest(4, 'MA0008', 'Door sensor');
+  world.sheet.seed(3, 14, { value: 'Review owner' });
+  world.sheet.seed(3, 20, { value: 'Leave column T' });
+  world.sheet.seed(3, 21, { value: 'Leave column U' });
+  seedPart(2, 'MA0007-P01', 'Drive belt', { status: 'As Described', receivedBy: 'Jody R' });
+  seedPart(3, 'MA0007-P02', 'Guard', { status: 'Arrived Broken' });
+  seedPart(4, 'MA0007-P03', 'Sensor', { status: 'Purchased Wrong Item' });
+  seedPart(5, 'MA0008-P01', 'Other job');
+  seedJobFolder('MA0007');
+  const partBefore = JSON.stringify(world.parts.getRange(2, 1, 4, 10).getValues());
+  const folderBefore = formula(3, 13);
+
+  const listed = JSON.parse(context.doPost({
+    parameter: { token: 'J4PAN88', action: 'complete_jobs' },
+    postData: { type: 'application/x-www-form-urlencoded', contents: '' }
+  }).getContent());
+  assertEqual(listed.result, 'ok', 'the completion job list loads');
+  assert(listed.requests.map(function (item) { return item.label; }).indexOf('MA0007 | Conveyor belt motor failure') !== -1, 'Submission Log column B from row 3 is listed');
+  assert(listed.requests.map(function (item) { return item.label; }).indexOf('MA0006 | Hidden on row 2') === -1, 'row 2 is not offered as a job');
+
+  const detail = JSON.parse(context.doPost({
+    parameter: {
+      token: 'J4PAN88',
+      action: 'complete_detail',
+      maintenanceId: 'MA0007',
+      label: 'MA0007 | Conveyor belt motor failure'
+    },
+    postData: { type: 'application/x-www-form-urlencoded', contents: '' }
+  }).getContent());
+  assertEqual(detail.orders.map(function (order) { return order.partId + ':' + order.status; }).join('|'), 'MA0007-P01:As Described|MA0007-P02:Arrived Broken|MA0007-P03:Purchased Wrong Item', 'ordered parts for this job are loaded with their receipt status');
+  assert(detail.orders.every(function (order) { return order.partId.indexOf('MA0008') !== 0; }), 'parts for another job are not included');
+
+  const saved = postComplete({ workUndertaken: 'Line one\r\nLine two' });
+  assertEqual(saved.result, 'success', 'a job is updated without creating a new maintenance ID');
+  assertEqual(saved.maintenanceId, 'MA0007', 'the existing maintenance ID is used');
+  assertEqual(saved.row, 3, 'the matching Submission Log row is updated');
+  assertEqual(cell(3, 22), 'PTW-15', 'column V stores the permit number');
+  assertEqual(cell(3, 23), 'Line one\nLine two', 'column W stores the work undertaken');
+  assertEqual(cell(3, 24), 'Paint the guard', 'column X stores the work outstanding');
+  assertEqual(cell(3, 25), 'No', 'column Y stores No when the user says the job is not completed');
+  assertEqual(cell(3, 26), 'Close Job', 'column Z stores Close Job');
+  const work = foldersNamed('MA0007 | Work Undertaken');
+  assertEqual(work.length, 1, 'one Work Undertaken folder is created');
+  assertEqual(work[0].parentId, 'job-MA0007', 'the work folder is inside the existing job folder');
+  assertEqual(foldersNamed('MA0007').length, 1, 'the primary job folder is not duplicated');
+  assertEqual(foldersNamed('MA0007 | Requests').length, 0, 'completion does not create a Requests folder');
+  assertEqual(formula(3, 27), '=HYPERLINK("https://drive.google.com/drive/folders/' + work[0].id + '","MA0007 | Work Undertaken")', 'column AA links to the Work Undertaken folder');
+  assertEqual(cell(3, 1), 'MA0007', 'column A is not changed');
+  assertEqual(cell(3, 2), 'MA0007 | Conveyor belt motor failure', 'column B is not changed');
+  assertEqual(formula(3, 13), folderBefore, 'the original folder link is not changed');
+  assertEqual(cell(3, 14), 'Review owner', 'review columns are not changed');
+  assertEqual(cell(3, 20), 'Leave column T', 'column T is not changed');
+  assertEqual(cell(3, 21), 'Leave column U', 'column U is not changed');
+  assertEqual(cell(4, 22), '', 'another job row is not updated');
+  assertEqual(JSON.stringify(world.parts.getRange(2, 1, 4, 10).getValues()), partBefore, 'ordered parts and receipts are not changed');
+  assertEqual(idRows().length, 3, 'completion does not add a Submission Log row');
+
+  const again = postComplete({ workUndertaken: 'Line one\r\nLine two' });
+  assertEqual(again.result, 'success', 'the same completion can be submitted again');
+  assertEqual(foldersNamed('MA0007 | Work Undertaken').length, 1, 'a repeated submit reuses the Work Undertaken folder');
+
+  const changed = postComplete({ workUndertaken: 'Different work' });
+  assertEqual(changed.result, 'error', 'changing a saved completion does not write again');
+  assertEqual(cell(3, 23), 'Line one\nLine two', 'the saved work undertaken stays in place');
+
+  const updated = postComplete({ submissionId: 'complete-0002', workUndertaken: 'Adjusted the belt', completed: 'Yes', outcome: 'Other', outcomeOther: 'Handed to the next shift' });
+  assertEqual(updated.result, 'success', 'a later update can change the same job');
+  assertEqual(cell(3, 23), 'Adjusted the belt', 'column W is updated on the same row');
+  assertEqual(cell(3, 25), 'Yes', 'column Y can be changed to Yes');
+  assertEqual(cell(3, 26), 'Handed to the next shift', 'column Z stores the Other explanation');
+  assert(cell(3, 26) !== 'Other', 'the word Other is not saved');
+  assertEqual(foldersNamed('MA0007 | Work Undertaken').length, 1, 'a later update reuses the Work Undertaken folder');
+
+  const blankOther = postComplete({ submissionId: 'complete-0003', outcome: 'Other', outcomeOther: ' ' });
+  assertEqual(blankOther.result, 'error', 'Other without an explanation is not saved');
+  assertEqual(cell(3, 26), 'Handed to the next shift', 'a blank Other does not replace column Z');
+
+  world.sheet.seed(3, 23, { formula: '=A3', value: 'MA0007' });
+  const formulaCell = postComplete({ submissionId: 'complete-formula' });
+  assertEqual(formulaCell.result, 'error', 'a formula in the completion columns blocks the save');
+  assertEqual(formula(3, 23), '=A3', 'the formula is not overwritten');
+  assertEqual(cell(3, 22), 'PTW-15', 'earlier completion columns stay as they were');
+  world.sheet.seed(3, 23, { formula: '', value: 'Adjusted the belt' });
+
+  world.sheet.failOnCol = 24;
+  const failed = postComplete({ submissionId: 'complete-fail', workOutstanding: 'Still to paint' });
+  world.sheet.failOnCol = 0;
+  assertEqual(failed.result, 'error', 'a failed write does not report success');
+  assertEqual(cell(3, 24), 'Paint the guard', 'a failed write rolls back the work outstanding');
+  assertEqual(cell(3, 21), 'Leave column U', 'a failed write does not touch column U');
+
+  fresh();
+  seedRequest(3, 'MA0007', 'Conveyor belt motor failure');
+  seedJobFolder('MA0007');
+  const prepared = postComplete({ photoNames: ['work-01.jpg', 'work-02.jpg'] });
+  assertEqual(prepared.result, 'pending', 'photographs are uploaded before the row is saved');
+  assertEqual(cell(3, 22), '', 'the row is not written before the photographs finish');
+  assertEqual(foldersNamed('MA0007 | Work Undertaken').length, 1, 'the work folder exists before the photographs are uploaded');
+  const firstPhoto = postCompletePhoto('complete-0001', 'work-01.jpg');
+  assertEqual(firstPhoto.result, 'ok', 'the first photograph is uploaded');
+  const early = postComplete({ action: 'complete_commit', photoNames: ['work-01.jpg', 'work-02.jpg'] });
+  assertEqual(early.result, 'error', 'the job is not saved while a photograph is missing');
+  assertEqual(cell(3, 22), '', 'a missing photograph leaves the row blank');
+  const secondPhoto = postCompletePhoto('complete-0001', 'work-02.jpg');
+  assertEqual(secondPhoto.result, 'ok', 'the second photograph is uploaded');
+  const committed = postComplete({ action: 'complete_commit', photoNames: ['work-01.jpg', 'work-02.jpg'] });
+  assertEqual(committed.result, 'success', 'the job is saved after both photographs upload');
+  const workFolder = foldersNamed('MA0007 | Work Undertaken')[0];
+  ['work-01.jpg', 'work-02.jpg'].forEach(function (name) {
+    const file = world.drive.nodes.filter(function (node) { return node.name === name; })[0];
+    assert(file && file.parentId === workFolder.id, name + ' is stored in the Work Undertaken folder');
+  });
+  assertEqual(formula(3, 27).indexOf(workFolder.id) !== -1, true, 'column AA points at the folder that holds the photographs');
+  const retryFolder = postComplete({ photoNames: ['work-01.jpg', 'work-02.jpg'] });
+  assertEqual(retryFolder.result, 'success', 'retrying the saved job does not upload again');
+  assertEqual(foldersNamed('MA0007 | Work Undertaken').length, 1, 'a retry does not create another Work Undertaken folder');
+
+  fresh();
+  seedRequest(3, 'MA0007', 'Conveyor belt motor failure');
+  const missingFolder = postComplete();
+  assertEqual(missingFolder.result, 'error', 'a missing job folder stops the save');
+  assert(missingFolder.message.indexOf('was not found') !== -1, 'the missing folder is explained');
+  assertEqual(cell(3, 22), '', 'nothing is written when the job folder is missing');
+  assertEqual(foldersNamed('MA0007').length, 0, 'completion does not create the primary job folder');
+
+  seedJobFolder('MA0007');
+  world.drive.nodes.push({
+    id: 'job-MA0007-copy',
+    name: 'MA0007',
+    parentId: '1AMvZj3XOytmfdiWSIT-EQ7mH8FVQsBxs',
+    mimeType: 'application/vnd.google-apps.folder'
+  });
+  const duplicateFolder = postComplete({ submissionId: 'complete-dup-folder' });
+  assertEqual(duplicateFolder.result, 'error', 'two job folders with the same name stop the save');
+  assertEqual(foldersNamed('MA0007 | Work Undertaken').length, 0, 'a work folder is not created when the job folder is ambiguous');
+  assertEqual(cell(3, 22), '', 'an ambiguous job folder writes nothing');
+
+  const wrong = postComplete({ submissionId: 'complete-wrong', label: 'MA0008 | Door sensor', maintenanceId: 'MA0008' });
+  assertEqual(wrong.result, 'error', 'a job that is not on the log is not updated');
+  assertEqual(cell(3, 1), 'MA0007', 'the wrong job does not replace the selected row');
+}
+
 function testScriptPages() {
   const submit = require('../netlify/functions/submitFault');
   const moved = '<HTML><HEAD><TITLE>Moved Temporarily</TITLE></HEAD><BODY>The document has moved <A HREF="https://script.googleusercontent.com/macros/echo?user_content_key=abc">here</A>.</BODY></HTML>';
@@ -1342,6 +1590,17 @@ async function testHandlerAndLiveCsv() {
   assertEqual(partsBad.statusCode, 400, 'an empty parts order is rejected before the script');
   const partsWrong = await partsHandler({ httpMethod: 'POST', body: JSON.stringify({ action: 'parts_delete' }) });
   assertEqual(partsWrong.statusCode, 400, 'an unknown parts action is rejected');
+
+  const completeHandler = require('../netlify/functions/completeJob').handler;
+  const completeGet = await completeHandler({ httpMethod: 'GET', body: '' });
+  assertEqual(completeGet.statusCode, 405, 'complete GET is rejected');
+  const completeBad = await completeHandler({
+    httpMethod: 'POST',
+    body: JSON.stringify({ action: 'complete_prepare', submissionId: 'complete-0001', label: 'MA0007 | Job', maintenanceId: 'MA0007' })
+  });
+  assertEqual(completeBad.statusCode, 400, 'an incomplete job update is rejected before the script');
+  const completeWrong = await completeHandler({ httpMethod: 'POST', body: JSON.stringify({ action: 'complete_delete' }) });
+  assertEqual(completeWrong.statusCode, 400, 'an unknown completion action is rejected');
 
   const reviewHandler = require('../netlify/functions/reviewMaintenance').handler;
   const reviewGet = await reviewHandler({ httpMethod: 'GET', body: '' });
@@ -1398,6 +1657,7 @@ async function main() {
   testDriveAuthorisation();
   testReview();
   testParts();
+  testComplete();
   testPages();
   testScriptPages();
   await testHandlerAndLiveCsv();

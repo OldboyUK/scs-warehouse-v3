@@ -185,6 +185,11 @@
   to = "/maintenance/order-parts.html"
   status = 301
 
+[[redirects]]
+  from = "/maintenance/complete-job"
+  to = "/maintenance/complete-job.html"
+  status = 301
+
 [functions."schedule-backup"]
   schedule = "*/30 * * * *"
 
