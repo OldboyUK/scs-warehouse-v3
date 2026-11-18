@@ -309,6 +309,19 @@ const context = {
           getContentText: function () { return text; }
         };
       };
+      const imageRespond = function (id) {
+        const bytes = Buffer.from('jpeg-' + id);
+        return {
+          getResponseCode: function () { return 200; },
+          getContentText: function () { return ''; },
+          getBlob: function () {
+            return {
+              getBytes: function () { return bytes; },
+              getContentType: function () { return 'image/jpeg'; }
+            };
+          }
+        };
+      };
       if (url === core.DROPDOWNS_CSV_URL) return respond(200, world.csv);
       if (String(url).indexOf('https://www.googleapis.com/upload/drive/') === 0) {
         const meta = String(options.payload || '').match(/\{[\s\S]*?\}/);
@@ -317,12 +330,32 @@ const context = {
         world.drive.nodes.push({ id: id, name: data.name, parentId: data.parents[0], mimeType: 'image/jpeg' });
         return respond(200, JSON.stringify({ id: id, name: data.name }));
       }
+      if (String(url).indexOf('https://thumbnail.test/') === 0 && method === 'get') {
+        const id = String(url).replace('https://thumbnail.test/', '').replace(/=s\d+$/, '');
+        return imageRespond(id);
+      }
       if (String(url).indexOf('https://www.googleapis.com/drive/v3/files') === 0 && method === 'get') {
+        const fileMatch = String(url).match(/\/files\/([^/?]+)/);
+        if (fileMatch && String(url).indexOf('q=') === -1) {
+          const id = decodeURIComponent(fileMatch[1]);
+          if (String(url).indexOf('alt=media') !== -1) return imageRespond(id);
+          const node = world.drive.nodes.filter(function (item) { return item.id === id; })[0];
+          if (!node) return respond(404, '{}');
+          return respond(200, JSON.stringify({
+            id: node.id,
+            name: node.name,
+            mimeType: node.mimeType,
+            parents: [node.parentId],
+            thumbnailLink: 'https://thumbnail.test/' + node.id + '=s220'
+          }));
+        }
         const q = decodeURIComponent(String(url).split('q=')[1] || '');
-        const name = (q.match(/name = '((?:\\'|[^'])*)'/) || [])[1].replace(/\\'/g, "'");
+        const nameMatch = q.match(/name = '((?:\\'|[^'])*)'/);
         const parentId = (q.match(/'([^']+)' in parents/) || [])[1];
         const files = world.drive.nodes.filter(function (node) {
-          return node.parentId === parentId && node.name === name;
+          if (node.parentId !== parentId) return false;
+          if (!nameMatch) return String(node.mimeType || '').indexOf('image/') === 0;
+          return node.name === nameMatch[1].replace(/\\'/g, "'");
         }).map(function (node) {
           return { id: node.id, name: node.name, mimeType: node.mimeType };
         });
@@ -864,6 +897,17 @@ function testPages() {
   assert(order.indexOf('/.netlify/functions/orderParts') !== -1, 'order page posts to the Netlify function');
   assert(order.indexOf('J4PAN88') === -1 && order.indexOf('script.google.com') === -1, 'order page has no script credential or web app URL');
   assert(home.indexOf('>Complete Job<') !== -1 && home.indexOf('href="complete-job.html"') !== -1, 'Maintenance opens Complete Job');
+  assert(home.indexOf('>Check Job Status<') !== -1 && home.indexOf('href="check-job-status.html"') !== -1, 'Maintenance opens Check Job Status');
+  const statusPage = fs.readFileSync(path.join(root, 'maintenance/check-job-status.html'), 'utf8');
+  const statusJs = fs.readFileSync(path.join(root, 'maintenance/check-job-status.js'), 'utf8');
+  assert(statusPage.indexOf('check-job-status.js') !== -1, 'status page loads its script');
+  ['Open Job', 'Awaiting Review', 'Awaiting Parts', 'Awaiting Completion', 'Completed', 'Cancelled', 'Hold', 'status-awaiting-review', 'status-awaiting-parts', 'status-awaiting-completion', 'status-completed', 'status-cancelled', 'status-hold', 'No parts recorded', 'No photographs have been added.'].forEach(function (label) {
+    assert(statusJs.indexOf(label) !== -1, 'status page contains ' + label);
+  });
+  assert(statusJs.indexOf('/.netlify/functions/checkJobStatus') !== -1, 'status page posts to the Netlify function');
+  assert(statusJs.indexOf('J4PAN88') === -1 && statusJs.indexOf('script.google.com') === -1, 'status page has no script credential or web app URL');
+  assert(statusJs.indexOf('type="text"') === -1 && statusJs.indexOf('<textarea') === -1, 'job status is read only');
+  assert(script.indexOf('var STATUS_COL = 28') !== -1, 'job status is read from column AB');
   const completePage = fs.readFileSync(path.join(root, 'maintenance/complete-job.html'), 'utf8');
   const complete = fs.readFileSync(path.join(root, 'maintenance/complete-job.js'), 'utf8');
   assert(completePage.indexOf('complete-job.js') !== -1, 'complete page loads its script');
@@ -1554,6 +1598,104 @@ function testComplete() {
   assertEqual(cell(3, 1), 'MA0007', 'the wrong job does not replace the selected row');
 }
 
+function statusPost(action, extra) {
+  const params = Object.assign({ token: 'J4PAN88', action: action }, extra || {});
+  return JSON.parse(context.doPost({
+    parameter: params,
+    postData: { type: 'application/x-www-form-urlencoded', contents: '' }
+  }).getContent());
+}
+
+function testStatus() {
+  fresh();
+  seedRequest(2, 'MA0006', 'Hidden on row 2');
+  seedRequest(3, 'MA0007', 'Conveyor belt motor failure');
+  seedRequest(4, 'MA0008', 'Door sensor');
+  world.sheet.seed(3, 3, { value: '15/06/2026' });
+  world.sheet.seed(3, 5, { value: 'Jody R' });
+  world.sheet.seed(3, 6, { value: 'Bottling Line' });
+  world.sheet.seed(3, 7, { value: 'Cimec Filler' });
+  world.sheet.seed(3, 8, { value: 'High Priority' });
+  world.sheet.seed(3, 10, { value: 'Line one\nLine two' });
+  world.sheet.seed(3, 13, { formula: '=HYPERLINK("https://drive.google.com/drive/folders/job-MA0007","MA0007")', value: 'MA0007' });
+  world.sheet.seed(3, 15, { value: 'Aaron S' });
+  world.sheet.seed(3, 17, { value: new Date(Date.UTC(2026, 10, 17, 12, 0, 0)) });
+  world.sheet.seed(3, 19, { value: 'Guard the line\nwhile the belt is off' });
+  world.sheet.seed(3, 20, { formula: '=A3', value: '', display: 'MA0007-P01 Drive belt' });
+  world.sheet.seed(3, 22, { value: 'PTW-15' });
+  world.sheet.seed(3, 23, { value: 'Replaced the motor' });
+  world.sheet.seed(3, 24, { value: 'Paint the guard' });
+  world.sheet.seed(3, 25, { value: 'No' });
+  world.sheet.seed(3, 27, { formula: '=HYPERLINK("https://drive.google.com/drive/folders/work-MA0007","MA0007 | Work Undertaken")', value: 'MA0007 | Work Undertaken' });
+  world.sheet.seed(3, 28, { value: 'Awaiting Review' });
+  world.sheet.seed(4, 28, { formula: '="Completed"', value: '', display: 'Completed' });
+  world.sheet.seed(5, 2, { value: '   ' });
+  const parent = '1AMvZj3XOytmfdiWSIT-EQ7mH8FVQsBxs';
+  world.drive.nodes.push(
+    { id: 'job-MA0007', name: 'MA0007', parentId: parent, mimeType: 'application/vnd.google-apps.folder' },
+    { id: 'req-MA0007', name: 'MA0007 | Requests', parentId: 'job-MA0007', mimeType: 'application/vnd.google-apps.folder' },
+    { id: 'img-1', name: 'fault-01.jpg', parentId: 'req-MA0007', mimeType: 'image/jpeg' },
+    { id: 'notes', name: 'notes.pdf', parentId: 'req-MA0007', mimeType: 'application/pdf' },
+    { id: 'work-MA0007', name: 'MA0007 | Work Undertaken', parentId: 'job-MA0007', mimeType: 'application/vnd.google-apps.folder' },
+    { id: 'img-3', name: 'work-01.jpg', parentId: 'work-MA0007', mimeType: 'image/jpeg' },
+    { id: 'img-secret', name: 'secret.jpg', parentId: 'job-MA0007', mimeType: 'image/jpeg' }
+  );
+  const beforeWrites = world.sheet.writeLog.length;
+  const beforeNodes = world.drive.nodes.length;
+  const listed = statusPost('status_jobs');
+  assertEqual(listed.result, 'ok', 'the job status list loads');
+  assertEqual(listed.jobs.map(function (job) { return job.label + '=' + job.status; }).join('|'), 'MA0007 | Conveyor belt motor failure=Awaiting Review|MA0008 | Door sensor=Completed', 'titles and statuses come from the same rows');
+  assert(listed.jobs.every(function (job) { return job.row >= 3; }), 'the list starts at row 3');
+  assertEqual(world.sheet.writeLog.length, beforeWrites, 'loading job status does not write the sheet');
+  assertEqual(world.drive.nodes.length, beforeNodes, 'loading job status does not change Drive');
+
+  const detail = statusPost('status_detail', { row: 3, label: 'MA0007 | Conveyor belt motor failure', maintenanceId: 'MA0007' });
+  assertEqual(detail.result, 'ok', 'opening a job loads its row');
+  assertEqual(detail.label, 'MA0007 | Conveyor belt motor failure', 'the job title is column B');
+  assertEqual(detail.date, '15/06/2026', 'the fault date is shown in UK format');
+  assertEqual(detail.reporter, 'Jody R', 'the reporter is column E');
+  assertEqual(detail.lineArea, 'Bottling Line', 'the line is column F');
+  assertEqual(detail.equipment, 'Cimec Filler', 'the machine is column G');
+  assertEqual(detail.priority, 'High Priority', 'the priority is column H');
+  assertEqual(detail.description, 'Line one\nLine two', 'the description keeps line breaks');
+  assertEqual(detail.owner, 'Aaron S', 'the owner is column O');
+  assertEqual(detail.dueDate, '17/11/2026', 'the due date is shown in UK format');
+  assertEqual(detail.assessment, 'Guard the line\nwhile the belt is off', 'the assessment keeps line breaks');
+  assertEqual(detail.parts, 'MA0007-P01 Drive belt', 'parts ordered shows the calculated summary');
+  assert(detail.parts.indexOf('=A3') === -1, 'the parts formula is not shown');
+  assertEqual(detail.permit, 'PTW-15', 'the permit number is column V');
+  assertEqual(detail.workUndertaken, 'Replaced the motor', 'work undertaken is column W');
+  assertEqual(detail.workOutstanding, 'Paint the guard', 'work outstanding is column X');
+  assertEqual(detail.completed, 'No', 'job completion is column Y');
+  assertEqual(detail.status, 'Awaiting Review', 'the detail status matches column AB');
+  assertEqual(detail.requestsPhotos.map(function (photo) { return photo.id; }).join('|'), 'img-1', 'fault photographs come from the Requests folder');
+  assertEqual(detail.workPhotos.map(function (photo) { return photo.id; }).join('|'), 'img-3', 'work photographs come from the Work Undertaken folder');
+  assertEqual(detail.requestsFolderUrl, 'https://drive.google.com/drive/folders/job-MA0007', 'the original folder link is kept as a fallback');
+  assertEqual(detail.workFolderUrl, 'https://drive.google.com/drive/folders/work-MA0007', 'the work folder link is kept as a fallback');
+  assertEqual(world.sheet.writeLog.length, beforeWrites, 'opening a job does not write the sheet');
+  assertEqual(world.drive.nodes.length, beforeNodes, 'opening a job does not create folders');
+  assertEqual(cell(3, 28), 'Awaiting Review', 'reading status does not change column AB');
+
+  const photo = statusPost('status_photo', { row: 3, label: 'MA0007 | Conveyor belt motor failure', maintenanceId: 'MA0007', folderKind: 'requests', fileId: 'img-1', size: 'thumb' });
+  assertEqual(photo.result, 'ok', 'a fault photograph can be retrieved');
+  assertEqual(Buffer.from(photo.imageBase64, 'base64').toString(), 'jpeg-img-1', 'the photograph bytes come from Drive');
+  assertEqual(photo.mimeType, 'image/jpeg', 'the photograph is returned as an image');
+  const hidden = statusPost('status_photo', { row: 3, label: 'MA0007 | Conveyor belt motor failure', maintenanceId: 'MA0007', folderKind: 'requests', fileId: 'img-secret', size: 'full' });
+  assertEqual(hidden.result, 'error', 'a photograph outside the Requests folder is not returned');
+  const workPhoto = statusPost('status_photo', { row: 3, label: 'MA0007 | Conveyor belt motor failure', maintenanceId: 'MA0007', folderKind: 'work', fileId: 'img-3', size: 'full' });
+  assertEqual(workPhoto.result, 'ok', 'a work photograph can be enlarged');
+  assertEqual(world.drive.nodes.length, beforeNodes, 'reading photographs does not change Drive');
+
+  const other = statusPost('status_detail', { row: 4, label: 'MA0008 | Door sensor', maintenanceId: 'MA0008' });
+  assertEqual(other.status, 'Completed', 'a status formula is shown by its result');
+  assertEqual(other.parts, '', 'a blank parts summary is empty');
+  assertEqual(other.requestsPhotos.length, 0, 'a job without photographs has an empty gallery');
+  assertEqual(other.date, '01/06/2026', 'a blank extra date is not invented');
+  const wrong = statusPost('status_detail', { row: 4, label: 'MA0007 | Conveyor belt motor failure', maintenanceId: 'MA0007' });
+  assertEqual(wrong.row, 3, 'the job is found again when the hinted row no longer matches');
+  assertEqual(formula(3, 13).indexOf('job-MA0007') !== -1, true, 'the original folder formula stays in place');
+}
+
 function testScriptPages() {
   const submit = require('../netlify/functions/submitFault');
   const moved = '<HTML><HEAD><TITLE>Moved Temporarily</TITLE></HEAD><BODY>The document has moved <A HREF="https://script.googleusercontent.com/macros/echo?user_content_key=abc">here</A>.</BODY></HTML>';
@@ -1590,6 +1732,14 @@ async function testHandlerAndLiveCsv() {
   assertEqual(partsBad.statusCode, 400, 'an empty parts order is rejected before the script');
   const partsWrong = await partsHandler({ httpMethod: 'POST', body: JSON.stringify({ action: 'parts_delete' }) });
   assertEqual(partsWrong.statusCode, 400, 'an unknown parts action is rejected');
+
+  const statusHandler = require('../netlify/functions/checkJobStatus').handler;
+  const statusGet = await statusHandler({ httpMethod: 'GET', body: '' });
+  assertEqual(statusGet.statusCode, 405, 'status GET is rejected');
+  const statusBad = await statusHandler({ httpMethod: 'POST', body: JSON.stringify({ action: 'status_detail', label: '', row: 3 }) });
+  assertEqual(statusBad.statusCode, 400, 'a status detail without a job is rejected');
+  const statusWrong = await statusHandler({ httpMethod: 'POST', body: JSON.stringify({ action: 'status_save' }) });
+  assertEqual(statusWrong.statusCode, 400, 'an unknown status action is rejected');
 
   const completeHandler = require('../netlify/functions/completeJob').handler;
   const completeGet = await completeHandler({ httpMethod: 'GET', body: '' });
@@ -1658,6 +1808,7 @@ async function main() {
   testReview();
   testParts();
   testComplete();
+  testStatus();
   testPages();
   testScriptPages();
   await testHandlerAndLiveCsv();

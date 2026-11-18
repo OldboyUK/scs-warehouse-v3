@@ -56,6 +56,10 @@
  * AA hyperlink to the Drive subfolder "[Maintenance ID] | Work Undertaken"
  * Columns A:U are not changed. The primary job folder is not created again.
  * Photographs of the work are uploaded into that subfolder.
+ * Check Job Status only reads the Submission Log. It shows column B and column AB
+ * in the list, then the saved fault, review, parts summary and completion fields
+ * for one row. Column AB is never written. Photographs are read from the
+ * existing Requests and Work Undertaken folders and are not changed.
  * No column or header is added. A formula in column A that displays nothing
  * is an available ID cell.
  * Other formulas, the header row, and unrelated cells are left alone.
@@ -96,6 +100,7 @@ var COMPLETE_FIRST_COL = 22;
 var COMPLETE_LAST_COL = 26;
 var COMPLETE_LINK_COL = 27;
 var CLOSE_JOB = 'Close Job';
+var STATUS_COL = 28;
 var MAX_PARTS = 20;
 var DROPDOWNS_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT9wb05WXLcP4IN6Dce9zaRWtPKpGgHKWsqo4ICB97Mpr3RTx8MMFidwWgSf6ulh_sJNgE_2XxX3N2D/pub?gid=1056635412&single=true&output=csv';
 var OTHER = 'Other';
@@ -139,6 +144,9 @@ function doPost(e) {
     if (action === 'complete_prepare') return handleCompletePrepare_(p);
     if (action === 'complete_photo') return handleCompletePhoto_(p);
     if (action === 'complete_commit') return handleCompleteCommit_(p);
+    if (action === 'status_jobs') return handleStatusJobs_();
+    if (action === 'status_detail') return handleStatusDetail_(p);
+    if (action === 'status_photo') return handleStatusPhoto_(p);
     return json({ result: 'error', retryable: false, message: 'Unknown action.' });
   } catch (err) {
     return json({ result: 'error', retryable: true, message: publicMessage_(err) });
@@ -2883,6 +2891,290 @@ function commitComplete_(value, pending) {
     result: result
   });
   return json(result);
+}
+
+function handleStatusJobs_() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(15000)) {
+    return json({ result: 'error', retryable: true, message: 'The job list is busy. Wait a moment and try again.' });
+  }
+  try {
+    return json({ result: 'ok', jobs: statusJobs_() });
+  } catch (err) {
+    return json({
+      result: 'error',
+      retryable: true,
+      message: 'The maintenance jobs could not be loaded. ' + publicMessage_(err)
+    });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function handleStatusDetail_(p) {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(15000)) {
+    return json({ result: 'error', retryable: true, message: 'The job is busy. Wait a moment and try again.' });
+  }
+  try {
+    var sheet = requireSheet_(SpreadsheetApp.openById(SSID_MAINTENANCE));
+    var found = findStatusRow_(sheet, p);
+    if (!found.ok) return json({ result: 'error', retryable: true, message: found.message });
+    return json(statusDetail_(sheet, found.row));
+  } catch (err) {
+    return json({
+      result: 'error',
+      retryable: true,
+      message: 'The job could not be loaded. ' + publicMessage_(err)
+    });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function handleStatusPhoto_(p) {
+  var fileId = String(p.fileId || '').trim();
+  var kind = String(p.folderKind || '').trim().toLowerCase();
+  var size = String(p.size || '').trim().toLowerCase() === 'full' ? 1600 : 480;
+  if (!/^[A-Za-z0-9_-]{1,80}$/.test(fileId) || (kind !== 'requests' && kind !== 'work')) {
+    return json({ result: 'error', retryable: true, message: 'That photograph could not be opened.' });
+  }
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(15000)) {
+    return json({ result: 'error', retryable: true, message: 'The photographs are busy. Wait a moment and try again.' });
+  }
+  try {
+    var sheet = requireSheet_(SpreadsheetApp.openById(SSID_MAINTENANCE));
+    var found = findStatusRow_(sheet, p);
+    if (!found.ok) return json({ result: 'error', retryable: true, message: found.message });
+    var folders = statusFolders_(sheet, found.row);
+    var folderId = kind === 'work' ? folders.workId : folders.requestsId;
+    if (!folderId) return json({ result: 'error', retryable: true, message: 'That photograph is not in this job folder.' });
+    var image = driveThumbnailBytes_(fileId, size);
+    var allowed = false;
+    for (var i = 0; i < image.parents.length; i++) {
+      if (image.parents[i] === folderId) allowed = true;
+    }
+    if (!allowed) return json({ result: 'error', retryable: true, message: 'That photograph is not in this job folder.' });
+    return json({
+      result: 'ok',
+      fileId: image.id,
+      name: image.name,
+      mimeType: image.mimeType,
+      imageBase64: image.imageBase64
+    });
+  } catch (err) {
+    return json({
+      result: 'error',
+      retryable: true,
+      message: 'The photograph could not be opened. ' + publicMessage_(err)
+    });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function statusJobs_() {
+  var sheet = requireSheet_(SpreadsheetApp.openById(SSID_MAINTENANCE));
+  var maxRows = sheet.getMaxRows();
+  if (maxRows < REVIEW_START_ROW) return [];
+  var height = maxRows - REVIEW_START_ROW + 1;
+  var ids = sheet.getRange(REVIEW_START_ROW, 1, height, 1).getDisplayValues();
+  var labels = sheet.getRange(REVIEW_START_ROW, 2, height, 1).getDisplayValues();
+  var statuses = sheet.getRange(REVIEW_START_ROW, STATUS_COL, height, 1).getDisplayValues();
+  var jobs = [];
+  for (var i = 0; i < labels.length; i++) {
+    var label = String(labels[i][0] == null ? '' : labels[i][0]).trim();
+    if (!label) continue;
+    jobs.push({
+      row: i + REVIEW_START_ROW,
+      maintenanceId: String(ids[i][0] == null ? '' : ids[i][0]).trim().toUpperCase(),
+      label: label,
+      status: statusPlain_(statuses[i][0])
+    });
+  }
+  return jobs;
+}
+
+function statusHint_(data) {
+  var row = parseInt(data && data.row, 10);
+  if (isNaN(row)) row = 0;
+  var label = String(data && data.label != null ? data.label : '').trim();
+  var maintenanceId = String(data && data.maintenanceId || '').trim().toUpperCase();
+  return { row: row, label: label, maintenanceId: maintenanceId };
+}
+
+function findStatusRow_(sheet, data) {
+  var hint = statusHint_(data);
+  if (!hint.label) return { ok: false, message: 'Select a maintenance job.' };
+  var maxRows = sheet.getMaxRows();
+  if (hint.row >= REVIEW_START_ROW && hint.row <= maxRows) {
+    var hintedId = String(sheet.getRange(hint.row, 1).getDisplayValue() || '').trim().toUpperCase();
+    var hintedLabel = String(sheet.getRange(hint.row, 2).getDisplayValue() || '').trim();
+    if (hintedLabel === hint.label && hintedId === hint.maintenanceId) return { ok: true, row: hint.row };
+  }
+  if (maxRows < REVIEW_START_ROW) {
+    return { ok: false, message: 'That maintenance job is no longer on the Submission Log.' };
+  }
+  var height = maxRows - REVIEW_START_ROW + 1;
+  var ids = sheet.getRange(REVIEW_START_ROW, 1, height, 1).getDisplayValues();
+  var labels = sheet.getRange(REVIEW_START_ROW, 2, height, 1).getDisplayValues();
+  var matches = [];
+  for (var i = 0; i < labels.length; i++) {
+    var label = String(labels[i][0] == null ? '' : labels[i][0]).trim();
+    var id = String(ids[i][0] == null ? '' : ids[i][0]).trim().toUpperCase();
+    if (label === hint.label && id === hint.maintenanceId) matches.push(i + REVIEW_START_ROW);
+  }
+  if (matches.length === 1) return { ok: true, row: matches[0] };
+  if (!matches.length) return { ok: false, message: 'That maintenance job is no longer on the Submission Log.' };
+  return { ok: false, message: 'That job appears more than once. Open it again from the list.' };
+}
+
+function statusPlain_(value) {
+  if (value == null) return '';
+  if (Object.prototype.toString.call(value) === '[object Date]') {
+    if (isNaN(value.getTime())) return '';
+    return Utilities.formatDate(value, 'Europe/London', 'dd/MM/yyyy');
+  }
+  var text = String(value).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  if (!String(text).trim()) return '';
+  if (/^#(N\/A|REF!|ERROR!|VALUE!|NAME\?|DIV\/0!|NULL!)/.test(String(text).trim())) return '';
+  return text;
+}
+
+function folderLink_(formula, displayValue) {
+  var sources = [String(formula || ''), String(displayValue || '')];
+  for (var i = 0; i < sources.length; i++) {
+    var match = sources[i].match(/https:\/\/drive\.google\.com\/drive\/folders\/([A-Za-z0-9_-]+)/);
+    if (match) {
+      return { id: match[1], url: 'https://drive.google.com/drive/folders/' + match[1] };
+    }
+  }
+  return { id: '', url: '' };
+}
+
+function childFolderId_(parentId, name) {
+  if (!parentId || !name) return '';
+  var found = driveFoldersNamed_(parentId, name);
+  if (found.length !== 1) return '';
+  return found[0].id;
+}
+
+function statusFolders_(sheet, row) {
+  var maintenanceId = String(sheet.getRange(row, 1).getDisplayValue() || '').trim().toUpperCase();
+  var requestsLink = folderLink_(sheet.getRange(row, 13).getFormula(), sheet.getRange(row, 13).getDisplayValue());
+  var workLink = folderLink_(sheet.getRange(row, COMPLETE_LINK_COL).getFormula(), sheet.getRange(row, COMPLETE_LINK_COL).getDisplayValue());
+  var requestsId = '';
+  if (MAINTENANCE_ID_RE.test(maintenanceId) && requestsLink.id) {
+    try {
+      requestsId = childFolderId_(requestsLink.id, maintenanceId + ' | Requests');
+    } catch (err) {
+      requestsId = '';
+    }
+  }
+  return {
+    requestsId: requestsId,
+    requestsUrl: requestsLink.url,
+    workId: workLink.id,
+    workUrl: workLink.url
+  };
+}
+
+function safeJobImages_(folderId) {
+  if (!folderId) return { photos: [], message: '' };
+  try {
+    return { photos: driveImagesInFolder_(folderId), message: '' };
+  } catch (err) {
+    return { photos: [], message: 'The photographs could not be loaded.' };
+  }
+}
+
+function statusDetail_(sheet, row) {
+  function cell(col) {
+    return statusPlain_(sheet.getRange(row, col).getValue());
+  }
+  var folders = statusFolders_(sheet, row);
+  var requests = safeJobImages_(folders.requestsId);
+  var work = safeJobImages_(folders.workId);
+  var partsDisplay = String(sheet.getRange(row, 20).getDisplayValue() || '').trim();
+  var partsError = /^#/.test(partsDisplay);
+  return {
+    result: 'ok',
+    row: row,
+    maintenanceId: String(sheet.getRange(row, 1).getDisplayValue() || '').trim().toUpperCase(),
+    label: String(sheet.getRange(row, 2).getDisplayValue() || '').trim(),
+    date: cell(3),
+    reporter: cell(5),
+    lineArea: cell(6),
+    equipment: cell(7),
+    priority: cell(8),
+    description: cell(10),
+    owner: cell(15),
+    dueDate: cell(17),
+    assessment: cell(19),
+    parts: partsError ? '' : statusPlain_(partsDisplay),
+    partsError: partsError,
+    permit: cell(22),
+    workUndertaken: cell(23),
+    workOutstanding: cell(24),
+    completed: cell(25),
+    status: statusPlain_(sheet.getRange(row, STATUS_COL).getDisplayValue()),
+    requestsFolderUrl: folders.requestsUrl,
+    workFolderUrl: folders.workUrl,
+    requestsPhotos: requests.photos,
+    workPhotos: work.photos,
+    requestsPhotoMessage: requests.message,
+    workPhotoMessage: work.message
+  };
+}
+
+function driveImagesInFolder_(folderId) {
+  var q = "trashed = false and mimeType contains 'image/' and '" + folderId + "' in parents";
+  var url = 'https://www.googleapis.com/drive/v3/files?supportsAllDrives=true&includeItemsFromAllDrives=true&fields=files(id,name,mimeType)&pageSize=20&q=' + encodeURIComponent(q);
+  var data = driveFetch_('get', url);
+  var files = data.files || [];
+  var images = [];
+  for (var i = 0; i < files.length; i++) {
+    var mime = String(files[i].mimeType || '');
+    if (mime !== 'image/jpeg' && mime !== 'image/png' && mime !== 'image/webp' && mime !== 'image/gif') continue;
+    if (!/^[A-Za-z0-9_-]{1,80}$/.test(String(files[i].id || ''))) continue;
+    images.push({ id: String(files[i].id), name: String(files[i].name || 'Photograph'), mimeType: mime });
+    if (images.length >= 20) break;
+  }
+  return images;
+}
+
+function driveThumbnailBytes_(fileId, size) {
+  var meta = driveFetch_('get', 'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(fileId) + '?supportsAllDrives=true&fields=id,name,mimeType,parents,thumbnailLink');
+  var mime = String(meta.mimeType || '');
+  if (mime.indexOf('image/') !== 0) throw new Error('That file is not a photograph.');
+  var link = String(meta.thumbnailLink || '');
+  var bytes;
+  if (link) {
+    var sized = link.replace(/=s\d+$/, '=s' + String(size));
+    bytes = driveAuthorizedBytes_(sized);
+  } else {
+    bytes = driveAuthorizedBytes_('https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(fileId) + '?alt=media&supportsAllDrives=true');
+  }
+  if (!bytes || bytes.length > 1500000) throw new Error('The photograph is too large to preview.');
+  return {
+    id: String(meta.id || fileId),
+    name: String(meta.name || 'Photograph'),
+    mimeType: mime,
+    parents: meta.parents || [],
+    imageBase64: Utilities.base64Encode(bytes)
+  };
+}
+
+function driveAuthorizedBytes_(url) {
+  var resp = UrlFetchApp.fetch(url, {
+    method: 'get',
+    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+    muteHttpExceptions: true
+  });
+  var code = resp.getResponseCode();
+  if (code < 200 || code >= 300) throw new Error('The photograph could not be opened (' + code + ').');
+  return resp.getBlob().getBytes();
 }
 
 function json(obj) {
