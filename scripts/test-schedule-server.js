@@ -112,6 +112,88 @@ const nightOff = sync.planChanges({
 }, 'week');
 assert.strictEqual(nightOff[0].expectedVersion, 3);
 assert.strictEqual(nightOff[0].week.nightShift, false);
+assert.strictEqual(nightOff[0].week.schedule, 'production');
+assert.strictEqual(nightOff[0].week.weekCommencing, '2026-11-09');
+
+const blendNight = sync.planChanges(empty, {
+  blocks: [],
+  dayNotes: {},
+  weeks: {
+    'blending|2026-11-09': {
+      weekCommencing: '2026-11-09',
+      schedule: 'blending',
+      nightShift: true,
+      saturday: false,
+      version: 0
+    }
+  }
+}, 'week');
+assert.strictEqual(blendNight.length, 1);
+assert.strictEqual(blendNight[0].week.schedule, 'blending');
+assert.strictEqual(blendNight[0].week.weekCommencing, '2026-11-09');
+
+const freeText = sync.planChanges(
+  { blocks: [block({ schedule: 'blending', freeText: 'first' })], dayNotes: {}, weeks: {} },
+  { blocks: [block({ schedule: 'blending', freeText: 'second' })], dayNotes: {}, weeks: {} },
+  'block'
+);
+assert.strictEqual(freeText.length, 1);
+assert.strictEqual(freeText[0].booking.freeText, 'second');
+assert.strictEqual(freeText[0].booking.schedule, 'blending');
+assert.strictEqual(freeText[0].booking.packingFormat, '');
+
+const blendingBooking = core.checkedBooking({
+  id: 'blend-0001',
+  weekCommencing: '2026-11-09',
+  day: 'monday',
+  category: 'base_in',
+  schedule: 'blending',
+  startTime: '08:00',
+  endTime: '10:00',
+  customer: 'Atkinson Wines Ltd',
+  product: 'Mango',
+  liquidCode: 'ATK-MA1',
+  freeText: 'Filter before blend',
+  volume: 250.5,
+  backgroundColour: '#ff0000'
+});
+assert.strictEqual(blendingBooking.booking.schedule, 'blending');
+assert.strictEqual(blendingBooking.booking.category, 'base_in');
+assert.strictEqual(blendingBooking.booking.freeText, 'Filter before blend');
+assert.strictEqual(blendingBooking.booking.packingFormat, '');
+assert.ok(core.checkedBooking(Object.assign({}, blendingBooking.booking, { category: 'bottles' })).error);
+assert.ok(core.checkedBooking(Object.assign({}, blendingBooking.booking, { volume: 50 })).error);
+assert.ok(core.checkedBooking(block({ category: 'base_in' })).error);
+
+const scheduleData = require('../schedule/schedule-data');
+const blendBlock = scheduleData.addBlock({
+  day: 'monday',
+  category: 'filtering',
+  schedule: 'blending',
+  startOffset: 120,
+  endOffset: 240,
+  customer: 'Atkinson Wines Ltd',
+  product: 'Mango',
+  liquidCode: 'ATK-MA1',
+  freeText: 'Hold for filter',
+  volume: 1000,
+  backgroundColour: '#ff9900',
+  weekCommencing: '2026-11-09'
+});
+assert.ok(blendBlock);
+assert.strictEqual(blendBlock.schedule, 'blending');
+assert.strictEqual(blendBlock.freeText, 'Hold for filter');
+assert.ok(blendBlock.text.indexOf('Hold for filter') !== -1);
+assert.strictEqual(scheduleData.addBlock({
+  day: 'monday', category: 'base_in', startOffset: 0, endOffset: 60,
+  weekCommencing: '2026-11-09', volume: 100
+}), null);
+scheduleData.setNightManual('2026-11-09', true, 'blending');
+assert.strictEqual(scheduleData.isNightManual('2026-11-09', 'blending'), true);
+assert.strictEqual(scheduleData.isNightManual('2026-11-09', 'production'), false);
+scheduleData.setSaturdayRunning('2026-11-09', true);
+assert.strictEqual(scheduleData.isSaturdayRunning('2026-11-09', 'production'), true);
+assert.strictEqual(scheduleData.isSaturdayRunning('2026-11-09', 'blending'), false);
 
 assert.strictEqual(core.sheetShouldWrite(2, 4), true);
 assert.strictEqual(core.sheetShouldWrite(4, 4), true);

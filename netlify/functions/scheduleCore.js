@@ -3,6 +3,7 @@ const schedule = require('../../schedule/schedule-data');
 
 const DAYS = { monday: true, tuesday: true, wednesday: true, thursday: true, friday: true, saturday: true };
 const CATEGORIES = { bottles: true, keg: true, owk: true, bibs: true, bulk: true };
+const BLENDING = { base_in: true, filtering: true, blending: true, bulk_out: true };
 const COLOURS = {};
 schedule.COLOURS.forEach(function (colour) { COLOURS[colour] = true; });
 
@@ -10,7 +11,8 @@ const BOOKING_RETURN = `
   id,
   to_char(week_commencing, 'YYYY-MM-DD') AS week_commencing,
   day, category, start_time, end_time, customer, product, liquid_code,
-  packing_format, volume, legacy_text, background_colour, version, updated_by
+  packing_format, volume, legacy_text, background_colour, schedule_kind, free_text,
+  version, updated_by
 `;
 
 let databaseClient = null;
@@ -61,6 +63,8 @@ function mapBooking(row) {
     volume: row.volume == null || row.volume === '' ? null : Number(row.volume),
     legacyText: row.legacy_text || '',
     backgroundColour: row.background_colour,
+    schedule: row.schedule_kind === 'blending' ? 'blending' : 'production',
+    freeText: row.free_text || '',
     version: Number(row.version) || 0,
     updatedBy: row.updated_by || ''
   };
@@ -80,6 +84,7 @@ function mapNote(row) {
 function mapWeek(row) {
   return {
     weekCommencing: row.week_commencing,
+    schedule: row.schedule_kind === 'blending' ? 'blending' : 'production',
     nightShift: !!row.night_shift,
     saturday: !!row.saturday_running,
     version: Number(row.version) || 0,
@@ -93,7 +98,9 @@ function checkedBooking(input) {
   if (!/^[A-Za-z0-9_-]{8,80}$/.test(id)) return { error: 'The booking id is not valid.' };
   const monday = requireWeek(booking.weekCommencing);
   if (!monday) return { error: 'The production week is not valid.' };
-  if (!DAYS[booking.day] || !CATEGORIES[booking.category]) return { error: 'The day or category is not valid.' };
+  const kind = booking.schedule === 'blending' ? 'blending' : 'production';
+  const allowed = kind === 'blending' ? BLENDING : CATEGORIES;
+  if (!DAYS[booking.day] || !allowed[booking.category]) return { error: 'The day or category is not valid.' };
   if (!offsetsOk(booking.startTime, booking.endTime)) return { error: 'The start and finish times are not valid.' };
   const colour = String(booking.backgroundColour || '').toLowerCase();
   if (!COLOURS[colour]) return { error: 'The status colour is not valid.' };
@@ -101,6 +108,9 @@ function checkedBooking(input) {
   if (booking.volume != null && booking.volume !== '') {
     volume = Number(booking.volume);
     if (!isFinite(volume)) return { error: 'The volume is not valid.' };
+  }
+  if (kind === 'blending' && (volume == null || volume < 100 || volume > 1000000)) {
+    return { error: 'The volume is not valid.' };
   }
   return {
     booking: {
@@ -113,10 +123,12 @@ function checkedBooking(input) {
       customer: clean(booking.customer, 500),
       product: clean(booking.product, 500),
       liquidCode: clean(booking.liquidCode, 80),
-      packingFormat: clean(booking.packingFormat, 200),
+      packingFormat: kind === 'blending' ? '' : clean(booking.packingFormat, 200),
       volume: volume,
       legacyText: clean(booking.legacyText, 2000),
-      backgroundColour: colour
+      backgroundColour: colour,
+      schedule: kind,
+      freeText: kind === 'blending' ? clean(booking.freeText, 2000) : ''
     }
   };
 }
@@ -143,7 +155,7 @@ const NOTE_RETURN = `
 
 const WEEK_RETURN = `
   to_char(week_commencing, 'YYYY-MM-DD') AS week_commencing,
-  night_shift, saturday_running, version, updated_by
+  schedule_kind, night_shift, saturday_running, version, updated_by
 `;
 
 async function run(text, params) {
@@ -196,11 +208,10 @@ async function loadYear(year) {
     [start, end]
   );
   const settings = await db.pool.query(
-    `SELECT to_char(week_commencing, 'YYYY-MM-DD') AS week_commencing,
-            night_shift, saturday_running, version, updated_by
+    `SELECT ${WEEK_RETURN}
      FROM schedule_weeks
      WHERE week_commencing >= $1::date AND week_commencing <= $2::date
-     ORDER BY week_commencing`,
+     ORDER BY week_commencing, schedule_kind`,
     [start, end]
   );
   return {
@@ -231,16 +242,18 @@ async function applyBooking(op, username) {
   const values = [
     booking.id, booking.weekCommencing, booking.day, booking.category, booking.startTime,
     booking.endTime, booking.customer, booking.product, booking.liquidCode, booking.packingFormat,
-    booking.volume, booking.legacyText, booking.backgroundColour, username
+    booking.volume, booking.legacyText, booking.backgroundColour, username,
+    booking.schedule, booking.freeText
   ];
   if (!expected) {
     const inserted = await run(
       `WITH inserted AS (
          INSERT INTO schedule_bookings (
            id, week_commencing, day, category, start_time, end_time, customer, product,
-           liquid_code, packing_format, volume, legacy_text, background_colour, version, updated_by
+           liquid_code, packing_format, volume, legacy_text, background_colour, version, updated_by,
+           schedule_kind, free_text
          ) VALUES (
-           $1, $2::date, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 1, $14
+           $1, $2::date, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 1, $14, $15, $16
          )
          ON CONFLICT (id) DO NOTHING
          RETURNING ${BOOKING_RETURN}
@@ -251,6 +264,7 @@ async function applyBooking(op, username) {
          INSERT INTO schedule_backup_jobs (scope, week_commencing, status)
          SELECT 'week', $2::date, 'pending'
          WHERE EXISTS (SELECT 1 FROM inserted)
+           AND $15 = 'production'
            AND NOT EXISTS (
              SELECT 1 FROM schedule_backup_jobs
              WHERE scope = 'week' AND week_commencing = $2::date AND status IN ('pending', 'failed')
@@ -267,14 +281,14 @@ async function applyBooking(op, username) {
   }
   const updated = await run(
     `WITH old AS (
-       SELECT week_commencing FROM schedule_bookings WHERE id = $1 AND version = $15
+       SELECT week_commencing FROM schedule_bookings WHERE id = $1 AND version = $17 AND schedule_kind = $15
      ), updated AS (
        UPDATE schedule_bookings SET
          week_commencing = $2::date, day = $3, category = $4, start_time = $5, end_time = $6,
          customer = $7, product = $8, liquid_code = $9, packing_format = $10, volume = $11,
-         legacy_text = $12, background_colour = $13, version = version + 1,
+         legacy_text = $12, background_colour = $13, free_text = $16, version = version + 1,
          updated_at = now(), updated_by = $14
-       WHERE id = $1 AND version = $15
+       WHERE id = $1 AND version = $17 AND schedule_kind = $15
        RETURNING ${BOOKING_RETURN}
      ), bumped AS (
        UPDATE schedule_revision SET revision = revision + 1
@@ -287,10 +301,11 @@ async function applyBooking(op, username) {
          UNION
          SELECT $2::date FROM updated
        ) weeks
-       WHERE NOT EXISTS (
-         SELECT 1 FROM schedule_backup_jobs
-         WHERE scope = 'week' AND week_commencing = weeks.week_value AND status IN ('pending', 'failed')
-       )
+       WHERE EXISTS (SELECT 1 FROM updated WHERE schedule_kind = 'production')
+         AND NOT EXISTS (
+           SELECT 1 FROM schedule_backup_jobs
+           WHERE scope = 'week' AND week_commencing = weeks.week_value AND status IN ('pending', 'failed')
+         )
      )
      SELECT * FROM updated`,
     values.concat(expected)
@@ -310,7 +325,7 @@ async function deleteBooking(op, username) {
   }
   const removed = await run(
     `WITH old AS (
-       SELECT week_commencing FROM schedule_bookings WHERE id = $1 AND version = $2
+       SELECT week_commencing, schedule_kind FROM schedule_bookings WHERE id = $1 AND version = $2
      ), removed AS (
        DELETE FROM schedule_bookings WHERE id = $1 AND version = $2
        RETURNING id
@@ -321,6 +336,7 @@ async function deleteBooking(op, username) {
        INSERT INTO schedule_backup_jobs (scope, week_commencing, status)
        SELECT 'week', old.week_commencing, 'pending' FROM old
        WHERE EXISTS (SELECT 1 FROM removed)
+         AND old.schedule_kind = 'production'
          AND NOT EXISTS (
            SELECT 1 FROM schedule_backup_jobs
            WHERE scope = 'week' AND week_commencing = old.week_commencing AND status IN ('pending', 'failed')
@@ -431,12 +447,13 @@ async function applyWeek(op, username) {
   const expected = Number(op.expectedVersion);
   const night = !!week.nightShift;
   const saturday = !!week.saturday;
+  const kind = week.schedule === 'blending' ? 'blending' : 'production';
   if (!expected) {
     const inserted = await run(
       `WITH inserted AS (
-         INSERT INTO schedule_weeks (week_commencing, night_shift, saturday_running, version, updated_by)
-         VALUES ($1::date, $2, $3, 1, $4)
-         ON CONFLICT (week_commencing) DO NOTHING
+         INSERT INTO schedule_weeks (week_commencing, night_shift, saturday_running, version, updated_by, schedule_kind)
+         VALUES ($1::date, $2, $3, 1, $4, $5)
+         ON CONFLICT (week_commencing, schedule_kind) DO NOTHING
          RETURNING ${WEEK_RETURN}
        ), bumped AS (
          UPDATE schedule_revision SET revision = revision + 1
@@ -445,16 +462,20 @@ async function applyWeek(op, username) {
          INSERT INTO schedule_backup_jobs (scope, week_commencing, status)
          SELECT 'week', $1::date, 'pending'
          WHERE EXISTS (SELECT 1 FROM inserted)
+           AND $5 = 'production'
            AND NOT EXISTS (
              SELECT 1 FROM schedule_backup_jobs
              WHERE scope = 'week' AND week_commencing = $1::date AND status IN ('pending', 'failed')
            )
        )
        SELECT * FROM inserted`,
-      [monday, night, saturday, username]
+      [monday, night, saturday, username, kind]
     );
     if (!wrote(inserted)) {
-      const current = await run(`SELECT ${WEEK_RETURN} FROM schedule_weeks WHERE week_commencing = $1::date`, [monday]);
+      const current = await run(
+        `SELECT ${WEEK_RETURN} FROM schedule_weeks WHERE week_commencing = $1::date AND schedule_kind = $2`,
+        [monday, kind]
+      );
       return { ok: false, conflict: true, type: 'week', weekCommencing: monday, server: current.rows[0] ? mapWeek(current.rows[0]) : null };
     }
     return { ok: true, type: 'week', action: 'upsert', weekCommencing: monday, version: 1, record: mapWeek(inserted.rows[0]) };
@@ -464,7 +485,7 @@ async function applyWeek(op, username) {
        UPDATE schedule_weeks SET
          night_shift = $2, saturday_running = $3, version = version + 1,
          updated_at = now(), updated_by = $4
-       WHERE week_commencing = $1::date AND version = $5
+       WHERE week_commencing = $1::date AND schedule_kind = $5 AND version = $6
        RETURNING ${WEEK_RETURN}
      ), bumped AS (
        UPDATE schedule_revision SET revision = revision + 1
@@ -473,16 +494,20 @@ async function applyWeek(op, username) {
        INSERT INTO schedule_backup_jobs (scope, week_commencing, status)
        SELECT 'week', $1::date, 'pending'
        WHERE EXISTS (SELECT 1 FROM updated)
+         AND $5 = 'production'
          AND NOT EXISTS (
            SELECT 1 FROM schedule_backup_jobs
            WHERE scope = 'week' AND week_commencing = $1::date AND status IN ('pending', 'failed')
          )
      )
      SELECT * FROM updated`,
-    [monday, night, saturday, username, expected]
+    [monday, night, saturday, username, kind, expected]
   );
   if (!wrote(updated)) {
-    const current = await run(`SELECT ${WEEK_RETURN} FROM schedule_weeks WHERE week_commencing = $1::date`, [monday]);
+    const current = await run(
+      `SELECT ${WEEK_RETURN} FROM schedule_weeks WHERE week_commencing = $1::date AND schedule_kind = $2`,
+      [monday, kind]
+    );
     return { ok: false, conflict: true, type: 'week', weekCommencing: monday, server: current.rows[0] ? mapWeek(current.rows[0]) : null };
   }
   return { ok: true, type: 'week', action: 'upsert', weekCommencing: monday, version: Number(updated.rows[0].version), record: mapWeek(updated.rows[0]) };
@@ -510,7 +535,9 @@ async function postSheet(payload) {
 async function readWeek(db, week) {
   const revision = await db.pool.query('SELECT revision FROM schedule_revision WHERE id = 1');
   const bookings = await db.pool.query(
-    `SELECT ${BOOKING_RETURN} FROM schedule_bookings WHERE week_commencing = $1::date ORDER BY day, category, start_time, id`,
+    `SELECT ${BOOKING_RETURN} FROM schedule_bookings
+     WHERE week_commencing = $1::date AND schedule_kind = 'production'
+     ORDER BY day, category, start_time, id`,
     [week]
   );
   const notes = await db.pool.query(
@@ -523,7 +550,7 @@ async function readWeek(db, week) {
   const settings = await db.pool.query(
     `SELECT to_char(week_commencing, 'YYYY-MM-DD') AS week_commencing,
             night_shift, saturday_running, version, updated_by
-     FROM schedule_weeks WHERE week_commencing = $1::date`,
+     FROM schedule_weeks WHERE week_commencing = $1::date AND schedule_kind = 'production'`,
     [week]
   );
   return {
@@ -540,7 +567,9 @@ async function readWeek(db, week) {
 async function readAll(db) {
   const revision = await db.pool.query('SELECT revision FROM schedule_revision WHERE id = 1');
   const bookings = await db.pool.query(
-    `SELECT ${BOOKING_RETURN} FROM schedule_bookings ORDER BY week_commencing, day, category, start_time, id`
+    `SELECT ${BOOKING_RETURN} FROM schedule_bookings
+     WHERE schedule_kind = 'production'
+     ORDER BY week_commencing, day, category, start_time, id`
   );
   const notes = await db.pool.query(
     `SELECT to_char(note_date, 'YYYY-MM-DD') AS note_date,
@@ -551,7 +580,7 @@ async function readAll(db) {
   const settings = await db.pool.query(
     `SELECT to_char(week_commencing, 'YYYY-MM-DD') AS week_commencing,
             night_shift, saturday_running, version, updated_by
-     FROM schedule_weeks ORDER BY week_commencing`
+     FROM schedule_weeks WHERE schedule_kind = 'production' ORDER BY week_commencing`
   );
   return {
     revision: Number(revision.rows[0] && revision.rows[0].revision) || 0,
@@ -666,6 +695,7 @@ function requireScheduleUser(event) {
 
 module.exports = {
   sheetShouldWrite: sheetShouldWrite,
+  checkedBooking: checkedBooking,
   loadYear: loadYear,
   applyOp: applyOp,
   backupSummary: backupSummary,

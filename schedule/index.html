@@ -28,7 +28,7 @@
         <input id="runSuffix" type="text" readonly tabindex="-1" inputmode="numeric" aria-readonly="true" title="Last digit of the production year and the production week number" />
       </label>
       <div class="sch-heading-title">
-        <h1>Production Schedule</h1>
+        <h1 id="scheduleTitle">Production Schedule</h1>
         <p class="sch-save" id="saveStatus" role="status">Loading schedule…</p>
       </div>
       <div class="sch-nav" id="scheduleNav">
@@ -44,6 +44,11 @@
         </button>
       </div>
     </header>
+
+    <div class="sch-tabs" role="tablist" aria-label="Schedules">
+      <button type="button" class="sch-tab" role="tab" id="tabProduction" aria-controls="scheduleScroll" aria-selected="true">Production Schedule</button>
+      <button type="button" class="sch-tab" role="tab" id="tabBlending" aria-controls="scheduleScroll" aria-selected="false">Blending Schedule</button>
+    </div>
 
     <div class="sch-workspace">
       <div class="sch-scroll" id="scheduleScroll" aria-label="Production schedule">
@@ -92,7 +97,7 @@
         </label>
       </div>
       <div class="sch-pair sch-pair-pack">
-        <label class="sch-question" for="editorFormat">Packing Format
+        <label class="sch-question sch-format" for="editorFormat">Packing Format
           <select id="editorFormat"></select>
         </label>
         <div class="sch-pack-volume">
@@ -102,6 +107,9 @@
           <p class="sch-field-error" id="editorVolumeError" hidden></p>
         </div>
       </div>
+      <label class="sch-question sch-free" for="editorFree">Free text
+        <textarea id="editorFree" rows="3" maxlength="2000"></textarea>
+      </label>
       <div class="sch-times">
         <label for="editorStart">Start
           <select id="editorStart"></select>

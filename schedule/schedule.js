@@ -16,6 +16,7 @@
   var navigating = false;
   var yearToken = 0;
   var scrollLock = false;
+  var view = 'production';
 
   var scroll = document.getElementById('scheduleScroll');
   var grid = document.getElementById('scheduleGrid');
@@ -28,6 +29,8 @@
   var editorProduct = document.getElementById('editorProduct');
   var editorLiquid = document.getElementById('editorLiquid');
   var editorFormat = document.getElementById('editorFormat');
+  var editorFree = document.getElementById('editorFree');
+  var editorCard = document.querySelector('#blockEditor .sch-modal-card');
   var editorVolume = document.getElementById('editorVolume');
   var editorVolumeError = document.getElementById('editorVolumeError');
   var editorStart = document.getElementById('editorStart');
@@ -44,6 +47,9 @@
   var sourceMessage = document.getElementById('sourceMessage');
   var sourceRetry = document.getElementById('sourceRetry');
   var statusLegend = document.getElementById('statusLegend');
+  var scheduleTitle = document.getElementById('scheduleTitle');
+  var tabProduction = document.getElementById('tabProduction');
+  var tabBlending = document.getElementById('tabBlending');
   var yearSelect = document.getElementById('yearSelect');
   var weekJump = document.getElementById('weekJump');
   var currentWeek = document.getElementById('currentWeek');
@@ -60,6 +66,14 @@
     node.className = className;
     if (text) node.textContent = text;
     return node;
+  }
+
+  function activeCategories() {
+    return view === 'blending' ? data.BLENDING_CATEGORIES : data.CATEGORIES;
+  }
+
+  function laneCount() {
+    return activeCategories().length;
   }
 
   function laneKey(week, day, category) {
@@ -177,6 +191,7 @@
     });
     var state = data.getState();
     state.blocks.forEach(function (block) {
+      if ((block.schedule || 'production') !== view) return;
       var lane = laneMap[laneKey(block.weekCommencing, block.day, block.category)];
       if (lane) lane.appendChild(renderBlock(block));
     });
@@ -186,20 +201,22 @@
     var corner = el('sch-corner', 'Time');
     target.appendChild(corner);
 
+    var lanes = laneCount();
+    var categories = activeCategories();
     data.DAYS.forEach(function (day, dayIndex) {
       var head = el('sch-day is-day-end', day.label);
-      head.style.gridColumn = (2 + dayIndex * 5) + ' / span 5';
+      head.style.gridColumn = (2 + dayIndex * lanes) + ' / span ' + lanes;
       head.style.gridRow = '1';
       head.dataset.day = day.id;
       target.appendChild(head);
     });
 
     data.DAYS.forEach(function (day, dayIndex) {
-      data.CATEGORIES.forEach(function (category, categoryIndex) {
-        var classes = 'sch-cat' + (categoryIndex === data.CATEGORIES.length - 1 ? ' is-day-end' : '');
+      categories.forEach(function (category, categoryIndex) {
+        var classes = 'sch-cat' + (categoryIndex === categories.length - 1 ? ' is-day-end' : '');
         var cell = el(classes, category.label);
         cell.dataset.day = day.id;
-        cell.style.gridColumn = String(2 + dayIndex * 5 + categoryIndex);
+        cell.style.gridColumn = String(2 + dayIndex * lanes + categoryIndex);
         cell.style.gridRow = '2';
         target.appendChild(cell);
       });
@@ -217,13 +234,13 @@
     target.appendChild(time);
 
     data.DAYS.forEach(function (day, dayIndex) {
-      data.CATEGORIES.forEach(function (category, categoryIndex) {
-        var classes = 'sch-lane' + (categoryIndex === data.CATEGORIES.length - 1 ? ' is-day-end' : '');
+      categories.forEach(function (category, categoryIndex) {
+        var classes = 'sch-lane' + (categoryIndex === categories.length - 1 ? ' is-day-end' : '');
         var lane = el(classes);
         lane.dataset.week = week;
         lane.dataset.day = day.id;
         lane.dataset.category = category.id;
-        lane.style.gridColumn = String(2 + dayIndex * 5 + categoryIndex);
+        lane.style.gridColumn = String(2 + dayIndex * lanes + categoryIndex);
         lane.style.gridRow = '3';
         lane.setAttribute('role', 'group');
         lane.setAttribute('aria-label', day.label + ' ' + category.label);
@@ -247,6 +264,7 @@
   function weekHasSaturdayBlock(week) {
     var blocks = data.getState().blocks;
     for (var i = 0; i < blocks.length; i++) {
+      if ((blocks[i].schedule || 'production') !== view) continue;
       if (blocks[i].weekCommencing === week && blocks[i].day === 'saturday') return true;
     }
     return false;
@@ -268,7 +286,7 @@
       if (navigating || button.disabled) return;
       var next = !button.classList.contains('is-on');
       if (!next && weekHasSaturdayBlock(week)) return;
-      data.setSaturdayRunning(week, next);
+      data.setSaturdayRunning(week, next, view);
       data.persist('week');
       paintSaturday(board);
     });
@@ -279,7 +297,7 @@
     if (!board) return;
     var week = board.dataset.week;
     var locked = weekHasSaturdayBlock(week);
-    var running = locked || data.isSaturdayRunning(week);
+    var running = locked || data.isSaturdayRunning(week, view);
     var weekGrid = board.querySelector('.sch-grid');
     if (weekGrid) weekGrid.classList.toggle('is-saturday-off', !running);
     var button = board.querySelector('.sch-saturday-toggle');
@@ -312,7 +330,7 @@
     var box = document.createElement('label');
     box.className = 'sch-day-note' + (dayIndex === data.DAYS.length - 1 ? ' is-day-end' : '');
     box.dataset.day = day.id;
-    box.style.gridColumn = (2 + dayIndex * 5) + ' / span 5';
+    box.style.gridColumn = (2 + dayIndex * laneCount()) + ' / span ' + laneCount();
     box.style.gridRow = row;
     var caption = document.createElement('span');
     caption.textContent = label;
@@ -343,8 +361,11 @@
   }
 
   function categoryLabel(id) {
-    for (var i = 0; i < data.CATEGORIES.length; i++) {
-      if (data.CATEGORIES[i].id === id) return data.CATEGORIES[i].label;
+    var lists = [data.CATEGORIES, data.BLENDING_CATEGORIES];
+    for (var list = 0; list < lists.length; list++) {
+      for (var i = 0; i < lists[list].length; i++) {
+        if (lists[list][i].id === id) return lists[list][i].label;
+      }
     }
     return id;
   }
@@ -386,7 +407,13 @@
       swatch.setAttribute('aria-pressed', selected ? 'true' : 'false');
       if (selected) chosen = colour;
     });
-    editorStatus.textContent = data.statusLabel(chosen || colour);
+    if (view === 'blending') {
+      editorStatus.textContent = '';
+      editorStatus.hidden = true;
+    } else {
+      editorStatus.hidden = false;
+      editorStatus.textContent = data.statusLabel(chosen || colour);
+    }
   }
 
   function refreshDuration(block) {
@@ -495,7 +522,7 @@
       currentMatch &&
       !currentMatch.ambiguous &&
       editorProduct.value &&
-      editorFormat.value &&
+      (view === 'blending' || editorFormat.value) &&
       readVolume() != null;
   }
 
@@ -707,7 +734,8 @@
       customer: match.customer,
       product: match.product,
       liquidCode: match.liquidCode,
-      packingFormat: editorFormat.value,
+      packingFormat: view === 'blending' ? '' : editorFormat.value,
+      freeText: view === 'blending' ? editorFree.value : '',
       volume: volume,
       legacyText: '',
       backgroundColour: selectedColour(),
@@ -743,12 +771,14 @@
         customer: match.customer,
         product: match.product,
         liquidCode: match.liquidCode,
-        packingFormat: editorFormat.value,
+        packingFormat: view === 'blending' ? '' : editorFormat.value,
+        freeText: view === 'blending' ? editorFree.value : '',
         volume: volume,
+        schedule: view,
         weekCommencing: draft.weekCommencing
       });
       if (!created) {
-        showFormError('The production block could not be created.');
+        showFormError(view === 'blending' ? 'The blending booking could not be created.' : 'The production block could not be created.');
         return;
       }
       var lane = laneMap[laneKey(created.weekCommencing, created.day, created.category)];
@@ -771,11 +801,20 @@
   function setEditorMode(mode) {
     editorMode = mode;
     var adding = mode === 'add';
+    var blending = view === 'blending';
+    editorCard.classList.toggle('is-blending', blending);
+    editorSwatches.querySelectorAll('.sch-swatch').forEach(function (swatch) {
+      var label = blending ? 'Colour' : data.statusLabel(swatch.dataset.colour);
+      swatch.title = label;
+      swatch.setAttribute('aria-label', label);
+    });
     editorActions.classList.toggle('is-adding', adding);
     editorDelete.tabIndex = adding ? -1 : 0;
     editorDismiss.textContent = adding ? 'Cancel' : 'Back';
-    editorConfirm.textContent = adding ? 'Create Production Block' : 'Save changes';
-    editorTitle.textContent = adding ? 'Create production block' : 'Edit production block';
+    editorConfirm.textContent = adding ? (blending ? 'Create Blending Booking' : 'Create Production Block') : 'Save changes';
+    editorTitle.textContent = blending
+      ? (adding ? 'Create blending booking' : 'Edit blending booking')
+      : (adding ? 'Create production block' : 'Edit production block');
   }
 
   function openEditor(id, mode) {
@@ -796,6 +835,7 @@
     filling = true;
     editorLane.textContent = weekHeading(block.weekCommencing) + ' · ' + dayLabel(block.day) + ' · ' + categoryLabel(block.category);
     fillForm(block.customer, block.product, block.packingFormat);
+    editorFree.value = block.freeText || '';
     editorVolume.value = block.volume == null ? '' : String(block.volume);
     fillStartOptions(block.startOffset);
     fillEndOptions(block.startOffset, block.endOffset);
@@ -826,6 +866,7 @@
     setEditorMode('add');
     filling = true;
     editorLane.textContent = weekHeading(draft.weekCommencing) + ' · ' + dayLabel(day) + ' · ' + categoryLabel(category);
+    editorFree.value = '';
     fillForm('', '', '');
     editorVolume.value = '';
     fillStartOptions(draft.startOffset);
@@ -971,7 +1012,7 @@
           end = data.DAY_LENGTH;
           start = end - length;
         }
-        var nightAlreadyOpen = drag.nightAtStart[drag.week] || data.isNightManual(drag.week);
+        var nightAlreadyOpen = drag.nightAtStart[drag.week] || data.isNightManual(drag.week, view);
         if (!nightAlreadyOpen && end > 14 * 60) {
           end = 14 * 60;
           start = Math.max(0, end - length);
@@ -1139,6 +1180,7 @@
     var blocks = data.getState().blocks;
     for (var i = 0; i < blocks.length; i++) {
       if (ignoreId && blocks[i].id === ignoreId) continue;
+      if ((blocks[i].schedule || 'production') !== view) continue;
       if (blocks[i].weekCommencing === week && data.needsNight(blocks[i].endOffset)) return true;
     }
     return false;
@@ -1173,7 +1215,7 @@
     if (!board) return;
     var required = weekNeedsNight(board.dataset.week);
     board.dataset.nightRequired = required ? 'true' : 'false';
-    paintNight(board, required || data.isNightManual(board.dataset.week), required);
+    paintNight(board, required || data.isNightManual(board.dataset.week, view), required);
   }
 
   function applyNightWeek(week) {
@@ -1189,7 +1231,7 @@
       paintNight(board, true, true);
       return;
     }
-    var keep = board.dataset.nightRequired === 'true' || data.isNightManual(week);
+    var keep = board.dataset.nightRequired === 'true' || data.isNightManual(week, view);
     paintNight(board, keep, false);
   }
 
@@ -1197,8 +1239,8 @@
     var board = boardFor(week);
     if (!board) return;
     var required = weekNeedsNight(week);
-    if (board.dataset.nightRequired === 'true' && !required && !data.isNightManual(week)) {
-      data.setNightManual(week, true);
+    if (board.dataset.nightRequired === 'true' && !required && !data.isNightManual(week, view)) {
+      data.setNightManual(week, true, view);
       data.persist('week');
     }
     applyNight(board);
@@ -1218,14 +1260,16 @@
     label.addEventListener('click', function (event) {
       event.preventDefault();
       if (navigating || button.disabled) return;
-      data.setNightManual(week, !button.classList.contains('is-on'));
+      data.setNightManual(week, !button.classList.contains('is-on'), view);
       data.persist('week');
       applyNight(board);
     });
     var note = document.createElement('p');
     note.className = 'sch-night-note';
     note.hidden = true;
-    note.textContent = 'Night shift required – production scheduled beyond 20:00';
+    note.textContent = view === 'blending'
+      ? 'Night shift required – booking scheduled beyond 20:00'
+      : 'Night shift required – production scheduled beyond 20:00';
     wrap.appendChild(label);
     wrap.appendChild(note);
     return wrap;
@@ -1291,7 +1335,7 @@
       var suffix = document.createElement('span');
       suffix.className = 'sch-board-suffix';
       suffix.textContent = info.suffix;
-      var weekGrid = el('sch-grid');
+      var weekGrid = el('sch-grid' + (view === 'blending' ? ' is-blending' : ''));
       label.appendChild(title);
       label.appendChild(suffix);
       label.appendChild(bindNightToggle(board, info.weekCommencing));
@@ -1421,7 +1465,24 @@
     });
   }
 
+  function switchSchedule(next) {
+    if (next !== 'production' && next !== 'blending') return;
+    if (next === view) return;
+    if (!modal.hidden) dismissEditor();
+    view = next;
+    document.body.classList.toggle('is-blending', view === 'blending');
+    tabProduction.setAttribute('aria-selected', view === 'production' ? 'true' : 'false');
+    tabBlending.setAttribute('aria-selected', view === 'blending' ? 'true' : 'false');
+    scheduleTitle.textContent = view === 'blending' ? 'Blending Schedule' : 'Production Schedule';
+    scroll.setAttribute('aria-label', view === 'blending' ? 'Blending schedule' : 'Production schedule');
+    var iso = data.getState().weekCommencing;
+    renderYear(data.loadedYear() || Number(yearSelect.value));
+    window.requestAnimationFrame(function () { scrollToWeek(iso, false); });
+  }
+
   function bindMeta() {
+    tabProduction.addEventListener('click', function () { switchSchedule('production'); });
+    tabBlending.addEventListener('click', function () { switchSchedule('blending'); });
     yearSelect.addEventListener('change', function () {
       if (navigating) return;
       var year = Number(yearSelect.value);

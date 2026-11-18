@@ -5,8 +5,8 @@
 (function (root) {
   var BLOCK_FIELDS = [
     'weekCommencing', 'day', 'category', 'startTime', 'endTime',
-    'customer', 'product', 'liquidCode', 'packingFormat', 'volume',
-    'legacyText', 'backgroundColour'
+    'customer', 'product', 'liquidCode', 'packingFormat', 'freeText', 'volume',
+    'legacyText', 'backgroundColour', 'schedule'
   ];
 
   function same(a, b) {
@@ -128,9 +128,14 @@
     var seen = {};
     Object.keys(before).forEach(function (week) { seen[week] = true; });
     Object.keys(after).forEach(function (week) { seen[week] = true; });
-    Object.keys(seen).forEach(function (week) {
-      var prev = before[week] || { weekCommencing: week, nightShift: false, saturday: false, version: 0 };
-      var next = after[week] || { weekCommencing: week, nightShift: false, saturday: false, version: prev.version || 0 };
+    Object.keys(seen).forEach(function (key) {
+      var known = before[key] || after[key];
+      var schedule = known && known.schedule === 'blending' ? 'blending' : 'production';
+      if ((!known || !known.schedule) && String(key).indexOf('blending|') === 0) schedule = 'blending';
+      var week = known && known.weekCommencing;
+      if (!week) week = String(key).indexOf('blending|') === 0 ? String(key).slice(9) : key;
+      var prev = before[key] || { weekCommencing: week, schedule: schedule, nightShift: false, saturday: false, version: 0 };
+      var next = after[key] || { weekCommencing: week, schedule: schedule, nightShift: false, saturday: false, version: prev.version || 0 };
       var version = Number(prev.version) || 0;
       if (!version && !next.nightShift && !next.saturday) return;
       if (version && prev.nightShift === !!next.nightShift && prev.saturday === !!next.saturday) return;
@@ -141,6 +146,7 @@
         expectedVersion: version,
         week: {
           weekCommencing: week,
+          schedule: schedule,
           nightShift: !!next.nightShift,
           saturday: !!next.saturday
         }
@@ -160,10 +166,12 @@
       customer: block.customer || '',
       product: block.product || '',
       liquidCode: block.liquidCode || '',
-      packingFormat: block.packingFormat || '',
+      packingFormat: block.schedule === 'blending' ? '' : (block.packingFormat || ''),
+      freeText: block.schedule === 'blending' ? (block.freeText || '') : '',
       volume: block.volume == null ? null : Number(block.volume),
       legacyText: block.legacyText || '',
-      backgroundColour: block.backgroundColour
+      backgroundColour: block.backgroundColour,
+      schedule: block.schedule === 'blending' ? 'blending' : 'production'
     };
   }
 

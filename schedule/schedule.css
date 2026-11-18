@@ -147,6 +147,56 @@
   text-align: center;
 }
 
+.sch-tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  margin: -4px 8px -9px;
+  padding: 0 8px;
+  position: relative;
+  z-index: 3;
+}
+
+.sch-tab {
+  appearance: none;
+  margin: 0;
+  border: 1px solid #111;
+  border-bottom: 0;
+  border-radius: 12px 12px 0 0;
+  background: #2a2a2a;
+  color: #a3a3a3;
+  padding: 8px 18px 7px;
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  position: relative;
+  top: 1px;
+}
+
+.sch-tab:hover {
+  background: #323232;
+  color: #e5e5e5;
+}
+
+.sch-tab[aria-selected="true"] {
+  background: #3a3a3a;
+  color: #fff;
+  z-index: 2;
+  padding-bottom: 9px;
+  box-shadow: 0 1px 0 #3a3a3a;
+}
+
+.sch-tab:focus-visible {
+  outline: 2px solid #93c5fd;
+  outline-offset: 2px;
+}
+
+.schedule-app.is-blending .sch-legend {
+  display: none;
+}
+
 .sch-heading-title h1 {
   margin: 0;
   color: var(--text);
@@ -637,6 +687,15 @@
   grid-template-columns: var(--sch-time) repeat(25, minmax(0, 1fr));
 }
 
+.sch-grid.is-blending {
+  grid-template-columns: var(--sch-time) repeat(24, minmax(calc(var(--sch-lane) * 5 / 4), 1fr));
+}
+
+.sch-grid.is-blending.is-saturday-off {
+  width: calc(var(--sch-time) + (100% - var(--sch-time)) * 25 / 30);
+  grid-template-columns: var(--sch-time) repeat(20, minmax(0, 1fr));
+}
+
 .sch-grid.is-saturday-off [data-day="saturday"] {
   display: none;
 }
@@ -1051,6 +1110,15 @@
   line-height: 1.2;
 }
 
+.schedule-app .sch-modal textarea {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 6px 0 0;
+  padding: 8px 12px;
+  font-family: inherit;
+  line-height: 1.35;
+}
+
 .schedule-app .sch-modal input[readonly] {
   cursor: default;
   color: var(--text);
@@ -1069,6 +1137,31 @@
 
 .sch-pair-pack {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.sch-free {
+  display: none;
+}
+
+.sch-free textarea {
+  width: 100%;
+  min-height: 88px;
+  resize: vertical;
+  font: inherit;
+}
+
+.schedule-app .sch-modal-card.is-blending .sch-free {
+  display: flex;
+  flex-direction: column;
+}
+
+.schedule-app .sch-modal-card.is-blending .sch-format,
+.schedule-app .sch-modal-card.is-blending #editorStatus {
+  display: none;
+}
+
+.sch-modal-card.is-blending .sch-pair-pack {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .sch-pair > *,

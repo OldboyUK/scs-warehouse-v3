@@ -5,8 +5,8 @@
  * recovery copy only when a change has not reached the server yet.
  *
  * Stored block shape:
- *   id, weekCommencing, day, category, startTime, endTime,
- *   customer, product, liquidCode, packingFormat, volume, backgroundColour, version
+ *   id, weekCommencing, day, category, startTime, endTime, schedule,
+ *   customer, product, liquidCode, packingFormat, freeText, volume, backgroundColour, version
  * weekCommencing is the Monday of the production week, "YYYY-MM-DD".
  */
 (function (root) {
@@ -32,6 +32,13 @@
     { id: 'bulk', label: 'Bulk' }
   ];
 
+  var BLENDING_CATEGORIES = [
+    { id: 'base_in', label: 'BASE IN' },
+    { id: 'filtering', label: 'FILTERING' },
+    { id: 'blending', label: 'BLENDING' },
+    { id: 'bulk_out', label: 'BULK OUT' }
+  ];
+
   var STATUSES = [
     { colour: '#ff0000', label: 'PRODUCTION SPACE SCHEDULED BUT NOT CONFIRMED' },
     { colour: '#ff9900', label: 'PRODUCTION APPROVAL DOCUMENT SENT TO CUSTOMER' },
@@ -49,8 +56,10 @@
 
   var dayIds = {};
   var categoryIds = {};
+  var blendingIds = {};
   DAYS.forEach(function (day) { dayIds[day.id] = day; });
   CATEGORIES.forEach(function (category) { categoryIds[category.id] = category; });
+  BLENDING_CATEGORIES.forEach(function (category) { blendingIds[category.id] = category; });
 
   function storage() {
     try {
@@ -181,6 +190,9 @@
       nightShift: {},
       saturday: {},
       weekVersions: {},
+      blendingNight: {},
+      blendingSaturday: {},
+      blendingWeekVersions: {},
       loadedYear: null,
       blocks: []
     };
@@ -308,10 +320,11 @@
   }
 
   function displayText(block) {
+    var detail = block.schedule === 'blending' ? block.freeText : block.packingFormat;
     var structured = block.customer || block.product || block.liquidCode ||
-      block.packingFormat || block.volume != null;
+      detail || block.volume != null;
     if (!structured) return block.legacyText || '';
-    var lines = [block.customer, block.product, block.liquidCode, block.packingFormat];
+    var lines = [block.customer, block.product, block.liquidCode, detail];
     if (block.volume != null) lines.push(formatVolume(block.volume));
     return lines.filter(function (line) { return String(line || '').trim(); }).join('\n');
   }
@@ -330,8 +343,10 @@
       product: block.product,
       liquidCode: block.liquidCode,
       packingFormat: block.packingFormat,
+      freeText: block.freeText || '',
       volume: block.volume,
       legacyText: block.legacyText,
+      schedule: block.schedule === 'blending' ? 'blending' : 'production',
       text: displayText(block),
       backgroundColour: block.backgroundColour,
       version: block.version || 0
@@ -340,7 +355,9 @@
 
   function normaliseBlock(item, seen, fallbackWeek) {
     if (!item || typeof item !== 'object') return null;
-    if (!dayIds[item.day] || !categoryIds[item.category]) return null;
+    var schedule = item.schedule === 'blending' ? 'blending' : 'production';
+    var allowed = schedule === 'blending' ? blendingIds : categoryIds;
+    if (!dayIds[item.day] || !allowed[item.category]) return null;
     var start = clockToOffset(item.startTime, false);
     var end = clockToOffset(item.endTime, true);
     if (!validOffsets(start, end)) return null;
@@ -350,9 +367,10 @@
     var customer = cleanLine(item.customer, 500) || cleanLine(item.companyName, 500);
     var product = cleanLine(item.product, 500) || cleanLine(item.productName, 500);
     var liquidCode = cleanLine(item.liquidCode, 80);
-    var packingFormat = cleanLine(item.packingFormat, 200);
+    var packingFormat = schedule === 'blending' ? '' : cleanLine(item.packingFormat, 200);
+    var freeText = schedule === 'blending' ? cleanLine(item.freeText, 2000) : '';
     var volume = storedVolume(item.volume);
-    var structured = customer || product || liquidCode || packingFormat || volume != null;
+    var structured = customer || product || liquidCode || packingFormat || freeText || volume != null;
     var legacyText = '';
     if (!structured) {
       if (typeof item.legacyText === 'string') legacyText = item.legacyText.slice(0, 2000);
@@ -369,8 +387,10 @@
       product: product,
       liquidCode: liquidCode,
       packingFormat: packingFormat,
+      freeText: freeText,
       volume: volume,
       legacyText: legacyText,
+      schedule: schedule,
       backgroundColour: normaliseColour(item.backgroundColour),
       version: Number(item.version) || 0
     };
@@ -419,29 +439,54 @@
     return getState();
   }
 
-  function isNightManual(week) {
-    var monday = canonicalWeek(week);
-    return !!(monday && state.nightShift[monday]);
+  function scheduleKind(value) {
+    return value === 'blending' ? 'blending' : 'production';
   }
 
-  function setNightManual(week, on) {
+  function weekBag(schedule) {
+    if (scheduleKind(schedule) === 'blending') {
+      return {
+        night: state.blendingNight,
+        saturday: state.blendingSaturday,
+        versions: state.blendingWeekVersions
+      };
+    }
+    return {
+      night: state.nightShift,
+      saturday: state.saturday,
+      versions: state.weekVersions
+    };
+  }
+
+  function weekSnapKey(schedule, week) {
+    return scheduleKind(schedule) === 'blending' ? 'blending|' + week : week;
+  }
+
+  function isNightManual(week, schedule) {
+    var monday = canonicalWeek(week);
+    return !!(monday && weekBag(schedule).night[monday]);
+  }
+
+  function setNightManual(week, on, schedule) {
     var monday = canonicalWeek(week);
     if (!monday) return false;
-    if (on) state.nightShift[monday] = true;
-    else delete state.nightShift[monday];
+    var bag = weekBag(schedule);
+    if (on) bag.night[monday] = true;
+    else delete bag.night[monday];
     return true;
   }
 
-  function isSaturdayRunning(week) {
+  function isSaturdayRunning(week, schedule) {
     var monday = canonicalWeek(week);
-    return !!(monday && state.saturday[monday]);
+    return !!(monday && weekBag(schedule).saturday[monday]);
   }
 
-  function setSaturdayRunning(week, on) {
+  function setSaturdayRunning(week, on, schedule) {
     var monday = canonicalWeek(week);
     if (!monday) return false;
-    if (on) state.saturday[monday] = true;
-    else delete state.saturday[monday];
+    var bag = weekBag(schedule);
+    if (on) bag.saturday[monday] = true;
+    else delete bag.saturday[monday];
     return true;
   }
 
@@ -461,7 +506,9 @@
 
   function addBlock(input) {
     input = input || {};
-    if (!dayIds[input.day] || !categoryIds[input.category]) return null;
+    var schedule = input.schedule === 'blending' ? 'blending' : 'production';
+    var allowed = schedule === 'blending' ? blendingIds : categoryIds;
+    if (!dayIds[input.day] || !allowed[input.category]) return null;
     if (!validOffsets(input.startOffset, input.endOffset)) return null;
     var block = {
       id: newId(),
@@ -473,10 +520,12 @@
       customer: cleanLine(input.customer, 500),
       product: cleanLine(input.product, 500),
       liquidCode: cleanLine(input.liquidCode, 80),
-      packingFormat: cleanLine(input.packingFormat, 200),
+      packingFormat: schedule === 'blending' ? '' : cleanLine(input.packingFormat, 200),
+      freeText: schedule === 'blending' ? cleanLine(input.freeText, 2000) : '',
       volume: storedVolume(input.volume),
       legacyText: '',
       backgroundColour: normaliseColour(input.backgroundColour),
+      schedule: schedule,
       version: 0
     };
     state.blocks.push(block);
@@ -492,12 +541,14 @@
     if (patch.customer !== undefined) block.customer = cleanLine(patch.customer, 500);
     if (patch.product !== undefined) block.product = cleanLine(patch.product, 500);
     if (patch.liquidCode !== undefined) block.liquidCode = cleanLine(patch.liquidCode, 80);
-    if (patch.packingFormat !== undefined) block.packingFormat = cleanLine(patch.packingFormat, 200);
+    if (patch.packingFormat !== undefined && block.schedule !== 'blending') block.packingFormat = cleanLine(patch.packingFormat, 200);
+    if (patch.freeText !== undefined && block.schedule === 'blending') block.freeText = cleanLine(patch.freeText, 2000);
     if (patch.volume !== undefined) block.volume = storedVolume(patch.volume);
     if (patch.legacyText !== undefined) block.legacyText = String(patch.legacyText).slice(0, 2000);
     if (patch.backgroundColour !== undefined) block.backgroundColour = normaliseColour(patch.backgroundColour);
     if (patch.day !== undefined && dayIds[patch.day]) block.day = patch.day;
-    if (patch.category !== undefined && categoryIds[patch.category]) block.category = patch.category;
+    var allowedCategory = block.schedule === 'blending' ? blendingIds : categoryIds;
+    if (patch.category !== undefined && allowedCategory[patch.category]) block.category = patch.category;
     if (patch.weekCommencing !== undefined) {
       var monday = canonicalWeek(patch.weekCommencing);
       if (monday) block.weekCommencing = monday;
@@ -559,9 +610,11 @@
         product: block.product,
         liquidCode: block.liquidCode,
         packingFormat: block.packingFormat,
+        freeText: block.freeText || '',
         volume: block.volume,
         legacyText: block.legacyText,
         backgroundColour: block.backgroundColour,
+        schedule: block.schedule === 'blending' ? 'blending' : 'production',
         version: block.version || 0
       };
     });
@@ -576,19 +629,25 @@
         version: note.version || 0
       };
     });
-    var seen = {};
-    Object.keys(state.nightShift).forEach(function (week) { seen[week] = true; });
-    Object.keys(state.saturday).forEach(function (week) { seen[week] = true; });
-    Object.keys(state.weekVersions).forEach(function (week) { seen[week] = true; });
     var weeks = {};
-    Object.keys(seen).forEach(function (week) {
-      weeks[week] = {
-        weekCommencing: week,
-        nightShift: !!state.nightShift[week],
-        saturday: !!state.saturday[week],
-        version: state.weekVersions[week] || 0
-      };
-    });
+    function collectWeeks(schedule) {
+      var bag = weekBag(schedule);
+      var seen = {};
+      Object.keys(bag.night).forEach(function (week) { seen[week] = true; });
+      Object.keys(bag.saturday).forEach(function (week) { seen[week] = true; });
+      Object.keys(bag.versions).forEach(function (week) { seen[week] = true; });
+      Object.keys(seen).forEach(function (week) {
+        weeks[weekSnapKey(schedule, week)] = {
+          weekCommencing: week,
+          schedule: scheduleKind(schedule),
+          nightShift: !!bag.night[week],
+          saturday: !!bag.saturday[week],
+          version: bag.versions[week] || 0
+        };
+      });
+    }
+    collectWeeks('production');
+    collectWeeks('blending');
     return { blocks: blocks, dayNotes: dayNotes, weeks: weeks };
   }
 
@@ -664,6 +723,9 @@
     state.nightShift = {};
     state.saturday = {};
     state.weekVersions = {};
+    state.blendingNight = {};
+    state.blendingSaturday = {};
+    state.blendingWeekVersions = {};
     state.loadedYear = payload.year;
     var seen = {};
     (payload.bookings || []).forEach(function (booking) {
@@ -683,9 +745,10 @@
     });
     (payload.weeks || []).forEach(function (week) {
       if (!week || !week.weekCommencing) return;
-      if (week.nightShift) state.nightShift[week.weekCommencing] = true;
-      if (week.saturday) state.saturday[week.weekCommencing] = true;
-      state.weekVersions[week.weekCommencing] = Number(week.version) || 0;
+      var bag = weekBag(week.schedule);
+      if (week.nightShift) bag.night[week.weekCommencing] = true;
+      if (week.saturday) bag.saturday[week.weekCommencing] = true;
+      bag.versions[week.weekCommencing] = Number(week.version) || 0;
     });
     if (payload.backup) backupStatus = payload.backup;
     lastPayload = payload;
@@ -718,10 +781,11 @@
       }
       if (op.type === 'week' && op.week) {
         var week = op.week.weekCommencing;
-        if (op.week.nightShift) state.nightShift[week] = true;
-        else delete state.nightShift[week];
-        if (op.week.saturday) state.saturday[week] = true;
-        else delete state.saturday[week];
+        var bag = weekBag(op.week.schedule);
+        if (op.week.nightShift) bag.night[week] = true;
+        else delete bag.night[week];
+        if (op.week.saturday) bag.saturday[week] = true;
+        else delete bag.saturday[week];
       }
     });
   }
@@ -739,11 +803,17 @@
     state.nightShift = {};
     state.saturday = {};
     state.weekVersions = {};
-    Object.keys(snap.weeks || {}).forEach(function (week) {
-      var item = snap.weeks[week];
-      if (item.nightShift) state.nightShift[week] = true;
-      if (item.saturday) state.saturday[week] = true;
-      if (item.version) state.weekVersions[week] = item.version;
+    state.blendingNight = {};
+    state.blendingSaturday = {};
+    state.blendingWeekVersions = {};
+    Object.keys(snap.weeks || {}).forEach(function (key) {
+      var item = snap.weeks[key] || {};
+      var schedule = item.schedule === 'blending' || String(key).indexOf('blending|') === 0 ? 'blending' : 'production';
+      var week = item.weekCommencing || (schedule === 'blending' ? String(key).slice(9) : key);
+      var bag = weekBag(schedule);
+      if (item.nightShift) bag.night[week] = true;
+      if (item.saturday) bag.saturday[week] = true;
+      if (item.version) bag.versions[week] = item.version;
     });
   }
 
@@ -868,7 +938,8 @@
       left.category === right.category && left.startTime === right.startTime &&
       left.endTime === right.endTime && left.customer === right.customer &&
       left.product === right.product && left.liquidCode === right.liquidCode &&
-      left.packingFormat === right.packingFormat && left.volume === right.volume &&
+      left.packingFormat === right.packingFormat && left.freeText === right.freeText &&
+      left.schedule === right.schedule && left.volume === right.volume &&
       left.legacyText === right.legacyText && left.backgroundColour === right.backgroundColour;
   }
 
@@ -925,25 +996,28 @@
     }
     if (result.type === 'week' && result.record) {
       var week = result.record;
-      var previousWeek = acked.weeks[week.weekCommencing];
-      acked.weeks[week.weekCommencing] = {
+      var weekKey = weekSnapKey(week.schedule, week.weekCommencing);
+      var bag = weekBag(week.schedule);
+      var previousWeek = acked.weeks[weekKey];
+      acked.weeks[weekKey] = {
         weekCommencing: week.weekCommencing,
+        schedule: scheduleKind(week.schedule),
         nightShift: !!week.nightShift,
         saturday: !!week.saturday,
         version: result.version
       };
-      var liveNight = !!state.nightShift[week.weekCommencing];
-      var liveSaturday = !!state.saturday[week.weekCommencing];
+      var liveNight = !!bag.night[week.weekCommencing];
+      var liveSaturday = !!bag.saturday[week.weekCommencing];
       var previousNight = previousWeek ? !!previousWeek.nightShift : false;
       var previousSaturday = previousWeek ? !!previousWeek.saturday : false;
       if (liveNight === previousNight && liveSaturday === previousSaturday) {
-        if (week.nightShift) state.nightShift[week.weekCommencing] = true;
-        else delete state.nightShift[week.weekCommencing];
-        if (week.saturday) state.saturday[week.weekCommencing] = true;
-        else delete state.saturday[week.weekCommencing];
-        state.weekVersions[week.weekCommencing] = result.version;
+        if (week.nightShift) bag.night[week.weekCommencing] = true;
+        else delete bag.night[week.weekCommencing];
+        if (week.saturday) bag.saturday[week.weekCommencing] = true;
+        else delete bag.saturday[week.weekCommencing];
+        bag.versions[week.weekCommencing] = result.version;
       } else if (liveNight === !!week.nightShift && liveSaturday === !!week.saturday) {
-        state.weekVersions[week.weekCommencing] = result.version;
+        bag.versions[week.weekCommencing] = result.version;
       }
     }
   }
@@ -1007,13 +1081,16 @@
     }
     if (item.type === 'week' && item.server) {
       var week = item.server.weekCommencing;
-      if (item.server.nightShift) state.nightShift[week] = true;
-      else delete state.nightShift[week];
-      if (item.server.saturday) state.saturday[week] = true;
-      else delete state.saturday[week];
-      state.weekVersions[week] = item.server.version || 0;
-      acked.weeks[week] = {
+      var bag = weekBag(item.server.schedule);
+      var weekKey = weekSnapKey(item.server.schedule, week);
+      if (item.server.nightShift) bag.night[week] = true;
+      else delete bag.night[week];
+      if (item.server.saturday) bag.saturday[week] = true;
+      else delete bag.saturday[week];
+      bag.versions[week] = item.server.version || 0;
+      acked.weeks[weekKey] = {
         weekCommencing: week,
+        schedule: scheduleKind(item.server.schedule),
         nightShift: !!item.server.nightShift,
         saturday: !!item.server.saturday,
         version: item.server.version || 0
@@ -1049,11 +1126,18 @@
       return;
     }
     if (item.type === 'week') {
-      var week = (item.server && item.server.weekCommencing) || item.weekCommencing;
-      if (!acked.weeks[week]) {
-        acked.weeks[week] = { weekCommencing: week, nightShift: false, saturday: false, version: 0 };
+      var record = item.server || { weekCommencing: item.weekCommencing, schedule: item.schedule };
+      var weekKey = weekSnapKey(record.schedule, record.weekCommencing);
+      if (!acked.weeks[weekKey]) {
+        acked.weeks[weekKey] = {
+          weekCommencing: record.weekCommencing,
+          schedule: scheduleKind(record.schedule),
+          nightShift: false,
+          saturday: false,
+          version: 0
+        };
       }
-      acked.weeks[week].version = item.server ? item.server.version : 0;
+      acked.weeks[weekKey].version = item.server ? item.server.version : 0;
     }
   }
 
@@ -1144,6 +1228,7 @@
     DEFAULT_COLOUR: DEFAULT_COLOUR,
     DAYS: DAYS,
     CATEGORIES: CATEGORIES,
+    BLENDING_CATEGORIES: BLENDING_CATEGORIES,
     STATUSES: STATUSES.map(function (status) {
       return { colour: status.colour, label: status.label };
     }),
