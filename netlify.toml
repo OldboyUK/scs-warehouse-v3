@@ -195,8 +195,18 @@
   to = "/maintenance/check-job-status.html"
   status = 301
 
+[functions."schedule-year"]
+  external_node_modules = ["@netlify/database"]
+
+[functions."schedule-mutate"]
+  external_node_modules = ["@netlify/database"]
+
 [functions."schedule-backup"]
   schedule = "*/30 * * * *"
+  external_node_modules = ["@netlify/database"]
+
+[functions."schedule-backup-status"]
+  external_node_modules = ["@netlify/database"]
 
 [functions."schedule-products"]
   timeout = 60

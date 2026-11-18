@@ -1,4 +1,3 @@
-const fetch = require('node-fetch');
 const session = require('./session');
 const schedule = require('../../schedule/schedule-data');
 
