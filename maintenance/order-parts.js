@@ -23,6 +23,9 @@ var state = {
 };
 
 var receiptIds = {};
+var openReceipts = {};
+var savedReceipts = {};
+var ordersJob = '';
 
 function createSubmissionId() {
   if (window.crypto && typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
@@ -163,19 +166,41 @@ function render() {
   wire();
 }
 
+function requestTitle(index) {
+  var known = !state.ordersLoading || state.orders.length > 0;
+  if (!known) return 'Part Request';
+  return 'Part Request ' + (state.orders.length + index + 1);
+}
+
+function statusTone(status) {
+  if (status === 'As Described') return 'parts-status-ok';
+  if (status === 'Purchased Wrong Item' || status === 'Received Wrong Item') return 'parts-status-warn';
+  if (status === 'Arrived Broken') return 'parts-status-bad';
+  return '';
+}
+
+function receiptRecorded(order) {
+  return !!(String(order.status || '').trim() || String(order.dateArrived || '').trim() || String(order.receivedBy || '').trim() || String(order.checkedBy || '').trim());
+}
+
+function isCollapsed(order) {
+  if (openReceipts[order.partId]) return false;
+  return !!(savedReceipts[order.partId] || receiptRecorded(order));
+}
+
 function renderItems(disabled) {
   var html = '';
   for (var i = 0; i < state.items.length; i++) {
     var item = state.items[i];
     var key = item.key;
     html += '<section class="parts-item">' +
-      '<div class="parts-item-head"><h3>Part ' + (i + 1) + '</h3>' +
+      '<div class="parts-item-head"><h3>' + requestTitle(i) + '</h3>' +
       (state.items.length > 1
         ? '<button type="button" class="btn btn-secondary parts-remove" data-remove="' + escapeHTML(key) + '"' + disabled + '>Remove</button>'
         : '') +
       '</div>' +
       '<label class="fault-question" for="purchaser-' + escapeHTML(key) + '">Purchaser <span class="fault-req">Required</span></label>' +
-      '<input id="purchaser-' + escapeHTML(key) + '" data-item="' + escapeHTML(key) + '" data-field="purchaser" type="text" maxlength="200" value="' + escapeHTML(item.purchaser) + '" class="' + invalidClass('purchaser-' + key) + '"' + describedBy('purchaser-' + key) + disabled + ' autocomplete="name" />' +
+      '<select id="purchaser-' + escapeHTML(key) + '" data-item="' + escapeHTML(key) + '" data-field="purchaser" class="' + invalidClass('purchaser-' + key) + '"' + describedBy('purchaser-' + key) + disabled + '>' + personOptions(item.purchaser) + '</select>' +
       fieldError('purchaser-' + key) +
       '<label class="fault-question" for="name-' + escapeHTML(key) + '">Name of Part <span class="fault-req">Required</span></label>' +
       '<input id="name-' + escapeHTML(key) + '" data-item="' + escapeHTML(key) + '" data-field="name" type="text" maxlength="200" value="' + escapeHTML(item.name) + '" class="' + invalidClass('name-' + key) + '"' + describedBy('name-' + key) + disabled + ' autocomplete="off" />' +
@@ -207,10 +232,27 @@ function renderOrders(disabled) {
 }
 
 function renderOrder(order, disabled) {
+  var tone = statusTone(order.status);
+  if (isCollapsed(order)) {
+    return '<article class="parts-card parts-collapsed ' + tone + '">' +
+      '<div class="parts-card-head">' +
+        '<div>' +
+          '<h3>' + escapeHTML(order.partId) + '</h3>' +
+          '<p class="parts-summary">' + escapeHTML(order.name || 'Unnamed part') +
+            (order.status ? ' · ' + escapeHTML(order.status) : '') +
+          '</p>' +
+        '</div>' +
+        '<button type="button" class="btn btn-secondary parts-expand" data-expand="' + escapeHTML(order.partId) + '"' + disabled + '>Edit</button>' +
+      '</div>' +
+      '</article>';
+  }
   var shownOrdered = order.dateOrderedUk || ukDate(order.dateOrdered);
   var shownArrived = order.dateArrivedUk || ukDate(order.dateArrived);
-  return '<article class="parts-card">' +
-    '<div class="parts-card-head"><h3>' + escapeHTML(order.partId) + '</h3></div>' +
+  var canHide = receiptRecorded(order) || savedReceipts[order.partId];
+  return '<article class="parts-card ' + tone + '">' +
+    '<div class="parts-card-head"><h3>' + escapeHTML(order.partId) + '</h3>' +
+      (canHide ? '<button type="button" class="btn btn-secondary parts-expand" data-collapse="' + escapeHTML(order.partId) + '"' + disabled + '>Hide</button>' : '') +
+    '</div>' +
     '<p class="parts-meta"><strong>' + escapeHTML(order.name || 'Unnamed part') + '</strong><br />' +
       'Purchaser: ' + escapeHTML(order.purchaser || '—') + '<br />' +
       'Supplier: ' + escapeHTML(order.supplier || '—') +
@@ -226,7 +268,7 @@ function renderOrder(order, disabled) {
     '<label class="fault-question" for="receipt-checked-' + escapeHTML(order.partId) + '">Checked by</label>' +
     '<select id="receipt-checked-' + escapeHTML(order.partId) + '" data-receipt="' + escapeHTML(order.partId) + '" data-field="checkedBy"' + disabled + '>' + personOptions(order.checkedBy) + '</select>' +
     '<label class="fault-question" for="receipt-status-' + escapeHTML(order.partId) + '">Receipt status</label>' +
-    '<select id="receipt-status-' + escapeHTML(order.partId) + '" data-receipt="' + escapeHTML(order.partId) + '" data-field="status"' + disabled + '>' + statusOptions(order.status) + '</select>' +
+    '<select id="receipt-status-' + escapeHTML(order.partId) + '" data-receipt="' + escapeHTML(order.partId) + '" data-field="status" class="' + tone + '"' + disabled + '>' + statusOptions(order.status) + '</select>' +
     fieldError('receipt-' + order.partId) +
     '<div class="actions"><button type="button" class="btn btn-primary" data-save-receipt="' + escapeHTML(order.partId) + '"' + disabled + '>Save receipt</button></div>' +
     '</article>';
@@ -338,6 +380,22 @@ function wire() {
       saveReceipt(event.currentTarget.getAttribute('data-save-receipt'));
     });
   }
+  var expanders = form.querySelectorAll('[data-expand]');
+  for (var x = 0; x < expanders.length; x++) {
+    expanders[x].addEventListener('click', function (event) {
+      if (state.saving) return;
+      openReceipts[event.currentTarget.getAttribute('data-expand')] = true;
+      render();
+    });
+  }
+  var hiders = form.querySelectorAll('[data-collapse]');
+  for (var h = 0; h < hiders.length; h++) {
+    hiders[h].addEventListener('click', function (event) {
+      if (state.saving) return;
+      delete openReceipts[event.currentTarget.getAttribute('data-collapse')];
+      render();
+    });
+  }
 }
 
 function onItemEdit(event) {
@@ -355,6 +413,12 @@ function onReceiptEdit(event) {
   if (!order) return;
   order[event.target.getAttribute('data-field')] = event.target.value;
   state.error = '';
+  if (event.target.getAttribute('data-field') === 'status') {
+    var tone = statusTone(order.status);
+    event.target.className = tone;
+    var card = event.target.closest ? event.target.closest('.parts-card') : null;
+    if (card) card.className = 'parts-card ' + tone;
+  }
 }
 
 function validateItems() {
@@ -367,7 +431,7 @@ function validateItems() {
   }
   for (var i = 0; i < state.items.length; i++) {
     var item = state.items[i];
-    if (!String(item.purchaser || '').trim()) errors['purchaser-' + item.key] = 'Enter the purchaser.';
+    if (!item.purchaser || state.people.indexOf(item.purchaser) === -1) errors['purchaser-' + item.key] = 'Select a purchaser.';
     if (!String(item.name || '').trim()) errors['name-' + item.key] = 'Enter the name of the part.';
     if (!String(item.supplier || '').trim()) errors['supplier-' + item.key] = 'Enter the supplier.';
     if (item.dateOrdered && !ukDate(item.dateOrdered)) errors['ordered-' + item.key] = 'Enter a valid date ordered, or leave it blank.';
@@ -474,6 +538,8 @@ function saveReceipt(partId) {
       throw new Error((body && body.message) || 'The receipt was not saved. Your answers are still here.');
     }
     delete receiptIds[partId];
+    savedReceipts[partId] = true;
+    delete openReceipts[partId];
     state.saving = false;
     state.savingKind = '';
     state.notice = 'Updated ' + partId + '.';
@@ -503,6 +569,12 @@ function loadOrders() {
     state.ordersLoading = false;
     render();
     return;
+  }
+  if (ordersJob !== request.maintenanceId) {
+    ordersJob = request.maintenanceId;
+    openReceipts = {};
+    savedReceipts = {};
+    state.orders = [];
   }
   state.ordersLoading = true;
   state.ordersError = '';

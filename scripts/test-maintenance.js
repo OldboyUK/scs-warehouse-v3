@@ -858,7 +858,7 @@ function testPages() {
   const orderPage = fs.readFileSync(path.join(root, 'maintenance/order-parts.html'), 'utf8');
   const order = fs.readFileSync(path.join(root, 'maintenance/order-parts.js'), 'utf8');
   assert(orderPage.indexOf('order-parts.js') !== -1, 'order page loads its script');
-  ['Select a maintenance job', 'Name of Part', '+ Add Another Item', 'Current Orders Under This Job', 'Date Arrived', 'Received by', 'Checked by', 'As Described', 'Purchased Wrong Item', 'Received Wrong Item', 'Arrived Broken'].forEach(function (label) {
+  ['Select a maintenance job', 'Part Request', 'Name of Part', '+ Add Another Item', 'Current Orders Under This Job', 'Date Arrived', 'Received by', 'Checked by', 'As Described', 'Purchased Wrong Item', 'Received Wrong Item', 'Arrived Broken', 'parts-status-ok', 'parts-status-warn', 'parts-status-bad'].forEach(function (label) {
     assert(order.indexOf(label) !== -1, 'order form contains ' + label);
   });
   assert(order.indexOf('/.netlify/functions/orderParts') !== -1, 'order page posts to the Netlify function');
@@ -1157,7 +1157,8 @@ function testParts() {
   assertEqual(core.nextPartIds([], 'MA0007', 1).ids[0], 'MA0007-P01', 'the first part is P01');
   assertEqual(core.nextPartIds(['MA0007-P01', 'MA0007-P04'], 'MA0007', 1).ids[0], 'MA0007-P05', 'numbering continues after the highest part');
   assertEqual(core.nextPartIds(['MA0007-P01'], 'MA0007', 2).ids.join('|'), 'MA0007-P02|MA0007-P03', 'several new parts get consecutive ids');
-  assert(!core.validatePartsAdd({ submissionId: 'parts-0001', label: 'MA0007 | Job', maintenanceId: 'MA0007', items: [{ purchaser: 'Jody R', name: '', supplier: 'Bearing Co' }] }).ok, 'a part name is required');
+  assert(!core.validatePartsAdd({ submissionId: 'parts-0001', label: 'MA0007 | Job', maintenanceId: 'MA0007', items: [{ purchaser: 'Jody R', name: '', supplier: 'Bearing Co' }] }, ['Jody R']).ok, 'a part name is required');
+  assert(!core.validatePartsAdd({ submissionId: 'parts-0001', label: 'MA0007 | Job', maintenanceId: 'MA0007', items: [{ purchaser: 'Nobody', name: 'Belt', supplier: 'Bearing Co' }] }, ['Jody R']).ok, 'a purchaser must be chosen from Drop Downs');
   assert(!core.validatePartsReceipt({ submissionId: 'receipt-0001', maintenanceId: 'MA0007', partId: 'MA0007-P01', status: 'Broken' }).ok === false || core.validatePartsReceipt({ submissionId: 'receipt-0001', maintenanceId: 'MA0007', partId: 'MA0008-P01', status: 'As Described' }).ok === false, 'a part from another job is rejected');
   assert(!core.validatePartsReceipt({ submissionId: 'receipt-0001', maintenanceId: 'MA0007', partId: 'MA0008-P01', dateOrdered: '', dateArrived: '', receivedBy: '', checkedBy: '', status: '' }).ok, 'a receipt for another job is rejected');
 
@@ -1285,6 +1286,8 @@ function testParts() {
   assertEqual(rejected.result, 'error', 'a person who is not on Drop Downs is rejected');
   assertEqual(partCell(2, 8), 'Jody R', 'a rejected receipt does not replace received by');
 
+  const badPurchaser = postParts({ submissionId: 'parts-purchaser', items: [{ purchaser: 'Nobody', name: 'Belt', supplier: 'Bearing Co', dateOrdered: '' }] });
+  assertEqual(badPurchaser.result, 'error', 'a purchaser who is not on Drop Downs is rejected');
   const missingName = postParts({ submissionId: 'parts-blank', items: [{ purchaser: 'Jody R', name: ' ', supplier: 'Bearing Co', dateOrdered: '' }] });
   assertEqual(missingName.result, 'error', 'a blank part name is not saved');
   const missingJob = postParts({ submissionId: 'parts-missing', label: 'MA0099 | Missing', maintenanceId: 'MA0099' });

@@ -1653,7 +1653,8 @@ function handlePartsAdd_(p) {
     });
   }
   try {
-    var validated = validatePartsAdd_(p);
+    var people = dropdownOwners_();
+    var validated = validatePartsAdd_(p, people);
     if (!validated.ok) return json({ result: 'error', retryable: true, message: validated.message });
     return saveParts_(validated.value);
   } catch (err) {
@@ -1785,7 +1786,7 @@ function partsItems_(data) {
   return { ok: true, value: items };
 }
 
-function validatePartsAdd_(data) {
+function validatePartsAdd_(data, people) {
   data = data || {};
   var submissionId = String(data.submissionId || '').trim();
   if (!/^[A-Za-z0-9-]{8,80}$/.test(submissionId)) {
@@ -1799,6 +1800,12 @@ function validatePartsAdd_(data) {
   }
   var items = partsItems_(data);
   if (!items.ok) return items;
+  people = people || [];
+  for (var n = 0; n < items.value.length; n++) {
+    if (people.indexOf(items.value[n].purchaser) === -1) {
+      return { ok: false, message: 'Select a purchaser from the list. Nothing was saved.' };
+    }
+  }
   return {
     ok: true,
     value: {

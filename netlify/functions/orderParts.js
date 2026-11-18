@@ -68,16 +68,6 @@ exports.handler = async function (event) {
       return jsonResponse(400, { result: 'error', retryable: false, message: 'Unknown action.' });
     }
 
-    if (action === 'parts_add') {
-      const validated = validatePartsAdd(payload);
-      if (!validated.ok) return jsonResponse(400, { result: 'error', retryable: true, message: validated.message });
-      payload = validated.value;
-    }
-    if (action === 'parts_receipt') {
-      const validated = validatePartsReceipt(payload);
-      if (!validated.ok) return jsonResponse(400, { result: 'error', retryable: true, message: validated.message });
-      payload = validated.value;
-    }
     if (action === 'parts_orders') {
       const maintenanceId = String(payload.maintenanceId || '').trim().toUpperCase();
       if (!isMaintenanceId(maintenanceId)) {
@@ -87,18 +77,29 @@ exports.handler = async function (event) {
     }
 
     let people = [];
-    if (action === 'parts_jobs' || action === 'parts_receipt') {
+    if (action === 'parts_jobs' || action === 'parts_receipt' || action === 'parts_add') {
       try {
         people = await loadPeople();
       } catch (err) {
         return jsonResponse(502, {
           result: 'error',
           retryable: true,
-          message: action === 'parts_receipt'
-            ? 'The people list could not be loaded, so the receipt was not saved. Your answers are still here.'
-            : 'The people list could not be loaded.'
+          message: action === 'parts_jobs'
+            ? 'The people list could not be loaded.'
+            : 'The people list could not be loaded, so nothing was saved. Your answers are still here.'
         });
       }
+    }
+
+    if (action === 'parts_add') {
+      const validated = validatePartsAdd(payload, people);
+      if (!validated.ok) return jsonResponse(400, { result: 'error', retryable: true, message: validated.message });
+      payload = validated.value;
+    }
+    if (action === 'parts_receipt') {
+      const validated = validatePartsReceipt(payload);
+      if (!validated.ok) return jsonResponse(400, { result: 'error', retryable: true, message: validated.message });
+      payload = validated.value;
     }
 
     const scriptURL = scriptConfig.getMaintenanceScriptUrl();

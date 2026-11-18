@@ -490,7 +490,7 @@ function partsItems(data) {
   return { ok: true, value: items };
 }
 
-function validatePartsAdd(data) {
+function validatePartsAdd(data, people) {
   data = data || {};
   var submissionId = String(data.submissionId || '').trim();
   if (!submissionIdOk(submissionId)) {
@@ -504,6 +504,13 @@ function validatePartsAdd(data) {
   }
   var items = partsItems(data);
   if (!items.ok) return items;
+  if (people) {
+    for (var i = 0; i < items.value.length; i++) {
+      if (people.indexOf(items.value[i].purchaser) === -1) {
+        return { ok: false, message: 'Select a purchaser from the list. Nothing was saved.' };
+      }
+    }
+  }
   return {
     ok: true,
     value: {

@@ -227,8 +227,39 @@ body.fault-page #assessment {
   line-height: 1.45;
 }
 
-.parts-remove {
-  min-height: 40px;
+.parts-remove,
+.parts-expand {
+  min-height: 36px;
+  padding: 6px 12px;
+  width: auto;
+}
+
+.parts-card.parts-collapsed {
+  padding: 10px 14px;
+}
+
+.parts-summary {
+  margin: 4px 0 0;
+  font-size: 0.92rem;
+  line-height: 1.35;
+}
+
+.parts-card.parts-status-ok,
+select.parts-status-ok {
+  border-color: var(--success);
+  background: var(--success-soft);
+}
+
+.parts-card.parts-status-warn,
+select.parts-status-warn {
+  border-color: #F97316;
+  background: rgba(249, 115, 22, 0.16);
+}
+
+.parts-card.parts-status-bad,
+select.parts-status-bad {
+  border-color: var(--danger);
+  background: rgba(239, 68, 68, 0.14);
 }
 
 @media (max-width: 640px) {
