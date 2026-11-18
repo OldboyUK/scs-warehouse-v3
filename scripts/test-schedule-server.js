@@ -117,9 +117,10 @@ assert.strictEqual(core.sheetShouldWrite(2, 4), true);
 assert.strictEqual(core.sheetShouldWrite(4, 4), true);
 assert.strictEqual(core.sheetShouldWrite(5, 4), false);
 
-const yearFn = require('../netlify/functions/schedule-year');
-const mutateFn = require('../netlify/functions/schedule-mutate');
-const statusFn = require('../netlify/functions/schedule-backup-status');
+const handlers = require('../netlify/lib/scheduleHandlers');
+const yearFn = { handler: handlers.year };
+const mutateFn = { handler: handlers.mutate };
+const statusFn = { handler: handlers.backupStatus };
 
 Promise.all([
   yearFn.handler({ httpMethod: 'GET', headers: {}, queryStringParameters: { year: '2026' } }),

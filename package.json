@@ -17,6 +17,7 @@
   },
   "homepage": "https://github.com/OldboyUK/scs-warehouse-v3#readme",
   "dependencies": {
+    "@netlify/aws-lambda-compat": "^2.0.4",
     "@netlify/database": "^2.0.3",
     "node-fetch": "^2.7.0"
   },
