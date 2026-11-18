@@ -192,6 +192,45 @@ body.fault-page #assessment {
   white-space: pre-line;
 }
 
+.parts-divider {
+  margin: 28px 0 8px;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.parts-item,
+.parts-card {
+  margin: 14px 0 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+}
+
+.parts-item-head,
+.parts-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.parts-card h3,
+.parts-item h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.parts-meta {
+  margin: 8px 0 0;
+  color: var(--text);
+  line-height: 1.45;
+}
+
+.parts-remove {
+  min-height: 40px;
+}
+
 @media (max-width: 640px) {
   .fault-choices {
     flex-direction: column;

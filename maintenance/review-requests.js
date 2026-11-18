@@ -219,9 +219,7 @@ function renderForm() {
 
 function renderSuccess() {
   var note = '';
-  if (state.partsChoice === 'now') {
-    note = '<p class="review-note" role="status">Ordering parts is not available yet. Nothing else was saved.</p>';
-  } else if (state.partsChoice === 'later') {
+  if (state.partsChoice === 'later') {
     note = '<p class="review-note" role="status">You can order parts later. Nothing else was saved.</p>';
   }
   app.innerHTML = UI.successScreen(
@@ -237,8 +235,9 @@ function renderSuccess() {
     '<button type="button" class="btn btn-secondary" id="anotherBtn">Review another request</button>'
   );
   document.getElementById('partsNow').addEventListener('click', function () {
-    state.partsChoice = 'now';
-    renderSuccess();
+    var id = String(state.maintenanceId || '');
+    if (!/^MA\d{4}$/.test(id)) return;
+    window.location.href = 'order-parts.html?job=' + encodeURIComponent(id);
   });
   document.getElementById('partsLater').addEventListener('click', function () {
     state.partsChoice = 'later';

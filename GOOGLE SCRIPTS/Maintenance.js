@@ -40,6 +40,11 @@
  * R permit to work, Yes or No
  * S food safety / health and safety assessment
  * Column T is never written. Columns A:M are not changed by a review.
+ * Parts for an existing job are written on worksheet "Parts Requested":
+ * A part ID, B part name, D purchaser, E supplier, F date ordered.
+ * Column C is a formula and is never overwritten. A formula that displays
+ * nothing does not make the row occupied. Receipt updates write only
+ * F date ordered, G date arrived, H received by, I checked by, and J status.
  * That folder contains one subfolder named "[Maintenance ID] | Requests".
  * Photographs are uploaded there. A completed-job folder is not created.
  * No column or header is added. A formula in column A that displays nothing
@@ -68,11 +73,16 @@ var MAINTENANCE_SCOPES = [
 var API_TOKEN = 'J4PAN88';
 var SSID_MAINTENANCE = '1k0y2ieC4Sg5gYNOFLgcCxLNMUjImCdZNOJTBPg-V-KE';
 var SHEET_SUBMISSIONS = 'Submission Log';
+var SHEET_PARTS = 'Parts Requested';
 var REVIEW_START_ROW = 3;
 var REVIEW_FIRST_COL = 14;
 var REVIEW_LAST_COL = 19;
 var REVIEW_INDEX_KEY = 'REVIEW_SUBMISSION_INDEX';
 var DEPARTMENTS = ['Quality', 'Engineering', 'Logistics', 'Management'];
+var RECEIPT_STATUSES = ['As Described', 'Purchased Wrong Item', 'Received Wrong Item', 'Arrived Broken'];
+var PARTS_INDEX_KEY = 'PARTS_SUBMISSION_INDEX';
+var RECEIPT_INDEX_KEY = 'RECEIPT_SUBMISSION_INDEX';
+var MAX_PARTS = 20;
 var DROPDOWNS_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT9wb05WXLcP4IN6Dce9zaRWtPKpGgHKWsqo4ICB97Mpr3RTx8MMFidwWgSf6ulh_sJNgE_2XxX3N2D/pub?gid=1056635412&single=true&output=csv';
 var OTHER = 'Other';
 var PRIORITY_OPTIONS = [
@@ -106,6 +116,10 @@ function doPost(e) {
     if (action === 'fault_photo') return handlePhoto_(p);
     if (action === 'review_lists') return handleReviewLists_();
     if (action === 'review_save') return handleReviewSave_(p);
+    if (action === 'parts_jobs') return handlePartsJobs_();
+    if (action === 'parts_orders') return handlePartsOrders_(p);
+    if (action === 'parts_add') return handlePartsAdd_(p);
+    if (action === 'parts_receipt') return handlePartsReceipt_(p);
     return json({ result: 'error', retryable: false, message: 'Unknown action.' });
   } catch (err) {
     return json({ result: 'error', retryable: true, message: publicMessage_(err) });
@@ -1581,6 +1595,699 @@ function saveReview_(value) {
     status: 'success',
     fingerprint: fingerprint,
     maintenanceId: value.maintenanceId,
+    result: result
+  });
+  return json(result);
+}
+
+function handlePartsJobs_() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(15000)) {
+    return json({ result: 'error', retryable: true, message: 'The maintenance list is busy. Wait a moment and try again.' });
+  }
+  try {
+    return json({ result: 'ok', requests: reviewRequests_(), people: dropdownOwners_() });
+  } catch (err) {
+    return json({
+      result: 'error',
+      retryable: true,
+      message: 'The maintenance jobs could not be loaded. ' + publicMessage_(err)
+    });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function handlePartsOrders_(p) {
+  var maintenanceId = String(p.maintenanceId || '').trim().toUpperCase();
+  if (!MAINTENANCE_ID_RE.test(maintenanceId)) {
+    return json({ result: 'error', retryable: true, message: 'Select a maintenance job.' });
+  }
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(15000)) {
+    return json({ result: 'error', retryable: true, message: 'The parts list is busy. Wait a moment and try again.' });
+  }
+  try {
+    if (!jobExists_(maintenanceId)) {
+      return json({ result: 'error', retryable: true, message: 'That maintenance job is not on the Submission Log.' });
+    }
+    return json({ result: 'ok', maintenanceId: maintenanceId, orders: partsForJob_(maintenanceId) });
+  } catch (err) {
+    return json({
+      result: 'error',
+      retryable: true,
+      message: 'The current orders could not be loaded. ' + publicMessage_(err)
+    });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function handlePartsAdd_(p) {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    return json({
+      result: 'error',
+      retryable: true,
+      message: 'Another parts order is being saved. Wait a moment and try again. Your answers are still here.'
+    });
+  }
+  try {
+    var validated = validatePartsAdd_(p);
+    if (!validated.ok) return json({ result: 'error', retryable: true, message: validated.message });
+    return saveParts_(validated.value);
+  } catch (err) {
+    return json({
+      result: 'error',
+      retryable: true,
+      message: 'The parts were not saved. ' + publicMessage_(err) + ' Your answers are still here.'
+    });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function handlePartsReceipt_(p) {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    return json({
+      result: 'error',
+      retryable: true,
+      message: 'Another parts update is being saved. Wait a moment and try again. Your answers are still here.'
+    });
+  }
+  try {
+    var validated = validatePartsReceipt_(p);
+    if (!validated.ok) return json({ result: 'error', retryable: true, message: validated.message });
+    var people = dropdownOwners_();
+    return saveReceipt_(validated.value, people);
+  } catch (err) {
+    return json({
+      result: 'error',
+      retryable: true,
+      message: 'The receipt was not saved. ' + publicMessage_(err) + ' Your answers are still here.'
+    });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function requirePartsSheet_(ss) {
+  var sheet = ss.getSheetByName(SHEET_PARTS);
+  if (!sheet || sheet.getName() !== SHEET_PARTS) {
+    throw new Error('Worksheet not found: ' + SHEET_PARTS + '. Nothing was written.');
+  }
+  return sheet;
+}
+
+function jobExists_(maintenanceId) {
+  var sheet = requireSheet_(SpreadsheetApp.openById(SSID_MAINTENANCE));
+  var maxRows = sheet.getMaxRows();
+  if (maxRows < REVIEW_START_ROW) return false;
+  var height = maxRows - REVIEW_START_ROW + 1;
+  var ids = sheet.getRange(REVIEW_START_ROW, 1, height, 1).getDisplayValues();
+  var wanted = String(maintenanceId || '').trim().toUpperCase();
+  for (var i = 0; i < ids.length; i++) {
+    if (String(ids[i][0] == null ? '' : ids[i][0]).trim().toUpperCase() === wanted) return true;
+  }
+  return false;
+}
+
+function cellBlank_(value) {
+  if (value == null) return true;
+  if (Object.prototype.toString.call(value) === '[object Date]') return isNaN(value.getTime());
+  return String(value).trim() === '';
+}
+
+function partsValues_(sheet) {
+  var maxRows = sheet.getMaxRows();
+  if (maxRows < 2) return [];
+  return sheet.getRange(2, 1, maxRows - 1, 10).getValues();
+}
+
+function nextPartIds_(existingIds, maintenanceId, count) {
+  var id = String(maintenanceId || '').trim().toUpperCase();
+  var re = new RegExp('^' + id + '-P(\\d+)$', 'i');
+  var max = 0;
+  var seen = {};
+  for (var i = 0; i < existingIds.length; i++) {
+    var match = re.exec(String(existingIds[i] == null ? '' : existingIds[i]).trim());
+    if (!match) continue;
+    var n = parseInt(match[1], 10);
+    if (!n || n < 1) continue;
+    seen[n] = true;
+    if (n > max) max = n;
+  }
+  var ids = [];
+  var next = max;
+  for (var c = 0; c < count; c++) {
+    next++;
+    var guard = 0;
+    while (seen[next]) {
+      next++;
+      guard++;
+      if (guard > 1000) break;
+    }
+    if (next > 999) return { ok: false, message: 'The part number sequence is full for ' + id + '. Nothing was saved.' };
+    seen[next] = true;
+    ids.push(id + '-P' + (next < 10 ? '0' : '') + next);
+  }
+  return { ok: true, ids: ids };
+}
+
+function partsItems_(data) {
+  var raw = data.items;
+  if (typeof raw === 'string') {
+    if (!String(raw).trim()) raw = [];
+    else {
+      try { raw = JSON.parse(raw); } catch (err) { raw = null; }
+    }
+  }
+  if (!raw || Object.prototype.toString.call(raw) !== '[object Array]' || !raw.length) {
+    return { ok: false, message: 'Add at least one part. Nothing was saved.' };
+  }
+  if (raw.length > MAX_PARTS) return { ok: false, message: 'You can add up to 20 parts at a time. Nothing was saved.' };
+  var items = [];
+  for (var i = 0; i < raw.length; i++) {
+    var item = raw[i] || {};
+    var purchaser = namedText_(item.purchaser, 'Enter the purchaser for each part. Nothing was saved.', 'The purchaser');
+    if (!purchaser.ok) return purchaser;
+    var name = namedText_(item.name, 'Enter the name of each part. Nothing was saved.', 'The part name');
+    if (!name.ok) return name;
+    var supplier = namedText_(item.supplier, 'Enter the supplier for each part. Nothing was saved.', 'The supplier');
+    if (!supplier.ok) return supplier;
+    var ordered = String(item.dateOrdered || '').trim();
+    if (ordered && !reviewDueDate_(ordered)) {
+      return { ok: false, message: 'Enter a valid date ordered, or leave it blank. Nothing was saved.' };
+    }
+    items.push({ purchaser: purchaser.value, name: name.value, supplier: supplier.value, dateOrdered: ordered });
+  }
+  return { ok: true, value: items };
+}
+
+function validatePartsAdd_(data) {
+  data = data || {};
+  var submissionId = String(data.submissionId || '').trim();
+  if (!/^[A-Za-z0-9-]{8,80}$/.test(submissionId)) {
+    return { ok: false, message: 'The parts order could not be identified. Reload the page and try again. Nothing was saved.' };
+  }
+  var label = String(data.label == null ? '' : data.label).trim();
+  var maintenanceId = String(data.maintenanceId || '').trim().toUpperCase();
+  var prefix = labelId_(label);
+  if (!prefix || prefix !== maintenanceId) {
+    return { ok: false, message: 'Select a maintenance job. Nothing was saved.' };
+  }
+  var items = partsItems_(data);
+  if (!items.ok) return items;
+  return {
+    ok: true,
+    value: {
+      submissionId: submissionId,
+      label: label,
+      maintenanceId: maintenanceId,
+      items: items.value
+    }
+  };
+}
+
+function validatePartsReceipt_(data) {
+  data = data || {};
+  var submissionId = String(data.submissionId || '').trim();
+  if (!/^[A-Za-z0-9-]{8,80}$/.test(submissionId)) {
+    return { ok: false, message: 'The receipt could not be identified. Reload the page and try again. Nothing was saved.' };
+  }
+  var maintenanceId = String(data.maintenanceId || '').trim().toUpperCase();
+  if (!MAINTENANCE_ID_RE.test(maintenanceId)) {
+    return { ok: false, message: 'Select a maintenance job. Nothing was saved.' };
+  }
+  var partId = String(data.partId || '').trim().toUpperCase();
+  if (!/^MA\d{4}-P\d{2,}$/.test(partId) || partId.indexOf(maintenanceId + '-P') !== 0) {
+    return { ok: false, message: 'That part could not be identified. Nothing was saved.' };
+  }
+  var ordered = String(data.dateOrdered || '').trim();
+  if (ordered && !reviewDueDate_(ordered)) {
+    return { ok: false, message: 'Enter a valid date ordered, or leave it blank. Nothing was saved.' };
+  }
+  var arrived = String(data.dateArrived || '').trim();
+  if (arrived && !reviewDueDate_(arrived)) {
+    return { ok: false, message: 'Enter a valid date arrived, or leave it blank. Nothing was saved.' };
+  }
+  var receivedBy = String(data.receivedBy || '').trim();
+  if (receivedBy.length > MAX_NAME) return { ok: false, message: 'Received by is too long.' };
+  var checkedBy = String(data.checkedBy || '').trim();
+  if (checkedBy.length > MAX_NAME) return { ok: false, message: 'Checked by is too long.' };
+  var status = String(data.status || '').trim();
+  if (status && RECEIPT_STATUSES.indexOf(status) === -1) {
+    return { ok: false, message: 'Select a receipt status. Nothing was saved.' };
+  }
+  return {
+    ok: true,
+    value: {
+      submissionId: submissionId,
+      maintenanceId: maintenanceId,
+      partId: partId,
+      dateOrdered: ordered,
+      dateArrived: arrived,
+      receivedBy: receivedBy,
+      checkedBy: checkedBy,
+      status: status
+    }
+  };
+}
+
+function storedDate_(value) {
+  if (cellBlank_(value)) return { iso: '', uk: '' };
+  if (Object.prototype.toString.call(value) === '[object Date]') {
+    return {
+      iso: Utilities.formatDate(value, 'Europe/London', 'yyyy-MM-dd'),
+      uk: Utilities.formatDate(value, 'Europe/London', 'dd/MM/yyyy')
+    };
+  }
+  var text = String(value).trim();
+  var uk = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(text);
+  if (uk && reviewDueDate_(uk[3] + '-' + uk[2] + '-' + uk[1])) {
+    return { iso: uk[3] + '-' + uk[2] + '-' + uk[1], uk: text };
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text) && reviewDueDate_(text)) {
+    return { iso: text, uk: text.slice(8) + '/' + text.slice(5, 7) + '/' + text.slice(0, 4) };
+  }
+  return { iso: '', uk: text };
+}
+
+function partIdentity_(maintenanceId, partId, combined) {
+  var prefix = String(maintenanceId || '').toUpperCase() + '-P';
+  var id = String(partId == null ? '' : partId).trim().toUpperCase();
+  if (id.indexOf(prefix) === 0 && /^\d{2,}$/.test(id.slice(prefix.length))) return id;
+  if (!cellBlank_(partId)) return '';
+  var text = String(combined == null ? '' : combined).trim().toUpperCase();
+  var match = new RegExp('^(' + prefix + '\\d{2,})\\s\\|').exec(text);
+  return match ? match[1] : '';
+}
+
+function partsForJob_(maintenanceId) {
+  var sheet = requirePartsSheet_(SpreadsheetApp.openById(SSID_MAINTENANCE));
+  var values = partsValues_(sheet);
+  var orders = [];
+  for (var i = 0; i < values.length; i++) {
+    var row = values[i];
+    var partId = partIdentity_(maintenanceId, row[0], row[2]);
+    if (!partId) continue;
+    var ordered = storedDate_(row[5]);
+    var arrived = storedDate_(row[6]);
+    orders.push({
+      row: i + 2,
+      partId: partId,
+      name: String(row[1] == null ? '' : row[1]).trim(),
+      purchaser: String(row[3] == null ? '' : row[3]).trim(),
+      supplier: String(row[4] == null ? '' : row[4]).trim(),
+      dateOrdered: ordered.iso,
+      dateOrderedUk: ordered.uk,
+      dateArrived: arrived.iso,
+      dateArrivedUk: arrived.uk,
+      receivedBy: String(row[7] == null ? '' : row[7]).trim(),
+      checkedBy: String(row[8] == null ? '' : row[8]).trim(),
+      status: String(row[9] == null ? '' : row[9]).trim()
+    });
+  }
+  orders.sort(function (a, b) {
+    return a.partId < b.partId ? -1 : a.partId > b.partId ? 1 : 0;
+  });
+  return orders;
+}
+
+function findPartRow_(sheet, partId) {
+  var values = partsValues_(sheet);
+  var wanted = String(partId || '').trim().toUpperCase();
+  var rows = [];
+  for (var i = 0; i < values.length; i++) {
+    if (String(values[i][0] == null ? '' : values[i][0]).trim().toUpperCase() === wanted) rows.push(i + 2);
+  }
+  if (rows.length !== 1) return 0;
+  return rows[0];
+}
+
+function emptyPartRows_(sheet, count) {
+  var values = partsValues_(sheet);
+  var rows = [];
+  for (var i = 0; i < values.length && rows.length < count; i++) {
+    if (cellBlank_(values[i][0]) && cellBlank_(values[i][1]) && cellBlank_(values[i][2])) rows.push(i + 2);
+  }
+  while (rows.length < count) {
+    sheet.insertRowsAfter(sheet.getMaxRows(), 1);
+    rows.push(sheet.getMaxRows());
+  }
+  return rows;
+}
+
+function columnCFormulaFor_(sheet, targetRow) {
+  var current = String(sheet.getRange(targetRow, 3).getFormula() || '').trim();
+  if (current) return '';
+  var maxRows = sheet.getMaxRows();
+  var limit = Math.min(maxRows, targetRow + 40);
+  for (var row = 2; row <= limit; row++) {
+    if (row === targetRow) continue;
+    var formula = String(sheet.getRange(row, 3).getFormula() || '').trim();
+    if (!formula) continue;
+    if (formula.toUpperCase().replace(/\s/g, '').indexOf('ARRAYFORMULA(') !== -1) return '';
+    return formula.replace(new RegExp('([A-Za-z]+)' + row + '\\b', 'g'), function (match, col) {
+      return col + String(targetRow);
+    });
+  }
+  return '';
+}
+
+function writePartsText_(sheet, row, col, value, written) {
+  if (row < 2) throw new Error('Refusing to write on the header row.');
+  if (col === 3 || [1, 2, 4, 5, 8, 9, 10].indexOf(col) === -1) {
+    throw new Error('Refusing to write outside the parts record.');
+  }
+  var range = sheet.getRange(row, col);
+  var formula = String(range.getFormula() || '');
+  if (formula.toUpperCase().replace(/\s/g, '').indexOf('ARRAYFORMULA(') !== -1) {
+    throw new Error('Column ' + columnLetter_(col) + ' contains an array formula. Nothing was overwritten.');
+  }
+  if (formula.trim() !== '' && col >= 8) {
+    throw new Error('Column ' + columnLetter_(col) + ' contains a formula. It was not overwritten.');
+  }
+  written.push({
+    sheet: sheet,
+    row: row,
+    col: col,
+    formula: formula,
+    value: range.getValue(),
+    format: range.getNumberFormat()
+  });
+  if (value === '') {
+    range.clearContent();
+    return;
+  }
+  range.setNumberFormat('@');
+  range.setValue(String(value));
+}
+
+function writePartsDate_(sheet, row, col, date, written) {
+  if (row < 2) throw new Error('Refusing to write on the header row.');
+  if (col !== 6 && col !== 7) throw new Error('Refusing to write outside the parts dates.');
+  var range = sheet.getRange(row, col);
+  var formula = String(range.getFormula() || '');
+  if (formula.trim() !== '') throw new Error('Column ' + columnLetter_(col) + ' contains a formula. It was not overwritten.');
+  written.push({
+    sheet: sheet,
+    row: row,
+    col: col,
+    formula: formula,
+    value: range.getValue(),
+    format: range.getNumberFormat()
+  });
+  range.setNumberFormat('dd/MM/yyyy');
+  range.setValue(date);
+}
+
+function clearPartsDate_(sheet, row, col, written) {
+  if (col !== 6 && col !== 7) throw new Error('Refusing to clear outside the parts dates.');
+  var range = sheet.getRange(row, col);
+  var formula = String(range.getFormula() || '');
+  if (formula.trim() !== '') throw new Error('Column ' + columnLetter_(col) + ' contains a formula. It was not overwritten.');
+  written.push({
+    sheet: sheet,
+    row: row,
+    col: col,
+    formula: formula,
+    value: range.getValue(),
+    format: range.getNumberFormat()
+  });
+  range.clearContent();
+}
+
+function checkedPerson_(submitted, current, people, label) {
+  var text = String(submitted || '').trim();
+  var existing = String(current || '').trim();
+  if (text === existing) return { ok: true, value: text };
+  if (!text) return { ok: true, value: '' };
+  var named = namedText_(text, 'Select ' + label + ' from the list. Nothing was saved.', label);
+  if (!named.ok) return named;
+  if (people.indexOf(named.value) === -1) {
+    return { ok: false, message: 'Select ' + label + ' from the list. Nothing was saved.' };
+  }
+  return { ok: true, value: named.value };
+}
+
+function checkedStatus_(submitted, current) {
+  var text = String(submitted || '').trim();
+  var existing = String(current || '').trim();
+  if (text === existing) return { ok: true, value: text };
+  if (!text) return { ok: true, value: '' };
+  if (RECEIPT_STATUSES.indexOf(text) === -1) {
+    return { ok: false, message: 'Select a receipt status. Nothing was saved.' };
+  }
+  return { ok: true, value: text };
+}
+
+function applyPartsDate_(sheet, row, col, iso, written) {
+  var current = storedDate_(sheet.getRange(row, col).getValue());
+  var wanted = String(iso || '').trim();
+  if (wanted === current.iso) return;
+  if (!wanted) {
+    if (!current.iso && current.uk) return;
+    clearPartsDate_(sheet, row, col, written);
+    return;
+  }
+  var date = reviewDueDate_(wanted);
+  if (!date) throw new Error('Enter a valid date. Nothing was saved.');
+  writePartsDate_(sheet, row, col, date, written);
+}
+
+function applyPartsText_(sheet, row, col, value, written) {
+  var current = String(sheet.getRange(row, col).getValue() == null ? '' : sheet.getRange(row, col).getValue()).trim();
+  var wanted = String(value || '').trim();
+  if (current === wanted) return;
+  writePartsText_(sheet, row, col, wanted, written);
+}
+
+function rememberRecord_(prefix, indexKey, submissionId, record) {
+  record.at = Date.now();
+  var props = props_();
+  props.setProperty(prefix + submissionId, JSON.stringify(record));
+  var index = [];
+  try { index = JSON.parse(props.getProperty(indexKey) || '[]'); } catch (err) { index = []; }
+  if (!Array.isArray(index)) index = [];
+  index = index.filter(function (item) { return item !== submissionId; });
+  index.push(submissionId);
+  while (index.length > 100) {
+    var oldId = index.shift();
+    props.deleteProperty(prefix + oldId);
+  }
+  props.setProperty(indexKey, JSON.stringify(index));
+}
+
+function loadRecordKey_(prefix, submissionId) {
+  var raw = props_().getProperty(prefix + submissionId);
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch (err) { return null; }
+}
+
+function digest_(text) {
+  var digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, text, Utilities.Charset.UTF_8);
+  var hex = '';
+  for (var i = 0; i < digest.length; i++) {
+    var b = digest[i] < 0 ? digest[i] + 256 : digest[i];
+    hex += (b < 16 ? '0' : '') + b.toString(16);
+  }
+  return hex;
+}
+
+function partsFingerprint_(value) {
+  return digest_(JSON.stringify({
+    submissionId: value.submissionId,
+    label: value.label,
+    maintenanceId: value.maintenanceId,
+    items: value.items
+  }));
+}
+
+function receiptFingerprint_(value) {
+  return digest_(JSON.stringify({
+    submissionId: value.submissionId,
+    maintenanceId: value.maintenanceId,
+    partId: value.partId,
+    dateOrdered: value.dateOrdered,
+    dateArrived: value.dateArrived,
+    receivedBy: value.receivedBy,
+    checkedBy: value.checkedBy,
+    status: value.status
+  }));
+}
+
+function saveParts_(value) {
+  var fingerprint = partsFingerprint_(value);
+  var existing = loadRecordKey_('PARTS_SUB_', value.submissionId);
+  if (existing && existing.status === 'success') {
+    if (existing.fingerprint !== fingerprint) {
+      return json({
+        result: 'error',
+        retryable: false,
+        maintenanceId: existing.maintenanceId,
+        message: 'This parts order was already saved for ' + existing.maintenanceId + '. It was not changed.'
+      });
+    }
+    return json(existing.result);
+  }
+  if (existing && existing.status === 'partial') {
+    return json(existing.result || {
+      result: 'error',
+      partial: true,
+      retryable: false,
+      message: 'This parts order was not fully saved. Check the parts record before writing anything else.'
+    });
+  }
+  var log = requireSheet_(SpreadsheetApp.openById(SSID_MAINTENANCE));
+  var found = findReviewRow_(log, value.maintenanceId, value.label);
+  if (!found.ok) return json({ result: 'error', retryable: true, message: found.message });
+  var sheet = requirePartsSheet_(SpreadsheetApp.openById(SSID_MAINTENANCE));
+  var values = partsValues_(sheet);
+  var existingIds = [];
+  for (var i = 0; i < values.length; i++) existingIds.push(values[i][0]);
+  var allocated = nextPartIds_(existingIds, value.maintenanceId, value.items.length);
+  if (!allocated.ok) return json({ result: 'error', retryable: true, message: allocated.message });
+  var rows = emptyPartRows_(sheet, value.items.length);
+  var formulas = [];
+  for (var f = 0; f < rows.length; f++) formulas.push(String(sheet.getRange(rows[f], 3).getFormula() || ''));
+  var written = [];
+  var saved = [];
+  try {
+    for (var n = 0; n < value.items.length; n++) {
+      var item = value.items[n];
+      var row = rows[n];
+      var before = formulas[n];
+      var generated = columnCFormulaFor_(sheet, row);
+      if (generated) {
+        var range = sheet.getRange(row, 3);
+        written.push({
+          sheet: sheet,
+          row: row,
+          col: 3,
+          formula: String(range.getFormula() || ''),
+          value: range.getValue(),
+          format: range.getNumberFormat()
+        });
+        range.setFormula(generated);
+      }
+      writePartsText_(sheet, row, 1, allocated.ids[n], written);
+      writePartsText_(sheet, row, 2, item.name, written);
+      writePartsText_(sheet, row, 4, item.purchaser, written);
+      writePartsText_(sheet, row, 5, item.supplier, written);
+      if (item.dateOrdered) writePartsDate_(sheet, row, 6, reviewDueDate_(item.dateOrdered), written);
+      var after = String(sheet.getRange(row, 3).getFormula() || '');
+      if (before && after !== before) throw new Error('The part formula in column C was changed. Nothing was kept.');
+      saved.push({ partId: allocated.ids[n], row: row, name: item.name });
+    }
+  } catch (err) {
+    var failed = rollbackWritten_(written);
+    if (failed.length) {
+      rememberRecord_('PARTS_SUB_', PARTS_INDEX_KEY, value.submissionId, {
+        status: 'partial',
+        fingerprint: fingerprint,
+        maintenanceId: value.maintenanceId,
+        result: {
+          result: 'error',
+          partial: true,
+          retryable: false,
+          maintenanceId: value.maintenanceId,
+          message: 'The parts order may be incomplete. Check ' + value.maintenanceId + ' before trying again.'
+        }
+      });
+      return json({
+        result: 'error',
+        partial: true,
+        retryable: false,
+        maintenanceId: value.maintenanceId,
+        message: 'The parts order may be incomplete. Check ' + value.maintenanceId + ' before trying again.'
+      });
+    }
+    return json({ result: 'error', retryable: true, message: publicMessage_(err) + ' Your answers are still here.' });
+  }
+  var result = { result: 'success', maintenanceId: value.maintenanceId, label: value.label, parts: saved };
+  rememberRecord_('PARTS_SUB_', PARTS_INDEX_KEY, value.submissionId, {
+    status: 'success',
+    fingerprint: fingerprint,
+    maintenanceId: value.maintenanceId,
+    result: result
+  });
+  return json(result);
+}
+
+function saveReceipt_(value, people) {
+  var fingerprint = receiptFingerprint_(value);
+  var existing = loadRecordKey_('RECEIPT_SUB_', value.submissionId);
+  if (existing && existing.status === 'success') {
+    if (existing.fingerprint !== fingerprint) {
+      return json({
+        result: 'error',
+        retryable: false,
+        partId: value.partId,
+        message: 'This receipt was already saved for ' + value.partId + '. It was not changed.'
+      });
+    }
+    return json(existing.result);
+  }
+  var sheet = requirePartsSheet_(SpreadsheetApp.openById(SSID_MAINTENANCE));
+  var row = findPartRow_(sheet, value.partId);
+  if (!row) {
+    return json({ result: 'error', retryable: true, message: 'That part is no longer on Parts Requested. Nothing was saved.' });
+  }
+  var current = sheet.getRange(row, 1, 1, 10).getValues()[0];
+  if (String(current[0] == null ? '' : current[0]).trim().toUpperCase() !== value.partId) {
+    return json({ result: 'error', retryable: true, message: 'That part is no longer on Parts Requested. Nothing was saved.' });
+  }
+  var received = checkedPerson_(value.receivedBy, current[7], people, 'Received by');
+  if (!received.ok) return json({ result: 'error', retryable: true, message: received.message });
+  var checked = checkedPerson_(value.checkedBy, current[8], people, 'Checked by');
+  if (!checked.ok) return json({ result: 'error', retryable: true, message: checked.message });
+  var status = checkedStatus_(value.status, current[9]);
+  if (!status.ok) return json({ result: 'error', retryable: true, message: status.message });
+  var protectedCols = [1, 2, 3, 4, 5];
+  var before = snapshotCols_(sheet, row, protectedCols);
+  var written = [];
+  try {
+    applyPartsDate_(sheet, row, 6, value.dateOrdered, written);
+    applyPartsDate_(sheet, row, 7, value.dateArrived, written);
+    applyPartsText_(sheet, row, 8, received.value, written);
+    applyPartsText_(sheet, row, 9, checked.value, written);
+    applyPartsText_(sheet, row, 10, status.value, written);
+    if (!sameSnapshot_(sheet, row, before)) throw new Error('Columns A to E changed. The receipt was not kept.');
+  } catch (err) {
+    var failed = rollbackWritten_(written);
+    if (failed.length || !sameSnapshot_(sheet, row, before)) {
+      rememberRecord_('RECEIPT_SUB_', RECEIPT_INDEX_KEY, value.submissionId, {
+        status: 'partial',
+        fingerprint: fingerprint,
+        result: {
+          result: 'error',
+          partial: true,
+          retryable: false,
+          partId: value.partId,
+          message: 'The receipt may be incomplete for ' + value.partId + '. Check that part before trying again.'
+        }
+      });
+      return json({
+        result: 'error',
+        partial: true,
+        retryable: false,
+        partId: value.partId,
+        message: 'The receipt may be incomplete for ' + value.partId + '. Check that part before trying again.'
+      });
+    }
+    return json({ result: 'error', retryable: true, message: publicMessage_(err) + ' Your answers are still here.' });
+  }
+  var orders = partsForJob_(value.maintenanceId);
+  var updated = null;
+  for (var i = 0; i < orders.length; i++) {
+    if (orders[i].partId === value.partId) updated = orders[i];
+  }
+  var result = { result: 'success', maintenanceId: value.maintenanceId, partId: value.partId, order: updated };
+  rememberRecord_('RECEIPT_SUB_', RECEIPT_INDEX_KEY, value.submissionId, {
+    status: 'success',
+    fingerprint: fingerprint,
     result: result
   });
   return json(result);

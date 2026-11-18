@@ -120,6 +120,15 @@ function createSheet(maxRows, sheetName) {
       getDisplayValue: function () {
         return sheet.shown(sheet.cell(row, col));
       },
+      getValues: function () {
+        const out = [];
+        for (let r = 0; r < height; r++) {
+          const line = [];
+          for (let c = 0; c < width; c++) line.push(sheet.cell(row + r, col + c).value);
+          out.push(line);
+        }
+        return out;
+      },
       getDisplayValues: function () {
         const out = [];
         for (let r = 0; r < height; r++) {
@@ -246,6 +255,7 @@ const context = {
       return {
         getSheetByName: function (name) {
           if (name === 'Submission Log') return world.sheet;
+          if (name === 'Parts Requested') return world.parts;
           if (name === 'Helper') return world.helper;
           return null;
         }
@@ -348,9 +358,20 @@ vm.createContext(context);
 vm.runInContext(fs.readFileSync(path.join(__dirname, '../GOOGLE SCRIPTS/Maintenance.js'), 'utf8'), context);
 context.londonNow_ = function () { return world.now; };
 
+function seedPartsSheet(sheet) {
+  ['Part ID', 'Name of Part', 'Part', 'Purchaser', 'Supplier', 'Date Ordered', 'Date Arrived', 'Received by', 'Checked by', 'Receipt status'].forEach(function (text, index) {
+    sheet.seed(1, index + 1, { value: text });
+  });
+  for (let row = 2; row <= sheet.getMaxRows(); row++) {
+    sheet.seed(row, 3, { formula: '=A' + row + ' & " | " & B' + row, value: '' });
+  }
+}
+
 function fresh() {
   world.sheet = createSheet(8);
   seedHeaders(world.sheet);
+  world.parts = createSheet(8, 'Parts Requested');
+  seedPartsSheet(world.parts);
   world.helper = createSheet(6, 'Helper');
   world.helper.seed(1, 1, { value: 'Owner' });
   world.helper.seed(2, 1, { value: 'Alex P' });
@@ -807,6 +828,7 @@ function testPages() {
   assert(menu.indexOf('href="/health-safety/"') !== -1, 'Health and Safety link remains');
   assert(home.indexOf('>Report Fault<') !== -1 && home.indexOf('href="report-fault.html"') !== -1, 'Maintenance opens Report Fault');
   assert(home.indexOf('>Review Maintenance Requests<') !== -1 && home.indexOf('href="review-requests.html"') !== -1, 'Maintenance opens Review Maintenance Requests');
+  assert(home.indexOf('>Order Parts<') !== -1 && home.indexOf('href="order-parts.html"') !== -1, 'Maintenance opens Order Parts');
   const reviewPage = fs.readFileSync(path.join(root, 'maintenance/review-requests.html'), 'utf8');
   const review = fs.readFileSync(path.join(root, 'maintenance/review-requests.js'), 'utf8');
   assert(reviewPage.indexOf('review-requests.js') !== -1, 'review page loads its script');
@@ -819,7 +841,6 @@ function testPages() {
     'Would you like to order parts now or later?',
     'Order Parts Now',
     'Order Parts Later',
-    'Ordering parts is not available yet. Nothing else was saved.',
     'You can order parts later. Nothing else was saved.',
     'Quality',
     'Engineering',
@@ -831,7 +852,18 @@ function testPages() {
   assert(review.indexOf('type="date"') !== -1, 'due date uses a date picker');
   assert(review.indexOf('/.netlify/functions/reviewMaintenance') !== -1, 'review posts to the Netlify function');
   assert(review.indexOf('J4PAN88') === -1 && review.indexOf('script.google.com') === -1, 'review page has no script credential or web app URL');
-  assert(review.indexOf('order_parts') === -1, 'parts ordering is not submitted');
+  assert(review.indexOf('order_parts') === -1, 'parts ordering is not submitted from the review');
+  assert(review.indexOf('order-parts.html?job=') !== -1, 'Order Parts Now opens the parts form for this job');
+  assert(review.indexOf('Ordering parts is not available yet') === -1, 'Order Parts Now no longer shows the placeholder');
+  const orderPage = fs.readFileSync(path.join(root, 'maintenance/order-parts.html'), 'utf8');
+  const order = fs.readFileSync(path.join(root, 'maintenance/order-parts.js'), 'utf8');
+  assert(orderPage.indexOf('order-parts.js') !== -1, 'order page loads its script');
+  ['Select a maintenance job', 'Name of Part', '+ Add Another Item', 'Current Orders Under This Job', 'Date Arrived', 'Received by', 'Checked by', 'As Described', 'Purchased Wrong Item', 'Received Wrong Item', 'Arrived Broken'].forEach(function (label) {
+    assert(order.indexOf(label) !== -1, 'order form contains ' + label);
+  });
+  assert(order.indexOf('/.netlify/functions/orderParts') !== -1, 'order page posts to the Netlify function');
+  assert(order.indexOf('J4PAN88') === -1 && order.indexOf('script.google.com') === -1, 'order page has no script credential or web app URL');
+  assert(script.indexOf("var SHEET_PARTS = 'Parts Requested'") !== -1, 'parts are written to Parts Requested');
   assert(review.indexOf('Find a maintenance request') === -1, 'the separate request search is not shown');
   assert(review.indexOf("OTHER = 'Other'") !== -1 && review.indexOf('departmentOther') !== -1, 'department can be Other with free text');
   assert(script.indexOf('var REVIEW_LAST_COL = 19') !== -1, 'review stops at column S');
@@ -1059,6 +1091,218 @@ function testReview() {
   assertEqual(cell(3, 16), 'Night shift', 'a blank Other does not replace the saved department');
 }
 
+function partCell(row, col) {
+  return world.parts.getRange(row, col).getValue();
+}
+
+function partFormula(row, col) {
+  return world.parts.getRange(row, col).getFormula();
+}
+
+function seedPart(row, id, name, extra) {
+  extra = extra || {};
+  world.parts.seed(row, 1, { value: id });
+  world.parts.seed(row, 2, { value: name });
+  world.parts.seed(row, 3, { formula: '=A' + row + ' & " | " & B' + row, value: id + ' | ' + name });
+  world.parts.seed(row, 4, { value: extra.purchaser || 'Jody R' });
+  world.parts.seed(row, 5, { value: extra.supplier || 'Bearing Co' });
+  if (extra.ordered) world.parts.seed(row, 6, { value: extra.ordered });
+  if (extra.arrived) world.parts.seed(row, 7, { value: extra.arrived });
+  if (extra.receivedBy) world.parts.seed(row, 8, { value: extra.receivedBy });
+  if (extra.checkedBy) world.parts.seed(row, 9, { value: extra.checkedBy });
+  if (extra.status) world.parts.seed(row, 10, { value: extra.status });
+}
+
+function postParts(extra) {
+  const params = Object.assign({
+    token: 'J4PAN88',
+    action: 'parts_add',
+    submissionId: 'parts-0001',
+    label: 'MA0007 | Conveyor belt motor failure',
+    maintenanceId: 'MA0007',
+    items: JSON.stringify([{ purchaser: 'Jody R', name: 'Drive belt', supplier: 'Bearing Co', dateOrdered: '' }])
+  }, extra || {});
+  if (Array.isArray(params.items)) params.items = JSON.stringify(params.items);
+  const out = context.doPost({
+    parameter: params,
+    postData: { type: 'application/x-www-form-urlencoded', contents: '' }
+  });
+  return JSON.parse(out.getContent());
+}
+
+function postReceipt(extra) {
+  const params = Object.assign({
+    token: 'J4PAN88',
+    action: 'parts_receipt',
+    submissionId: 'receipt-0001',
+    maintenanceId: 'MA0007',
+    partId: 'MA0007-P01',
+    dateOrdered: '2026-11-01',
+    dateArrived: '2026-11-17',
+    receivedBy: 'Jody R',
+    checkedBy: 'Zoe I',
+    status: 'As Described'
+  }, extra || {});
+  const out = context.doPost({
+    parameter: params,
+    postData: { type: 'application/x-www-form-urlencoded', contents: '' }
+  });
+  return JSON.parse(out.getContent());
+}
+
+function testParts() {
+  assert(core.partRowEmpty('', '', ''), 'a formula that displays nothing leaves the row empty');
+  assert(!core.partRowEmpty('', '', 'MA0007-P01 | Motor'), 'a column C value occupies the row');
+  assert(!core.partRowEmpty('MA0007-P01', '', ''), 'a part id occupies the row');
+  assertEqual(core.nextPartIds([], 'MA0007', 1).ids[0], 'MA0007-P01', 'the first part is P01');
+  assertEqual(core.nextPartIds(['MA0007-P01', 'MA0007-P04'], 'MA0007', 1).ids[0], 'MA0007-P05', 'numbering continues after the highest part');
+  assertEqual(core.nextPartIds(['MA0007-P01'], 'MA0007', 2).ids.join('|'), 'MA0007-P02|MA0007-P03', 'several new parts get consecutive ids');
+  assert(!core.validatePartsAdd({ submissionId: 'parts-0001', label: 'MA0007 | Job', maintenanceId: 'MA0007', items: [{ purchaser: 'Jody R', name: '', supplier: 'Bearing Co' }] }).ok, 'a part name is required');
+  assert(!core.validatePartsReceipt({ submissionId: 'receipt-0001', maintenanceId: 'MA0007', partId: 'MA0007-P01', status: 'Broken' }).ok === false || core.validatePartsReceipt({ submissionId: 'receipt-0001', maintenanceId: 'MA0007', partId: 'MA0008-P01', status: 'As Described' }).ok === false, 'a part from another job is rejected');
+  assert(!core.validatePartsReceipt({ submissionId: 'receipt-0001', maintenanceId: 'MA0007', partId: 'MA0008-P01', dateOrdered: '', dateArrived: '', receivedBy: '', checkedBy: '', status: '' }).ok, 'a receipt for another job is rejected');
+
+  fresh();
+  seedRequest(3, 'MA0007', 'Conveyor belt motor failure');
+  seedRequest(4, 'MA0008', 'Door sensor');
+  const listed = context.doPost({
+    parameter: { token: 'J4PAN88', action: 'parts_jobs' },
+    postData: { type: 'application/x-www-form-urlencoded', contents: '' }
+  });
+  const jobs = JSON.parse(listed.getContent());
+  assertEqual(jobs.result, 'ok', 'the parts job list loads');
+  assert(jobs.requests.map(function (item) { return item.label; }).indexOf('MA0007 | Conveyor belt motor failure') !== -1, 'Submission Log column B from row 3 is listed');
+  assertEqual(jobs.people.join('|'), 'Jody R|Zoe I', 'receipt names come from Drop Downs column A');
+
+  const beforeLog = world.sheet.writeLog.length;
+  const saved = postParts();
+  assertEqual(saved.result, 'success', 'one part is saved');
+  assertEqual(saved.parts[0].partId, 'MA0007-P01', 'the first part id uses the maintenance id');
+  assertEqual(saved.parts[0].row, 2, 'the first empty parts row is used');
+  assertEqual(partCell(2, 1), 'MA0007-P01', 'column A stores the part id');
+  assertEqual(partCell(2, 2), 'Drive belt', 'column B stores the part name');
+  assertEqual(partFormula(2, 3), '=A2 & " | " & B2', 'column C keeps its formula');
+  assertEqual(partCell(2, 4), 'Jody R', 'column D stores the purchaser');
+  assertEqual(partCell(2, 5), 'Bearing Co', 'column E stores the supplier');
+  assertEqual(partCell(2, 6), '', 'date ordered can be left blank');
+  assert(world.parts.writeLog.every(function (entry) { return entry.col !== 3; }), 'column C is not written');
+  assertEqual(world.sheet.writeLog.length, beforeLog, 'adding parts does not change the Submission Log');
+  assertEqual(partCell(2, 1) !== '' && partFormula(2, 3) !== '', true, 'the part id and formula are both present');
+
+  const again = postParts();
+  assertEqual(again.parts[0].partId, 'MA0007-P01', 'the same submission does not create another part');
+  assertEqual(world.parts.writeLog.filter(function (entry) { return entry.col === 1; }).length, 1, 'a repeated submit does not write another part id');
+
+  const changed = postParts({ items: [{ purchaser: 'Jody R', name: 'Different belt', supplier: 'Bearing Co', dateOrdered: '' }] });
+  assertEqual(changed.result, 'error', 'changing a saved submission does not write again');
+  assertEqual(partCell(2, 2), 'Drive belt', 'the saved part name stays in place');
+
+  const several = postParts({
+    submissionId: 'parts-0002',
+    items: [
+      { purchaser: 'Zoe I', name: 'Bearing', supplier: 'Motion Ltd', dateOrdered: '2026-11-17' },
+      { purchaser: 'Jody R', name: 'Guard', supplier: 'Motion Ltd', dateOrdered: '' }
+    ]
+  });
+  assertEqual(several.result, 'success', 'several parts can be saved together');
+  assertEqual(several.parts.map(function (part) { return part.partId; }).join('|'), 'MA0007-P02|MA0007-P03', 'parts in one submission get consecutive ids');
+  assertEqual(partCell(3, 1), 'MA0007-P02', 'the second part uses the next empty row');
+  assertEqual(partCell(4, 1), 'MA0007-P03', 'the third part uses the following empty row');
+  assert(partCell(3, 6) instanceof Date, 'date ordered is stored as a date');
+  assertEqual(formatDate(partCell(3, 6), 'Europe/London', 'dd/MM/yyyy'), '17/11/2026', 'date ordered displays as DD/MM/YYYY');
+  assertEqual(world.parts.getRange(3, 6).getNumberFormat(), 'dd/MM/yyyy', 'date ordered is not stored as text');
+  assertEqual(partFormula(3, 3), '=A3 & " | " & B3', 'each new row keeps its own column C formula');
+  assertEqual(partCell(4, 6), '', 'a blank date ordered is not filled in for the other part');
+
+  fresh();
+  seedRequest(3, 'MA0007', 'Conveyor belt motor failure');
+  seedPart(2, 'MA0007-P01', 'Motor');
+  seedPart(3, 'MA0007-P04', 'Sensor', { purchaser: 'Zoe I', supplier: 'Sensor Co' });
+  world.parts.seed(2, 11, { value: 'Leave this cell' });
+  const continued = postParts({ submissionId: 'parts-0003', items: [{ purchaser: 'Jody R', name: 'Belt', supplier: 'Bearing Co', dateOrdered: '' }] });
+  assertEqual(continued.parts[0].partId, 'MA0007-P05', 'reopening the job continues after P04');
+  assertEqual(continued.parts[0].row, 4, 'the part is written on the first genuinely empty row');
+  assertEqual(partCell(2, 1), 'MA0007-P01', 'the existing P01 row is not overwritten');
+  assertEqual(partCell(3, 1), 'MA0007-P04', 'the existing P04 row is not overwritten');
+  assertEqual(partCell(2, 11), 'Leave this cell', 'cells outside the parts columns stay untouched');
+  assertEqual(partFormula(2, 3), '=A2 & " | " & B2', 'the existing column C formula stays intact');
+
+  const orders = JSON.parse(context.doPost({
+    parameter: { token: 'J4PAN88', action: 'parts_orders', maintenanceId: 'MA0007' },
+    postData: { type: 'application/x-www-form-urlencoded', contents: '' }
+  }).getContent());
+  assertEqual(orders.orders.map(function (order) { return order.partId; }).join('|'), 'MA0007-P01|MA0007-P04|MA0007-P05', 'current orders are the parts for this job');
+  world.parts.seed(5, 1, { value: 'MA0008-P01' });
+  world.parts.seed(5, 2, { value: 'Other job part' });
+  world.parts.seed(5, 3, { formula: '=A5 & " | " & B5', value: 'MA0008-P01 | Other job part' });
+  const onlyThisJob = JSON.parse(context.doPost({
+    parameter: { token: 'J4PAN88', action: 'parts_orders', maintenanceId: 'MA0007' },
+    postData: { type: 'application/x-www-form-urlencoded', contents: '' }
+  }).getContent());
+  assert(onlyThisJob.orders.map(function (order) { return order.partId; }).indexOf('MA0008-P01') === -1, 'parts for another job are not listed');
+
+  world.parts.seed(6, 1, { value: '' });
+  world.parts.seed(6, 2, { value: 'Listed from column C' });
+  world.parts.seed(6, 3, { formula: '=A6 & " | " & B6', value: 'MA0007-P09 | Listed from column C' });
+  const fromColumnC = JSON.parse(context.doPost({
+    parameter: { token: 'J4PAN88', action: 'parts_orders', maintenanceId: 'MA0007' },
+    postData: { type: 'application/x-www-form-urlencoded', contents: '' }
+  }).getContent());
+  assert(fromColumnC.orders.some(function (order) { return order.partId === 'MA0007-P09' && order.name === 'Listed from column C'; }), 'column C identifies a part when it shows the part id');
+
+  const orderedOn = new Date(Date.UTC(2026, 10, 1, 12, 0, 0));
+  fresh();
+  seedRequest(3, 'MA0007', 'Conveyor belt motor failure');
+  seedPart(2, 'MA0007-P01', 'Motor', { ordered: orderedOn, purchaser: 'Jody R', supplier: 'Bearing Co' });
+  seedPart(3, 'MA0007-P02', 'Guard', { purchaser: 'Zoe I', supplier: 'Motion Ltd', status: 'As Described' });
+  const formulaBefore = partFormula(2, 3);
+  const receipt = postReceipt();
+  assertEqual(receipt.result, 'success', 'a receipt is saved on the matching part');
+  assertEqual(partCell(2, 1), 'MA0007-P01', 'the receipt does not change column A');
+  assertEqual(partCell(2, 2), 'Motor', 'the receipt does not change the part name');
+  assertEqual(partFormula(2, 3), formulaBefore, 'the receipt does not change column C');
+  assertEqual(partCell(2, 4), 'Jody R', 'the receipt does not change the purchaser');
+  assertEqual(partCell(2, 5), 'Bearing Co', 'the receipt does not change the supplier');
+  assertEqual(formatDate(partCell(2, 6), 'Europe/London', 'dd/MM/yyyy'), '01/11/2026', 'an unchanged date ordered stays in place');
+  assertEqual(formatDate(partCell(2, 7), 'Europe/London', 'dd/MM/yyyy'), '17/11/2026', 'date arrived is saved');
+  assertEqual(partCell(2, 8), 'Jody R', 'received by is saved');
+  assertEqual(partCell(2, 9), 'Zoe I', 'checked by is saved');
+  assertEqual(partCell(2, 10), 'As Described', 'receipt status is saved');
+  assertEqual(partCell(3, 2), 'Guard', 'the other part is not modified');
+  assertEqual(partCell(3, 10), 'As Described', 'the other part keeps its own status');
+
+  const movedDate = postReceipt({ submissionId: 'receipt-0002', dateOrdered: '2026-11-05', dateArrived: '2026-11-17', status: 'Received Wrong Item' });
+  assertEqual(movedDate.result, 'success', 'date ordered can be amended');
+  assertEqual(formatDate(partCell(2, 6), 'Europe/London', 'dd/MM/yyyy'), '05/11/2026', 'the amended date ordered is saved');
+  assertEqual(partCell(2, 4), 'Jody R', 'amending the date does not clear the purchaser');
+  assertEqual(partCell(2, 10), 'Received Wrong Item', 'the receipt status is updated on the same part');
+
+  ['Purchased Wrong Item', 'Arrived Broken'].forEach(function (status) {
+    const updated = postReceipt({ submissionId: 'receipt-' + status.replace(/\s/g, '-'), status: status, dateOrdered: '2026-11-05', dateArrived: '2026-11-17' });
+    assertEqual(updated.result, 'success', status + ' can be saved');
+    assertEqual(partCell(2, 10), status, status + ' is written on the selected part');
+  });
+  const rejected = postReceipt({ submissionId: 'receipt-bad', receivedBy: 'Nobody', status: 'As Described' });
+  assertEqual(rejected.result, 'error', 'a person who is not on Drop Downs is rejected');
+  assertEqual(partCell(2, 8), 'Jody R', 'a rejected receipt does not replace received by');
+
+  const missingName = postParts({ submissionId: 'parts-blank', items: [{ purchaser: 'Jody R', name: ' ', supplier: 'Bearing Co', dateOrdered: '' }] });
+  assertEqual(missingName.result, 'error', 'a blank part name is not saved');
+  const missingJob = postParts({ submissionId: 'parts-missing', label: 'MA0099 | Missing', maintenanceId: 'MA0099' });
+  assertEqual(missingJob.result, 'error', 'an unknown maintenance job is not given parts');
+
+  world.locked = true;
+  const busy = postParts({ submissionId: 'parts-busy' });
+  world.locked = false;
+  assertEqual(busy.result, 'error', 'a busy parts save does not write');
+
+  world.parts.seed(2, 3, { formula: '=A2 & " | " & B2', value: 'MA0007-P01 | Motor' });
+  const shown = JSON.parse(context.doPost({
+    parameter: { token: 'J4PAN88', action: 'parts_orders', maintenanceId: 'MA0007' },
+    postData: { type: 'application/x-www-form-urlencoded', contents: '' }
+  }).getContent());
+  assert(shown.orders.some(function (order) { return order.partId === 'MA0007-P01' && order.name === 'Motor'; }), 'the selected job shows its existing part');
+}
+
 function testScriptPages() {
   const submit = require('../netlify/functions/submitFault');
   const moved = '<HTML><HEAD><TITLE>Moved Temporarily</TITLE></HEAD><BODY>The document has moved <A HREF="https://script.googleusercontent.com/macros/echo?user_content_key=abc">here</A>.</BODY></HTML>';
@@ -1084,6 +1328,17 @@ async function testHandlerAndLiveCsv() {
   const bad = await submit({ httpMethod: 'POST', body: '{' });
   assertEqual(bad.statusCode, 400, 'invalid JSON is rejected');
   assertEqual(JSON.parse(bad.body).result, 'error', 'invalid JSON is not a success');
+
+  const partsHandler = require('../netlify/functions/orderParts').handler;
+  const partsGet = await partsHandler({ httpMethod: 'GET', body: '' });
+  assertEqual(partsGet.statusCode, 405, 'parts GET is rejected');
+  const partsBad = await partsHandler({
+    httpMethod: 'POST',
+    body: JSON.stringify({ action: 'parts_add', submissionId: 'parts-0001', label: 'MA0007 | Job', maintenanceId: 'MA0007', items: [] })
+  });
+  assertEqual(partsBad.statusCode, 400, 'an empty parts order is rejected before the script');
+  const partsWrong = await partsHandler({ httpMethod: 'POST', body: JSON.stringify({ action: 'parts_delete' }) });
+  assertEqual(partsWrong.statusCode, 400, 'an unknown parts action is rejected');
 
   const reviewHandler = require('../netlify/functions/reviewMaintenance').handler;
   const reviewGet = await reviewHandler({ httpMethod: 'GET', body: '' });
@@ -1139,6 +1394,7 @@ async function main() {
   testSheetWrites();
   testDriveAuthorisation();
   testReview();
+  testParts();
   testPages();
   testScriptPages();
   await testHandlerAndLiveCsv();

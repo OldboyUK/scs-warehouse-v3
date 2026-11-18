@@ -20,8 +20,12 @@ var PRIORITY_OPTIONS = [
   { value: 'Unsure', label: 'Unsure - Please Allocate the Priority for Me' }
 ];
 var MAINTENANCE_ID_RE = /^MA(\d{4})$/;
+var PART_ID_RE = /^MA\d{4}-P\d{2,}$/;
+var RECEIPT_STATUSES = ['As Described', 'Purchased Wrong Item', 'Received Wrong Item', 'Arrived Broken'];
+var SHEET_PARTS = 'Parts Requested';
 var MAX_TEXT = 8000;
 var MAX_NAME = 200;
+var MAX_PARTS = 20;
 
 function londonDateParts(date) {
   var fmt = new Intl.DateTimeFormat('en-GB', {
@@ -396,6 +400,160 @@ function validateReview(data, owners) {
   };
 }
 
+function cellBlank(value) {
+  if (value == null) return true;
+  if (Object.prototype.toString.call(value) === '[object Date]') return isNaN(value.getTime());
+  return String(value).trim() === '';
+}
+
+function partRowEmpty(partId, name, combined) {
+  return cellBlank(partId) && cellBlank(name) && cellBlank(combined);
+}
+
+function nextPartIds(existingIds, maintenanceId, count) {
+  var id = String(maintenanceId || '').trim().toUpperCase();
+  if (!MAINTENANCE_ID_RE.test(id)) {
+    return { ok: false, message: 'Select a maintenance job. Nothing was saved.' };
+  }
+  var wanted = Number(count);
+  if (!wanted || wanted < 1) return { ok: false, message: 'Add at least one part. Nothing was saved.' };
+  if (wanted > MAX_PARTS) return { ok: false, message: 'You can add up to 20 parts at a time. Nothing was saved.' };
+  var re = new RegExp('^' + id + '-P(\\d+)$', 'i');
+  var max = 0;
+  var seen = {};
+  var list = existingIds || [];
+  for (var i = 0; i < list.length; i++) {
+    var match = re.exec(String(list[i] == null ? '' : list[i]).trim());
+    if (!match) continue;
+    var n = parseInt(match[1], 10);
+    if (!n || n < 1) continue;
+    seen[n] = true;
+    if (n > max) max = n;
+  }
+  var ids = [];
+  var next = max;
+  for (var c = 0; c < wanted; c++) {
+    next++;
+    var guard = 0;
+    while (seen[next]) {
+      next++;
+      guard++;
+      if (guard > 1000) break;
+    }
+    if (next > 999) {
+      return { ok: false, message: 'The part number sequence is full for ' + id + '. Nothing was saved.' };
+    }
+    seen[next] = true;
+    ids.push(id + '-P' + (next < 10 ? '0' : '') + next);
+  }
+  return { ok: true, ids: ids };
+}
+
+function optionalIsoDate(value, label) {
+  var text = String(value || '').trim();
+  if (!text) return { ok: true, value: '' };
+  var checked = reviewDueDate(text);
+  if (!checked.ok) return { ok: false, message: 'Enter a valid ' + label + ', or leave it blank. Nothing was saved.' };
+  return { ok: true, value: checked.value };
+}
+
+function partsItems(data) {
+  var raw = data && data.items;
+  if (typeof raw === 'string') {
+    if (!String(raw).trim()) raw = [];
+    else {
+      try { raw = JSON.parse(raw); } catch (err) { raw = null; }
+    }
+  }
+  if (!raw || !Array.isArray(raw) || !raw.length) {
+    return { ok: false, message: 'Add at least one part. Nothing was saved.' };
+  }
+  if (raw.length > MAX_PARTS) return { ok: false, message: 'You can add up to 20 parts at a time. Nothing was saved.' };
+  var items = [];
+  for (var i = 0; i < raw.length; i++) {
+    var item = raw[i] || {};
+    var purchaser = namedText(item.purchaser, 'Enter the purchaser for each part. Nothing was saved.', 'The purchaser');
+    if (!purchaser.ok) return purchaser;
+    var name = namedText(item.name, 'Enter the name of each part. Nothing was saved.', 'The part name');
+    if (!name.ok) return name;
+    var supplier = namedText(item.supplier, 'Enter the supplier for each part. Nothing was saved.', 'The supplier');
+    if (!supplier.ok) return supplier;
+    var ordered = optionalIsoDate(item.dateOrdered, 'date ordered');
+    if (!ordered.ok) return ordered;
+    items.push({
+      purchaser: purchaser.value,
+      name: name.value,
+      supplier: supplier.value,
+      dateOrdered: ordered.value
+    });
+  }
+  return { ok: true, value: items };
+}
+
+function validatePartsAdd(data) {
+  data = data || {};
+  var submissionId = String(data.submissionId || '').trim();
+  if (!submissionIdOk(submissionId)) {
+    return { ok: false, message: 'The parts order could not be identified. Reload the page and try again. Nothing was saved.' };
+  }
+  var label = String(data.label == null ? '' : data.label).trim();
+  var maintenanceId = String(data.maintenanceId || '').trim().toUpperCase();
+  var prefix = labelId(label);
+  if (!prefix || prefix !== maintenanceId) {
+    return { ok: false, message: 'Select a maintenance job. Nothing was saved.' };
+  }
+  var items = partsItems(data);
+  if (!items.ok) return items;
+  return {
+    ok: true,
+    value: {
+      submissionId: submissionId,
+      label: label,
+      maintenanceId: maintenanceId,
+      items: items.value
+    }
+  };
+}
+
+function validatePartsReceipt(data) {
+  data = data || {};
+  var submissionId = String(data.submissionId || '').trim();
+  if (!submissionIdOk(submissionId)) {
+    return { ok: false, message: 'The receipt could not be identified. Reload the page and try again. Nothing was saved.' };
+  }
+  var maintenanceId = String(data.maintenanceId || '').trim().toUpperCase();
+  if (!MAINTENANCE_ID_RE.test(maintenanceId)) {
+    return { ok: false, message: 'Select a maintenance job. Nothing was saved.' };
+  }
+  var partId = String(data.partId || '').trim().toUpperCase();
+  if (!PART_ID_RE.test(partId) || partId.indexOf(maintenanceId + '-P') !== 0) {
+    return { ok: false, message: 'That part could not be identified. Nothing was saved.' };
+  }
+  var ordered = optionalIsoDate(data.dateOrdered, 'date ordered');
+  if (!ordered.ok) return ordered;
+  var arrived = optionalIsoDate(data.dateArrived, 'date arrived');
+  if (!arrived.ok) return arrived;
+  var received = namedText(data.receivedBy || 'x', 'x', 'Received by');
+  if (String(data.receivedBy || '').trim() && !received.ok) return received;
+  var checked = namedText(data.checkedBy || 'x', 'x', 'Checked by');
+  if (String(data.checkedBy || '').trim() && !checked.ok) return checked;
+  var status = String(data.status || '').trim();
+  if (status.length > 80) return { ok: false, message: 'Select a receipt status. Nothing was saved.' };
+  return {
+    ok: true,
+    value: {
+      submissionId: submissionId,
+      maintenanceId: maintenanceId,
+      partId: partId,
+      dateOrdered: ordered.value,
+      dateArrived: arrived.value,
+      receivedBy: String(data.receivedBy || '').trim(),
+      checkedBy: String(data.checkedBy || '').trim(),
+      status: status
+    }
+  };
+}
+
 function jsonResponse(statusCode, body) {
   return { statusCode: statusCode, body: JSON.stringify(body) };
 }
@@ -416,5 +574,12 @@ module.exports = {
   listsFromCsv: listsFromCsv,
   validateFault: validateFault,
   validateReview: validateReview,
+  validatePartsAdd: validatePartsAdd,
+  validatePartsReceipt: validatePartsReceipt,
+  cellBlank: cellBlank,
+  partRowEmpty: partRowEmpty,
+  nextPartIds: nextPartIds,
+  RECEIPT_STATUSES: RECEIPT_STATUSES,
+  SHEET_PARTS: SHEET_PARTS,
   jsonResponse: jsonResponse
 };
