@@ -136,37 +136,24 @@ function noteWeek(date) {
   return schedule.mondayISO(parsed);
 }
 
-async function withTransaction(work) {
+const NOTE_RETURN = `
+  to_char(note_date, 'YYYY-MM-DD') AS note_date,
+  to_char(week_commencing, 'YYYY-MM-DD') AS week_commencing,
+  important, absence, version, updated_by
+`;
+
+const WEEK_RETURN = `
+  to_char(week_commencing, 'YYYY-MM-DD') AS week_commencing,
+  night_shift, saturday_running, version, updated_by
+`;
+
+async function run(text, params) {
   const db = await database();
-  const client = await db.pool.connect();
-  try {
-    await client.query('BEGIN');
-    const result = await work(client);
-    await client.query('COMMIT');
-    return result;
-  } catch (err) {
-    try { await client.query('ROLLBACK'); } catch (rollbackErr) { /* already failing */ }
-    throw err;
-  } finally {
-    client.release();
-  }
+  return db.pool.query(text, params);
 }
 
-async function bump(client) {
-  await client.query('UPDATE schedule_revision SET revision = revision + 1 WHERE id = 1');
-}
-
-async function enqueueWeek(client, week) {
-  if (!week) return;
-  await client.query(
-    `INSERT INTO schedule_backup_jobs (scope, week_commencing, status)
-     SELECT 'week', $1::date, 'pending'
-     WHERE NOT EXISTS (
-       SELECT 1 FROM schedule_backup_jobs
-       WHERE scope = 'week' AND week_commencing = $1::date AND status IN ('pending', 'failed')
-     )`,
-    [week]
-  );
+function wrote(result) {
+  return result && Array.isArray(result.rows) && result.rows.length > 0;
 }
 
 async function backupSummary() {
@@ -242,65 +229,78 @@ async function applyBooking(op, username) {
   if (checked.error) return { ok: false, type: 'booking', error: checked.error };
   const booking = checked.booking;
   const expected = Number(op.expectedVersion);
-  return withTransaction(async function (client) {
-    if (!expected) {
-      const inserted = await client.query(
-        `INSERT INTO schedule_bookings (
+  const values = [
+    booking.id, booking.weekCommencing, booking.day, booking.category, booking.startTime,
+    booking.endTime, booking.customer, booking.product, booking.liquidCode, booking.packingFormat,
+    booking.volume, booking.legacyText, booking.backgroundColour, username
+  ];
+  if (!expected) {
+    const inserted = await run(
+      `WITH inserted AS (
+         INSERT INTO schedule_bookings (
            id, week_commencing, day, category, start_time, end_time, customer, product,
            liquid_code, packing_format, volume, legacy_text, background_colour, version, updated_by
          ) VALUES (
            $1, $2::date, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 1, $14
          )
          ON CONFLICT (id) DO NOTHING
-         RETURNING ${BOOKING_RETURN}`,
-        [
-          booking.id, booking.weekCommencing, booking.day, booking.category, booking.startTime,
-          booking.endTime, booking.customer, booking.product, booking.liquidCode, booking.packingFormat,
-          booking.volume, booking.legacyText, booking.backgroundColour, username
-        ]
-      );
-      if (!inserted.rowCount) {
-        const current = await client.query(`SELECT ${BOOKING_RETURN} FROM schedule_bookings WHERE id = $1`, [booking.id]);
-        return { ok: false, conflict: true, type: 'booking', id: booking.id, server: mapBooking(current.rows[0]) };
-      }
-      await bump(client);
-      await enqueueWeek(client, booking.weekCommencing);
-      return { ok: true, type: 'booking', action: 'upsert', id: booking.id, version: 1, record: mapBooking(inserted.rows[0]) };
-    }
-    const existing = await client.query(
-      `SELECT ${BOOKING_RETURN} FROM schedule_bookings WHERE id = $1 FOR UPDATE`,
-      [booking.id]
+         RETURNING ${BOOKING_RETURN}
+       ), bumped AS (
+         UPDATE schedule_revision SET revision = revision + 1
+         WHERE id = 1 AND EXISTS (SELECT 1 FROM inserted)
+       ), queued AS (
+         INSERT INTO schedule_backup_jobs (scope, week_commencing, status)
+         SELECT 'week', $2::date, 'pending'
+         WHERE EXISTS (SELECT 1 FROM inserted)
+           AND NOT EXISTS (
+             SELECT 1 FROM schedule_backup_jobs
+             WHERE scope = 'week' AND week_commencing = $2::date AND status IN ('pending', 'failed')
+           )
+       )
+       SELECT * FROM inserted`,
+      values
     );
-    if (!existing.rowCount) {
-      return { ok: false, conflict: true, type: 'booking', id: booking.id, server: null };
+    if (!wrote(inserted)) {
+      const current = await run(`SELECT ${BOOKING_RETURN} FROM schedule_bookings WHERE id = $1`, [booking.id]);
+      return { ok: false, conflict: true, type: 'booking', id: booking.id, server: mapBooking(current.rows[0]) };
     }
-    if (Number(existing.rows[0].version) !== expected) {
-      return { ok: false, conflict: true, type: 'booking', id: booking.id, server: mapBooking(existing.rows[0]) };
-    }
-    const previousWeek = existing.rows[0].week_commencing;
-    const updated = await client.query(
-      `UPDATE schedule_bookings SET
+    return { ok: true, type: 'booking', action: 'upsert', id: booking.id, version: 1, record: mapBooking(inserted.rows[0]) };
+  }
+  const updated = await run(
+    `WITH old AS (
+       SELECT week_commencing FROM schedule_bookings WHERE id = $1 AND version = $15
+     ), updated AS (
+       UPDATE schedule_bookings SET
          week_commencing = $2::date, day = $3, category = $4, start_time = $5, end_time = $6,
          customer = $7, product = $8, liquid_code = $9, packing_format = $10, volume = $11,
          legacy_text = $12, background_colour = $13, version = version + 1,
          updated_at = now(), updated_by = $14
        WHERE id = $1 AND version = $15
-       RETURNING ${BOOKING_RETURN}`,
-      [
-        booking.id, booking.weekCommencing, booking.day, booking.category, booking.startTime,
-        booking.endTime, booking.customer, booking.product, booking.liquidCode, booking.packingFormat,
-        booking.volume, booking.legacyText, booking.backgroundColour, username, expected
-      ]
-    );
-    if (!updated.rowCount) {
-      const current = await client.query(`SELECT ${BOOKING_RETURN} FROM schedule_bookings WHERE id = $1`, [booking.id]);
-      return { ok: false, conflict: true, type: 'booking', id: booking.id, server: mapBooking(current.rows[0]) };
-    }
-    await bump(client);
-    await enqueueWeek(client, previousWeek);
-    if (previousWeek !== booking.weekCommencing) await enqueueWeek(client, booking.weekCommencing);
-    return { ok: true, type: 'booking', action: 'upsert', id: booking.id, version: Number(updated.rows[0].version), record: mapBooking(updated.rows[0]) };
-  });
+       RETURNING ${BOOKING_RETURN}
+     ), bumped AS (
+       UPDATE schedule_revision SET revision = revision + 1
+       WHERE id = 1 AND EXISTS (SELECT 1 FROM updated)
+     ), queued AS (
+       INSERT INTO schedule_backup_jobs (scope, week_commencing, status)
+       SELECT 'week', weeks.week_value, 'pending'
+       FROM (
+         SELECT week_commencing AS week_value FROM old
+         UNION
+         SELECT $2::date FROM updated
+       ) weeks
+       WHERE NOT EXISTS (
+         SELECT 1 FROM schedule_backup_jobs
+         WHERE scope = 'week' AND week_commencing = weeks.week_value AND status IN ('pending', 'failed')
+       )
+     )
+     SELECT * FROM updated`,
+    values.concat(expected)
+  );
+  if (!wrote(updated)) {
+    const current = await run(`SELECT ${BOOKING_RETURN} FROM schedule_bookings WHERE id = $1`, [booking.id]);
+    return { ok: false, conflict: true, type: 'booking', id: booking.id, server: mapBooking(current.rows[0]) };
+  }
+  return { ok: true, type: 'booking', action: 'upsert', id: booking.id, version: Number(updated.rows[0].version), record: mapBooking(updated.rows[0]) };
 }
 
 async function deleteBooking(op, username) {
@@ -309,20 +309,31 @@ async function deleteBooking(op, username) {
   if (!/^[A-Za-z0-9_-]{8,80}$/.test(id) || !expected) {
     return { ok: false, type: 'booking', error: 'The booking could not be removed.' };
   }
-  return withTransaction(async function (client) {
-    const existing = await client.query(
-      `SELECT ${BOOKING_RETURN} FROM schedule_bookings WHERE id = $1 FOR UPDATE`,
-      [id]
-    );
-    if (!existing.rowCount) return { ok: true, type: 'booking', action: 'delete', id: id, missing: true };
-    if (Number(existing.rows[0].version) !== expected) {
-      return { ok: false, conflict: true, type: 'booking', id: id, server: mapBooking(existing.rows[0]) };
-    }
-    await client.query('DELETE FROM schedule_bookings WHERE id = $1 AND version = $2', [id, expected]);
-    await bump(client);
-    await enqueueWeek(client, existing.rows[0].week_commencing);
-    return { ok: true, type: 'booking', action: 'delete', id: id, version: expected };
-  });
+  const removed = await run(
+    `WITH old AS (
+       SELECT week_commencing FROM schedule_bookings WHERE id = $1 AND version = $2
+     ), removed AS (
+       DELETE FROM schedule_bookings WHERE id = $1 AND version = $2
+       RETURNING id
+     ), bumped AS (
+       UPDATE schedule_revision SET revision = revision + 1
+       WHERE id = 1 AND EXISTS (SELECT 1 FROM removed)
+     ), queued AS (
+       INSERT INTO schedule_backup_jobs (scope, week_commencing, status)
+       SELECT 'week', old.week_commencing, 'pending' FROM old
+       WHERE EXISTS (SELECT 1 FROM removed)
+         AND NOT EXISTS (
+           SELECT 1 FROM schedule_backup_jobs
+           WHERE scope = 'week' AND week_commencing = old.week_commencing AND status IN ('pending', 'failed')
+         )
+     )
+     SELECT id FROM removed`,
+    [id, expected]
+  );
+  if (wrote(removed)) return { ok: true, type: 'booking', action: 'delete', id: id, version: expected };
+  const current = await run(`SELECT ${BOOKING_RETURN} FROM schedule_bookings WHERE id = $1`, [id]);
+  if (!current.rows.length) return { ok: true, type: 'booking', action: 'delete', id: id, missing: true };
+  return { ok: false, conflict: true, type: 'booking', id: id, server: mapBooking(current.rows[0]) };
 }
 
 async function applyNote(op, username) {
@@ -332,68 +343,86 @@ async function applyNote(op, username) {
   const expected = Number(op.expectedVersion);
   const important = clean(op.note && op.note.important, 2000);
   const absence = clean(op.note && op.note.absence, 2000);
-  return withTransaction(async function (client) {
-    const existing = await client.query(
-      `SELECT to_char(note_date, 'YYYY-MM-DD') AS note_date,
-              to_char(week_commencing, 'YYYY-MM-DD') AS week_commencing,
-              important, absence, version, updated_by
-       FROM schedule_day_notes WHERE note_date = $1::date FOR UPDATE`,
-      [date]
+  if (op.action === 'delete' || (!important && !absence)) {
+    const removed = await run(
+      `WITH removed AS (
+         DELETE FROM schedule_day_notes
+         WHERE note_date = $1::date AND version = $2
+         RETURNING note_date
+       ), bumped AS (
+         UPDATE schedule_revision SET revision = revision + 1
+         WHERE id = 1 AND EXISTS (SELECT 1 FROM removed)
+       ), queued AS (
+         INSERT INTO schedule_backup_jobs (scope, week_commencing, status)
+         SELECT 'week', $3::date, 'pending'
+         WHERE EXISTS (SELECT 1 FROM removed)
+           AND NOT EXISTS (
+             SELECT 1 FROM schedule_backup_jobs
+             WHERE scope = 'week' AND week_commencing = $3::date AND status IN ('pending', 'failed')
+           )
+       )
+       SELECT note_date FROM removed`,
+      [date, expected, week]
     );
-    if (op.action === 'delete' || (!important && !absence)) {
-      if (!existing.rowCount) return { ok: true, type: 'note', action: 'delete', date: date, missing: true };
-      if (Number(existing.rows[0].version) !== expected) {
-        return { ok: false, conflict: true, type: 'note', date: date, server: mapNote(existing.rows[0]) };
-      }
-      await client.query('DELETE FROM schedule_day_notes WHERE note_date = $1::date AND version = $2', [date, expected]);
-      await bump(client);
-      await enqueueWeek(client, week);
-      return { ok: true, type: 'note', action: 'delete', date: date, version: expected };
-    }
-    if (!existing.rowCount) {
-      if (expected) return { ok: false, conflict: true, type: 'note', date: date, server: null };
-      const inserted = await client.query(
-        `INSERT INTO schedule_day_notes (note_date, week_commencing, important, absence, version, updated_by)
+    if (wrote(removed)) return { ok: true, type: 'note', action: 'delete', date: date, version: expected };
+    const current = await run(`SELECT ${NOTE_RETURN} FROM schedule_day_notes WHERE note_date = $1::date`, [date]);
+    if (!current.rows.length) return { ok: true, type: 'note', action: 'delete', date: date, missing: true };
+    return { ok: false, conflict: true, type: 'note', date: date, server: mapNote(current.rows[0]) };
+  }
+  if (!expected) {
+    const inserted = await run(
+      `WITH inserted AS (
+         INSERT INTO schedule_day_notes (note_date, week_commencing, important, absence, version, updated_by)
          VALUES ($1::date, $2::date, $3, $4, 1, $5)
          ON CONFLICT (note_date) DO NOTHING
-         RETURNING to_char(note_date, 'YYYY-MM-DD') AS note_date,
-                   to_char(week_commencing, 'YYYY-MM-DD') AS week_commencing,
-                   important, absence, version, updated_by`,
-        [date, week, important, absence, username]
-      );
-      if (!inserted.rowCount) {
-        const current = await client.query(
-          `SELECT to_char(note_date, 'YYYY-MM-DD') AS note_date,
-                  to_char(week_commencing, 'YYYY-MM-DD') AS week_commencing,
-                  important, absence, version, updated_by
-           FROM schedule_day_notes WHERE note_date = $1::date`,
-          [date]
-        );
-        return { ok: false, conflict: true, type: 'note', date: date, server: mapNote(current.rows[0]) };
-      }
-      await bump(client);
-      await enqueueWeek(client, week);
-      return { ok: true, type: 'note', action: 'upsert', date: date, version: 1, record: mapNote(inserted.rows[0]) };
+         RETURNING ${NOTE_RETURN}
+       ), bumped AS (
+         UPDATE schedule_revision SET revision = revision + 1
+         WHERE id = 1 AND EXISTS (SELECT 1 FROM inserted)
+       ), queued AS (
+         INSERT INTO schedule_backup_jobs (scope, week_commencing, status)
+         SELECT 'week', $2::date, 'pending'
+         WHERE EXISTS (SELECT 1 FROM inserted)
+           AND NOT EXISTS (
+             SELECT 1 FROM schedule_backup_jobs
+             WHERE scope = 'week' AND week_commencing = $2::date AND status IN ('pending', 'failed')
+           )
+       )
+       SELECT * FROM inserted`,
+      [date, week, important, absence, username]
+    );
+    if (!wrote(inserted)) {
+      const current = await run(`SELECT ${NOTE_RETURN} FROM schedule_day_notes WHERE note_date = $1::date`, [date]);
+      return { ok: false, conflict: true, type: 'note', date: date, server: mapNote(current.rows[0]) };
     }
-    if (Number(existing.rows[0].version) !== expected) {
-      return { ok: false, conflict: true, type: 'note', date: date, server: mapNote(existing.rows[0]) };
-    }
-    const updated = await client.query(
-      `UPDATE schedule_day_notes SET
+    return { ok: true, type: 'note', action: 'upsert', date: date, version: 1, record: mapNote(inserted.rows[0]) };
+  }
+  const updated = await run(
+    `WITH updated AS (
+       UPDATE schedule_day_notes SET
          important = $2, absence = $3, version = version + 1, updated_at = now(), updated_by = $4
        WHERE note_date = $1::date AND version = $5
-       RETURNING to_char(note_date, 'YYYY-MM-DD') AS note_date,
-                 to_char(week_commencing, 'YYYY-MM-DD') AS week_commencing,
-                 important, absence, version, updated_by`,
-      [date, important, absence, username, expected]
-    );
-    if (!updated.rowCount) {
-      return { ok: false, conflict: true, type: 'note', date: date, server: mapNote(existing.rows[0]) };
-    }
-    await bump(client);
-    await enqueueWeek(client, week);
-    return { ok: true, type: 'note', action: 'upsert', date: date, version: Number(updated.rows[0].version), record: mapNote(updated.rows[0]) };
-  });
+       RETURNING ${NOTE_RETURN}
+     ), bumped AS (
+       UPDATE schedule_revision SET revision = revision + 1
+       WHERE id = 1 AND EXISTS (SELECT 1 FROM updated)
+     ), queued AS (
+       INSERT INTO schedule_backup_jobs (scope, week_commencing, status)
+       SELECT 'week', $6::date, 'pending'
+       WHERE EXISTS (SELECT 1 FROM updated)
+         AND NOT EXISTS (
+           SELECT 1 FROM schedule_backup_jobs
+           WHERE scope = 'week' AND week_commencing = $6::date AND status IN ('pending', 'failed')
+         )
+     )
+     SELECT * FROM updated`,
+    [date, important, absence, username, expected, week]
+  );
+  if (!wrote(updated)) {
+    const current = await run(`SELECT ${NOTE_RETURN} FROM schedule_day_notes WHERE note_date = $1::date`, [date]);
+    return { ok: false, conflict: true, type: 'note', date: date, server: current.rows[0] ? mapNote(current.rows[0]) : null };
+  }
+  return { ok: true, type: 'note', action: 'upsert', date: date, version: Number(updated.rows[0].version), record: mapNote(updated.rows[0]) };
 }
 
 async function applyWeek(op, username) {
@@ -403,55 +432,61 @@ async function applyWeek(op, username) {
   const expected = Number(op.expectedVersion);
   const night = !!week.nightShift;
   const saturday = !!week.saturday;
-  return withTransaction(async function (client) {
-    const existing = await client.query(
-      `SELECT to_char(week_commencing, 'YYYY-MM-DD') AS week_commencing,
-              night_shift, saturday_running, version, updated_by
-       FROM schedule_weeks WHERE week_commencing = $1::date FOR UPDATE`,
-      [monday]
-    );
-    if (!existing.rowCount) {
-      if (expected) return { ok: false, conflict: true, type: 'week', weekCommencing: monday, server: null };
-      const inserted = await client.query(
-        `INSERT INTO schedule_weeks (week_commencing, night_shift, saturday_running, version, updated_by)
+  if (!expected) {
+    const inserted = await run(
+      `WITH inserted AS (
+         INSERT INTO schedule_weeks (week_commencing, night_shift, saturday_running, version, updated_by)
          VALUES ($1::date, $2, $3, 1, $4)
          ON CONFLICT (week_commencing) DO NOTHING
-         RETURNING to_char(week_commencing, 'YYYY-MM-DD') AS week_commencing,
-                   night_shift, saturday_running, version, updated_by`,
-        [monday, night, saturday, username]
-      );
-      if (!inserted.rowCount) {
-        const current = await client.query(
-          `SELECT to_char(week_commencing, 'YYYY-MM-DD') AS week_commencing,
-                  night_shift, saturday_running, version, updated_by
-           FROM schedule_weeks WHERE week_commencing = $1::date`,
-          [monday]
-        );
-        return { ok: false, conflict: true, type: 'week', weekCommencing: monday, server: mapWeek(current.rows[0]) };
-      }
-      await bump(client);
-      await enqueueWeek(client, monday);
-      return { ok: true, type: 'week', action: 'upsert', weekCommencing: monday, version: 1, record: mapWeek(inserted.rows[0]) };
+         RETURNING ${WEEK_RETURN}
+       ), bumped AS (
+         UPDATE schedule_revision SET revision = revision + 1
+         WHERE id = 1 AND EXISTS (SELECT 1 FROM inserted)
+       ), queued AS (
+         INSERT INTO schedule_backup_jobs (scope, week_commencing, status)
+         SELECT 'week', $1::date, 'pending'
+         WHERE EXISTS (SELECT 1 FROM inserted)
+           AND NOT EXISTS (
+             SELECT 1 FROM schedule_backup_jobs
+             WHERE scope = 'week' AND week_commencing = $1::date AND status IN ('pending', 'failed')
+           )
+       )
+       SELECT * FROM inserted`,
+      [monday, night, saturday, username]
+    );
+    if (!wrote(inserted)) {
+      const current = await run(`SELECT ${WEEK_RETURN} FROM schedule_weeks WHERE week_commencing = $1::date`, [monday]);
+      return { ok: false, conflict: true, type: 'week', weekCommencing: monday, server: current.rows[0] ? mapWeek(current.rows[0]) : null };
     }
-    if (Number(existing.rows[0].version) !== expected) {
-      return { ok: false, conflict: true, type: 'week', weekCommencing: monday, server: mapWeek(existing.rows[0]) };
-    }
-    const updated = await client.query(
-      `UPDATE schedule_weeks SET
+    return { ok: true, type: 'week', action: 'upsert', weekCommencing: monday, version: 1, record: mapWeek(inserted.rows[0]) };
+  }
+  const updated = await run(
+    `WITH updated AS (
+       UPDATE schedule_weeks SET
          night_shift = $2, saturday_running = $3, version = version + 1,
          updated_at = now(), updated_by = $4
        WHERE week_commencing = $1::date AND version = $5
-       RETURNING to_char(week_commencing, 'YYYY-MM-DD') AS week_commencing,
-                 night_shift, saturday_running, version, updated_by`,
-      [monday, night, saturday, username, expected]
-    );
-    if (!updated.rowCount) {
-      return { ok: false, conflict: true, type: 'week', weekCommencing: monday, server: mapWeek(existing.rows[0]) };
-    }
-    await bump(client);
-    await enqueueWeek(client, monday);
-    return { ok: true, type: 'week', action: 'upsert', weekCommencing: monday, version: Number(updated.rows[0].version), record: mapWeek(updated.rows[0]) };
-  });
+       RETURNING ${WEEK_RETURN}
+     ), bumped AS (
+       UPDATE schedule_revision SET revision = revision + 1
+       WHERE id = 1 AND EXISTS (SELECT 1 FROM updated)
+     ), queued AS (
+       INSERT INTO schedule_backup_jobs (scope, week_commencing, status)
+       SELECT 'week', $1::date, 'pending'
+       WHERE EXISTS (SELECT 1 FROM updated)
+         AND NOT EXISTS (
+           SELECT 1 FROM schedule_backup_jobs
+           WHERE scope = 'week' AND week_commencing = $1::date AND status IN ('pending', 'failed')
+         )
+     )
+     SELECT * FROM updated`,
+    [monday, night, saturday, username, expected]
+  );
+  if (!wrote(updated)) {
+    const current = await run(`SELECT ${WEEK_RETURN} FROM schedule_weeks WHERE week_commencing = $1::date`, [monday]);
+    return { ok: false, conflict: true, type: 'week', weekCommencing: monday, server: current.rows[0] ? mapWeek(current.rows[0]) : null };
+  }
+  return { ok: true, type: 'week', action: 'upsert', weekCommencing: monday, version: Number(updated.rows[0].version), record: mapWeek(updated.rows[0]) };
 }
 
 function backupConfigured() {

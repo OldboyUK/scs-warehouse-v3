@@ -19,10 +19,15 @@ exports.handler = async function (event) {
     for (let i = 0; i < ops.length; i++) {
       results.push(await core.applyOp(ops[i], gate.user.username));
     }
-    const backup = await core.backupSummary();
+    let backup = { configured: false, pending: 0, failed: 0 };
+    try {
+      backup = await core.backupSummary();
+    } catch (err) {
+      console.error('Schedule backup status failed', String(err && err.message || err).replace(/postgres(?:ql)?:\/\/\S+/gi, '[redacted]').slice(0, 300));
+    }
     return session.json(200, { results: results, backup: backup });
   } catch (err) {
-    console.error('Schedule save failed');
+    console.error('Schedule save failed', String(err && err.message || err).replace(/postgres(?:ql)?:\/\/\S+/gi, '[redacted]').slice(0, 300));
     return session.json(500, { error: 'The schedule change could not be saved.' });
   }
 };

@@ -525,6 +525,7 @@
   var lastPayload = null;
   var backupStatus = { configured: false, pending: 0, failed: 0, lastFullAt: null };
   var statusCode = 'loading';
+  var statusDetail = '';
   var statusHandler = null;
   var conflictHandler = null;
   var appliedHandler = null;
@@ -600,7 +601,7 @@
     if (statusCode === 'loading') return 'Loading schedule…';
     if (statusCode === 'saving') return 'Saving…';
     if (statusCode === 'unsaved') return 'Not saved on this computer. These changes will be sent when the connection returns.';
-    if (statusCode === 'save-failed') return 'Couldn\u2019t save these changes. They are still on this computer.';
+    if (statusCode === 'save-failed') return statusDetail || 'Couldn\u2019t save these changes. They are still on this computer.';
     if (statusCode === 'offline-changes') return 'Couldn\u2019t reach the schedule store. Changes on this computer have not been saved yet.';
     if (statusCode === 'offline') return 'Couldn\u2019t reach the schedule store. Showing the last copy saved on this computer.';
     if (statusCode === 'error') return 'Couldn\u2019t load the schedule.';
@@ -626,10 +627,11 @@
     return browserOffline() ? 'unsaved' : 'save-failed';
   }
 
-  function setStatus(code) {
+  function setStatus(code, detail) {
     if ((code === 'unsaved' || code === 'save-failed') && !isDirty()) code = 'saved';
     if (code === 'offline-changes' && !isDirty()) code = 'offline';
     statusCode = code;
+    statusDetail = code === 'save-failed' ? (detail || '') : '';
     if (statusHandler) statusHandler({ code: code, message: statusMessage(), tone: statusTone(), backup: backupStatus });
   }
 
@@ -840,9 +842,11 @@
 
   function handleResults(results) {
     var found = [];
+    var problem = '';
     (results || []).forEach(function (result) {
       if (result && result.ok) acknowledge(result);
       else if (result && result.conflict) found.push(result);
+      else if (result && result.error) problem = result.error;
     });
     if (found.length) {
       found.forEach(function (item) { conflicts.push(item); });
@@ -851,7 +855,7 @@
       writeCache(state.loadedYear);
       return;
     }
-    if (isDirty()) setStatus(pendingStatus());
+    if (isDirty()) setStatus(pendingStatus(), problem);
     else {
       setStatus('saved');
       writeCache(state.loadedYear);
