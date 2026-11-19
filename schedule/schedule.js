@@ -564,6 +564,7 @@
       var option = document.createElement('option');
       option.value = value;
       option.textContent = value;
+      if (value === 'PLACEHOLDER') option.className = 'sch-placeholder-option';
       if (value === chosen) seen = true;
       select.appendChild(option);
     });
@@ -571,9 +572,11 @@
       var extra = document.createElement('option');
       extra.value = chosen;
       extra.textContent = chosen;
+      if (chosen === 'PLACEHOLDER') extra.className = 'sch-placeholder-option';
       select.appendChild(extra);
     }
     select.value = chosen;
+    if (select === editorProduct) select.classList.toggle('is-placeholder', chosen === 'PLACEHOLDER');
     select.disabled = !products.ready();
   }
 
@@ -1690,6 +1693,7 @@
     });
 
     editorProduct.addEventListener('change', function () {
+      editorProduct.classList.toggle('is-placeholder', editorProduct.value === 'PLACEHOLDER');
       if (filling) return;
       applyLiquid();
       refreshSubmit();
