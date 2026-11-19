@@ -6,7 +6,7 @@
   var BLOCK_FIELDS = [
     'weekCommencing', 'day', 'category', 'startTime', 'endTime',
     'customer', 'product', 'liquidCode', 'packingFormat', 'freeText', 'volume',
-    'legacyText', 'backgroundColour', 'schedule'
+    'legacyText', 'backgroundColour', 'schedule', 'blockType'
   ];
 
   function same(a, b) {
@@ -159,6 +159,7 @@
   }
 
   function copyBlock(block) {
+    var cip = block.blockType === 'cip' && block.schedule !== 'blending' && block.schedule !== 'appointments';
     return {
       id: block.id,
       weekCommencing: block.weekCommencing,
@@ -166,15 +167,16 @@
       category: block.category,
       startTime: block.startTime,
       endTime: block.endTime,
-      customer: block.customer || '',
-      product: block.product || '',
-      liquidCode: block.liquidCode || '',
-      packingFormat: block.schedule === 'production' || !block.schedule ? (block.packingFormat || '') : '',
-      freeText: block.schedule === 'production' || !block.schedule ? '' : (block.freeText || ''),
-      volume: block.schedule === 'appointments' || block.volume == null ? null : Number(block.volume),
-      legacyText: block.schedule === 'appointments' ? '' : (block.legacyText || ''),
+      customer: cip ? '' : (block.customer || ''),
+      product: cip ? '' : (block.product || ''),
+      liquidCode: cip ? '' : (block.liquidCode || ''),
+      packingFormat: cip ? '' : (block.schedule === 'production' || !block.schedule ? (block.packingFormat || '') : ''),
+      freeText: cip || block.schedule === 'production' || !block.schedule ? '' : (block.freeText || ''),
+      volume: cip || block.schedule === 'appointments' || block.volume == null ? null : Number(block.volume),
+      legacyText: cip || block.schedule === 'appointments' ? '' : (block.legacyText || ''),
       backgroundColour: block.backgroundColour,
-      schedule: block.schedule === 'blending' || block.schedule === 'appointments' ? block.schedule : 'production'
+      schedule: block.schedule === 'blending' || block.schedule === 'appointments' ? block.schedule : 'production',
+      blockType: cip ? 'cip' : 'booking'
     };
   }
 

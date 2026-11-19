@@ -18,7 +18,7 @@ const BOOKING_RETURN = `
   to_char(week_commencing, 'YYYY-MM-DD') AS week_commencing,
   day, category, start_time, end_time, customer, product, liquid_code,
   packing_format, volume, legacy_text, background_colour, schedule_kind, free_text,
-  version, updated_by
+  block_type, version, updated_by
 `;
 
 let databaseClient = null;
@@ -71,6 +71,7 @@ function mapBooking(row) {
     backgroundColour: row.background_colour,
     schedule: scheduleName(row.schedule_kind),
     freeText: row.free_text || '',
+    blockType: row.block_type === 'cip' ? 'cip' : 'booking',
     version: Number(row.version) || 0,
     updatedBy: row.updated_by || ''
   };
@@ -120,6 +121,9 @@ function checkedBooking(input) {
   }
   const details = kind === 'production' ? '' : clean(booking.freeText, 2000);
   if (kind === 'appointments' && !details) return { error: 'The appointment details are missing.' };
+  const blockType = booking.blockType === 'cip' ? 'cip' : 'booking';
+  if (blockType === 'cip' && kind !== 'production') return { error: 'CIP blocks belong on the production schedule.' };
+  const cip = blockType === 'cip';
   return {
     booking: {
       id: id,
@@ -128,15 +132,16 @@ function checkedBooking(input) {
       category: booking.category,
       startTime: booking.startTime,
       endTime: booking.endTime,
-      customer: kind === 'appointments' ? '' : clean(booking.customer, 500),
-      product: kind === 'appointments' ? '' : clean(booking.product, 500),
-      liquidCode: kind === 'appointments' ? '' : clean(booking.liquidCode, 80),
-      packingFormat: kind === 'production' ? clean(booking.packingFormat, 200) : '',
-      volume: volume,
-      legacyText: kind === 'appointments' ? '' : clean(booking.legacyText, 2000),
+      customer: kind === 'appointments' || cip ? '' : clean(booking.customer, 500),
+      product: kind === 'appointments' || cip ? '' : clean(booking.product, 500),
+      liquidCode: kind === 'appointments' || cip ? '' : clean(booking.liquidCode, 80),
+      packingFormat: kind === 'production' && !cip ? clean(booking.packingFormat, 200) : '',
+      volume: kind === 'appointments' || cip ? null : volume,
+      legacyText: kind === 'appointments' || cip ? '' : clean(booking.legacyText, 2000),
       backgroundColour: colour,
       schedule: kind,
-      freeText: details
+      freeText: cip ? '' : details,
+      blockType: blockType
     }
   };
 }
@@ -251,7 +256,7 @@ async function applyBooking(op, username) {
     booking.id, booking.weekCommencing, booking.day, booking.category, booking.startTime,
     booking.endTime, booking.customer, booking.product, booking.liquidCode, booking.packingFormat,
     booking.volume, booking.legacyText, booking.backgroundColour, username,
-    booking.schedule, booking.freeText
+    booking.schedule, booking.freeText, booking.blockType
   ];
   if (!expected) {
     const inserted = await run(
@@ -259,9 +264,9 @@ async function applyBooking(op, username) {
          INSERT INTO schedule_bookings (
            id, week_commencing, day, category, start_time, end_time, customer, product,
            liquid_code, packing_format, volume, legacy_text, background_colour, version, updated_by,
-           schedule_kind, free_text
+           schedule_kind, free_text, block_type
          ) VALUES (
-           $1, $2::date, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 1, $14, $15, $16
+           $1, $2::date, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 1, $14, $15, $16, $17
          )
          ON CONFLICT (id) DO NOTHING
          RETURNING ${BOOKING_RETURN}
@@ -289,14 +294,14 @@ async function applyBooking(op, username) {
   }
   const updated = await run(
     `WITH old AS (
-       SELECT week_commencing FROM schedule_bookings WHERE id = $1 AND version = $17 AND schedule_kind = $15
+       SELECT week_commencing FROM schedule_bookings WHERE id = $1 AND version = $18 AND schedule_kind = $15
      ), updated AS (
        UPDATE schedule_bookings SET
          week_commencing = $2::date, day = $3, category = $4, start_time = $5, end_time = $6,
          customer = $7, product = $8, liquid_code = $9, packing_format = $10, volume = $11,
-         legacy_text = $12, background_colour = $13, free_text = $16, version = version + 1,
-         updated_at = now(), updated_by = $14
-       WHERE id = $1 AND version = $17 AND schedule_kind = $15
+         legacy_text = $12, background_colour = $13, free_text = $16, block_type = $17,
+         version = version + 1, updated_at = now(), updated_by = $14
+       WHERE id = $1 AND version = $18 AND schedule_kind = $15
        RETURNING ${BOOKING_RETURN}
      ), bumped AS (
        UPDATE schedule_revision SET revision = revision + 1
@@ -545,6 +550,7 @@ async function readWeek(db, week) {
   const bookings = await db.pool.query(
     `SELECT ${BOOKING_RETURN} FROM schedule_bookings
      WHERE week_commencing = $1::date AND schedule_kind = 'production'
+       AND block_type <> 'cip'
      ORDER BY day, category, start_time, id`,
     [week]
   );
@@ -577,6 +583,7 @@ async function readAll(db) {
   const bookings = await db.pool.query(
     `SELECT ${BOOKING_RETURN} FROM schedule_bookings
      WHERE schedule_kind = 'production'
+       AND block_type <> 'cip'
      ORDER BY week_commencing, day, category, start_time, id`
   );
   const notes = await db.pool.query(

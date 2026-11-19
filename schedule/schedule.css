@@ -1026,6 +1026,47 @@
   user-select: none !important;
 }
 
+.sch-context {
+  position: fixed;
+  z-index: 40;
+  min-width: 148px;
+  margin: 0;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #1f2937;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+}
+
+.sch-context button {
+  display: block;
+  width: 100%;
+  min-height: 36px;
+  margin: 0;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sch-context button:hover,
+.sch-context button:focus-visible {
+  background: #374151;
+  outline: none;
+}
+
+.schedule-app .sch-modal-card.is-cip .sch-customer,
+.schedule-app .sch-modal-card.is-cip .sch-pair,
+.schedule-app .sch-modal-card.is-cip #editorStatus {
+  display: none;
+}
+
 .sch-modal[hidden] {
   display: none !important;
 }

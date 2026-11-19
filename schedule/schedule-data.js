@@ -334,7 +334,12 @@
     return value.toLocaleString('en-GB', { maximumFractionDigits: 4, useGrouping: true }) + ' L';
   }
 
+  function blockKind(value) {
+    return value === 'cip' ? 'cip' : 'booking';
+  }
+
   function displayText(block) {
+    if (block.blockType === 'cip') return 'CIP';
     if (block.schedule === 'appointments') return block.freeText || '';
     var detail = block.schedule === 'blending' ? '' : block.packingFormat;
     var structured = block.customer || block.product || block.liquidCode ||
@@ -363,6 +368,7 @@
       volume: block.volume,
       legacyText: block.legacyText,
       schedule: scheduleKind(block.schedule),
+      blockType: blockKind(block.blockType),
       text: displayText(block),
       backgroundColour: block.backgroundColour,
       version: block.version || 0
@@ -380,12 +386,14 @@
     var id = String(item.id || '');
     if (!/^[A-Za-z0-9_-]{8,80}$/.test(id) || seen[id]) id = newId();
     seen[id] = true;
-    var customer = schedule === 'appointments' ? '' : (cleanLine(item.customer, 500) || cleanLine(item.companyName, 500));
-    var product = schedule === 'appointments' ? '' : (cleanLine(item.product, 500) || cleanLine(item.productName, 500));
-    var liquidCode = schedule === 'appointments' ? '' : cleanLine(item.liquidCode, 80);
-    var packingFormat = schedule === 'production' ? cleanLine(item.packingFormat, 200) : '';
-    var freeText = schedule === 'production' ? '' : cleanLine(item.freeText, 2000);
-    var volume = schedule === 'appointments' ? null : storedVolume(item.volume);
+    var blockType = item.blockType === 'cip' && schedule === 'production' ? 'cip' : 'booking';
+    var cip = blockType === 'cip';
+    var customer = schedule === 'appointments' || cip ? '' : (cleanLine(item.customer, 500) || cleanLine(item.companyName, 500));
+    var product = schedule === 'appointments' || cip ? '' : (cleanLine(item.product, 500) || cleanLine(item.productName, 500));
+    var liquidCode = schedule === 'appointments' || cip ? '' : cleanLine(item.liquidCode, 80);
+    var packingFormat = schedule === 'production' && !cip ? cleanLine(item.packingFormat, 200) : '';
+    var freeText = schedule === 'production' || cip ? '' : cleanLine(item.freeText, 2000);
+    var volume = schedule === 'appointments' || cip ? null : storedVolume(item.volume);
     var structured = customer || product || liquidCode || packingFormat || freeText || volume != null;
     var legacyText = '';
     if (schedule !== 'appointments' && !structured) {
@@ -405,8 +413,9 @@
       packingFormat: packingFormat,
       freeText: freeText,
       volume: volume,
-      legacyText: legacyText,
+      legacyText: cip ? '' : legacyText,
       schedule: schedule,
+      blockType: blockType,
       backgroundColour: normaliseColour(item.backgroundColour),
       version: Number(item.version) || 0
     };
@@ -543,6 +552,8 @@
     var allowed = categoriesFor(schedule);
     if (!dayIds[input.day] || !allowed[input.category]) return null;
     if (!validOffsets(input.startOffset, input.endOffset)) return null;
+    var blockType = input.blockType === 'cip' && schedule === 'production' ? 'cip' : 'booking';
+    var cip = blockType === 'cip';
     var block = {
       id: newId(),
       weekCommencing: canonicalWeek(input.weekCommencing) || state.weekCommencing,
@@ -550,15 +561,16 @@
       category: input.category,
       startTime: offsetToClock(input.startOffset),
       endTime: offsetToClock(input.endOffset),
-      customer: schedule === 'appointments' ? '' : cleanLine(input.customer, 500),
-      product: schedule === 'appointments' ? '' : cleanLine(input.product, 500),
-      liquidCode: schedule === 'appointments' ? '' : cleanLine(input.liquidCode, 80),
-      packingFormat: schedule === 'production' ? cleanLine(input.packingFormat, 200) : '',
-      freeText: schedule === 'production' ? '' : cleanLine(input.freeText, 2000),
-      volume: schedule === 'appointments' ? null : storedVolume(input.volume),
+      customer: schedule === 'appointments' || cip ? '' : cleanLine(input.customer, 500),
+      product: schedule === 'appointments' || cip ? '' : cleanLine(input.product, 500),
+      liquidCode: schedule === 'appointments' || cip ? '' : cleanLine(input.liquidCode, 80),
+      packingFormat: schedule === 'production' && !cip ? cleanLine(input.packingFormat, 200) : '',
+      freeText: schedule === 'production' || cip ? '' : cleanLine(input.freeText, 2000),
+      volume: schedule === 'appointments' || cip ? null : storedVolume(input.volume),
       legacyText: '',
       backgroundColour: normaliseColour(input.backgroundColour),
       schedule: schedule,
+      blockType: blockType,
       version: 0
     };
     state.blocks.push(block);
@@ -577,11 +589,12 @@
     if (patch.packingFormat !== undefined && block.schedule === 'production') block.packingFormat = cleanLine(patch.packingFormat, 200);
     if (patch.freeText !== undefined && block.schedule !== 'production') block.freeText = cleanLine(patch.freeText, 2000);
     if (patch.volume !== undefined && block.schedule !== 'appointments') block.volume = storedVolume(patch.volume);
-    if (block.schedule === 'appointments') {
+    if (block.schedule === 'appointments' || block.blockType === 'cip') {
       block.customer = '';
       block.product = '';
       block.liquidCode = '';
       block.packingFormat = '';
+      block.freeText = '';
       block.volume = null;
       block.legacyText = '';
     }
@@ -656,6 +669,7 @@
         legacyText: block.legacyText,
         backgroundColour: block.backgroundColour,
         schedule: scheduleKind(block.schedule),
+        blockType: blockKind(block.blockType),
         version: block.version || 0
       };
     });
@@ -989,7 +1003,8 @@
       left.product === right.product && left.liquidCode === right.liquidCode &&
       left.packingFormat === right.packingFormat && left.freeText === right.freeText &&
       left.schedule === right.schedule && left.volume === right.volume &&
-      left.legacyText === right.legacyText && left.backgroundColour === right.backgroundColour;
+      left.legacyText === right.legacyText && left.backgroundColour === right.backgroundColour &&
+      blockKind(left.blockType) === blockKind(right.blockType);
   }
 
   function acknowledge(result) {

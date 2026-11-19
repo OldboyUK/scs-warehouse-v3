@@ -260,6 +260,37 @@ assert.strictEqual(scheduleData.isNightManual('2026-11-09', 'appointments'), tru
 assert.strictEqual(scheduleData.isNightManual('2026-11-09', 'production'), false);
 assert.strictEqual(scheduleData.isNightManual('2026-11-09', 'blending'), true);
 
+const cip = core.checkedBooking(block({
+  id: 'cip-000001',
+  blockType: 'cip',
+  customer: 'Should be cleared',
+  product: 'PLACEHOLDER',
+  liquidCode: 'X',
+  packingFormat: 'Bottle',
+  volume: 500
+}));
+assert.strictEqual(cip.booking.blockType, 'cip');
+assert.strictEqual(cip.booking.customer, '');
+assert.strictEqual(cip.booking.product, '');
+assert.strictEqual(cip.booking.volume, null);
+assert.ok(core.checkedBooking(block({ id: 'cip-000002', schedule: 'blending', category: 'base_in', blockType: 'cip', volume: 200 })).error);
+assert.strictEqual(core.checkedBooking(block()).booking.blockType, 'booking');
+
+const cipBlock = scheduleData.addBlock({
+  day: 'wednesday', category: 'bulk', startOffset: 60, endOffset: 120,
+  weekCommencing: '2026-11-09', blockType: 'cip', customer: 'Nope', schedule: 'production'
+});
+assert.ok(cipBlock);
+assert.strictEqual(cipBlock.blockType, 'cip');
+assert.strictEqual(cipBlock.text, 'CIP');
+assert.strictEqual(cipBlock.customer, '');
+assert.strictEqual(cipBlock.schedule, 'production');
+const movedCip = scheduleData.updateBlock(cipBlock.id, { day: 'friday', category: 'keg', startOffset: 180, endOffset: 240 });
+assert.strictEqual(movedCip.day, 'friday');
+assert.strictEqual(movedCip.category, 'keg');
+assert.strictEqual(movedCip.blockType, 'cip');
+assert.strictEqual(movedCip.text, 'CIP');
+
 assert.strictEqual(core.sheetShouldWrite(2, 4), true);
 assert.strictEqual(core.sheetShouldWrite(4, 4), true);
 assert.strictEqual(core.sheetShouldWrite(5, 4), false);

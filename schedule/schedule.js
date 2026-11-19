@@ -7,6 +7,7 @@
   var laneMap = {};
   var editingId = null;
   var editorMode = null;
+  var editorBlockType = '';
   var editorSnapshot = null;
   var draft = null;
   var editorCategory = '';
@@ -470,6 +471,8 @@
     }
     editingId = null;
     editorMode = null;
+    editorBlockType = '';
+    editorCard.classList.remove('is-cip');
     editorSnapshot = null;
     editorCategory = '';
     modal.hidden = true;
@@ -560,6 +563,7 @@
   }
 
   function formReady() {
+    if (editorBlockType === 'cip') return true;
     if (view === 'appointments') return String(editorDetails.value || '').trim().length > 0;
     return products.ready() &&
       !!canonicalCustomer(editorCustomer.value) &&
@@ -831,6 +835,18 @@
       refreshSubmit();
       return;
     }
+    if (editorBlockType === 'cip' && editorMode === 'edit') {
+      var cipUpdated = data.updateBlock(editingId, {
+        backgroundColour: selectedColour(),
+        startOffset: Number(editorStart.value),
+        endOffset: Number(editorEnd.value)
+      });
+      if (cipUpdated) placeBlock(cipUpdated);
+      data.persist('block');
+      if (cipUpdated) releaseNight(cipUpdated.weekCommencing);
+      closeEditor();
+      return;
+    }
     var volume = view === 'appointments' ? null : readVolume();
     var customerName = view === 'appointments' ? '' : canonicalCustomer(editorCustomer.value);
     var match = view === 'appointments' ? { customer: '', product: '', liquidCode: '' } : selectedMatch(customerName);
@@ -911,10 +927,16 @@
       if (previous) previous.classList.remove('is-editing');
     }
     editingId = id;
+    editorBlockType = block.blockType === 'cip' ? 'cip' : '';
+    editorCard.classList.toggle('is-cip', editorBlockType === 'cip');
     editorCategory = block.category;
     draft = null;
     editorSnapshot = copyBlock(block);
     setEditorMode(mode);
+    if (editorBlockType === 'cip') {
+      editorTitle.textContent = 'CIP';
+      editorConfirm.textContent = 'Save changes';
+    }
     var node = blockElement(id);
     if (node) node.classList.add('is-editing');
     filling = true;
@@ -931,7 +953,8 @@
     refreshVolumeMessage();
     refreshSubmit();
     modal.hidden = false;
-    if (view === 'appointments') editorDetails.focus();
+    if (editorBlockType === 'cip') editorDismiss.focus();
+    else if (view === 'appointments') editorDetails.focus();
     else if (products.ready()) focusCustomerField();
   }
 
@@ -1084,7 +1107,8 @@
     if (drag.kind === 'move') {
       var length = end - start;
       var lane = laneUnderPoint(clientX, clientY);
-      if (lane && view !== 'appointments' && lane.dataset.category !== drag.category) lane = null;
+      if (lane && drag.blockType === 'cip' && view !== 'production') lane = null;
+      else if (lane && view !== 'appointments' && drag.blockType !== 'cip' && lane.dataset.category !== drag.category) lane = null;
       clearDropTarget();
       var otherWeek = lane && lane.dataset.week !== drag.week;
       if (otherWeek) {
@@ -1180,10 +1204,12 @@
 
     if (blockNode) {
       event.preventDefault();
+      var moving = data.getBlock(blockNode.dataset.id);
       drag = {
         kind: handle ? handle.dataset.edge : 'move',
         pointerId: event.pointerId,
         id: blockNode.dataset.id,
+        blockType: moving && moving.blockType === 'cip' ? 'cip' : 'booking',
         x: event.clientX,
         y: event.clientY,
         moved: false,
@@ -1799,6 +1825,10 @@
 
   document.addEventListener('keydown', function (event) {
     if (event.key !== 'Escape') return;
+    if (!scheduleMenu.hidden) {
+      closeScheduleMenu();
+      return;
+    }
     if (drag) {
       endPointer({ pointerId: drag.pointerId }, false);
       return;
@@ -1866,6 +1896,75 @@
     products.load(true).catch(function () { /* status already reported */ });
   });
   products.subscribe(renderSource);
+
+  var scheduleMenu = document.getElementById('scheduleMenu');
+  var scheduleMenuCip = document.getElementById('scheduleMenuCip');
+  var menuTarget = null;
+
+  function closeScheduleMenu() {
+    scheduleMenu.hidden = true;
+    menuTarget = null;
+  }
+
+  function openScheduleMenu(x, y, lane) {
+    menuTarget = {
+      week: lane.dataset.week,
+      day: lane.dataset.day,
+      category: lane.dataset.category,
+      hour: hourAt(lane, y)
+    };
+    scheduleMenu.hidden = false;
+    scheduleMenu.style.left = '0px';
+    scheduleMenu.style.top = '0px';
+    var rect = scheduleMenu.getBoundingClientRect();
+    var left = x;
+    var top = y;
+    if (left + rect.width > window.innerWidth - 8) left = window.innerWidth - rect.width - 8;
+    if (top + rect.height > window.innerHeight - 8) top = window.innerHeight - rect.height - 8;
+    if (left < 8) left = 8;
+    if (top < 8) top = 8;
+    scheduleMenu.style.left = left + 'px';
+    scheduleMenu.style.top = top + 'px';
+  }
+
+  function addCipBlock() {
+    var target = menuTarget;
+    closeScheduleMenu();
+    if (!target || view !== 'production') return;
+    var created = data.addBlock({
+      day: target.day,
+      category: target.category,
+      startOffset: target.hour * 60,
+      endOffset: target.hour * 60 + 60,
+      backgroundColour: data.DEFAULT_COLOUR,
+      schedule: 'production',
+      blockType: 'cip',
+      weekCommencing: target.week
+    });
+    if (!created) return;
+    var lane = laneMap[laneKey(created.weekCommencing, created.day, created.category)];
+    if (lane) lane.appendChild(renderBlock(created));
+    data.persist('block');
+    releaseNight(created.weekCommencing);
+    paintSaturday(boardFor(created.weekCommencing));
+  }
+
+  scroll.addEventListener('contextmenu', function (event) {
+    if (view !== 'production' || !modal.hidden) return;
+    var lane = event.target.closest && event.target.closest('.sch-lane');
+    if (!lane || !scroll.contains(lane)) return;
+    if (event.target.closest('.prod-block')) return;
+    event.preventDefault();
+    openScheduleMenu(event.clientX, event.clientY, lane);
+  });
+
+  scheduleMenuCip.addEventListener('click', addCipBlock);
+  document.addEventListener('pointerdown', function (event) {
+    if (scheduleMenu.hidden || scheduleMenu.contains(event.target)) return;
+    closeScheduleMenu();
+  });
+  scroll.addEventListener('scroll', closeScheduleMenu);
+  window.addEventListener('resize', closeScheduleMenu);
 
   scroll.addEventListener('pointerdown', onPointerDown);
   renderLegend();
