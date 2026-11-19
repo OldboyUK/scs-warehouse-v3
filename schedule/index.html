@@ -48,6 +48,7 @@
     <div class="sch-tabs" role="tablist" aria-label="Schedules">
       <button type="button" class="sch-tab" role="tab" id="tabProduction" aria-controls="scheduleScroll" aria-selected="true">Production Schedule</button>
       <button type="button" class="sch-tab" role="tab" id="tabBlending" aria-controls="scheduleScroll" aria-selected="false">Blending Schedule</button>
+      <button type="button" class="sch-tab" role="tab" id="tabAppointments" aria-controls="scheduleScroll" aria-selected="false">Appointments</button>
     </div>
 
     <div class="sch-workspace">
@@ -109,6 +110,9 @@
       </div>
       <label class="sch-question sch-free" for="editorFree">Free text
         <textarea id="editorFree" rows="3" maxlength="2000"></textarea>
+      </label>
+      <label class="sch-question sch-details" for="editorDetails">Appointment details
+        <textarea id="editorDetails" rows="5" maxlength="2000"></textarea>
       </label>
       <div class="sch-times">
         <label for="editorStart">Start

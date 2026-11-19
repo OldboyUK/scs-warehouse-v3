@@ -39,6 +39,14 @@
     { id: 'bulk_out', label: 'BULK OUT' }
   ];
 
+  var APPOINTMENT_CATEGORIES = [
+    { id: 'scs', label: 'SCS' },
+    { id: 'management', label: 'Management' },
+    { id: 'qc_blending', label: 'QC / Blending' },
+    { id: 'warehouse_logistics', label: 'Warehouse / Logistics' },
+    { id: 'engineering', label: 'Engineering' }
+  ];
+
   var STATUSES = [
     { colour: '#ff0000', label: 'PRODUCTION SPACE SCHEDULED BUT NOT CONFIRMED' },
     { colour: '#ff9900', label: 'PRODUCTION APPROVAL DOCUMENT SENT TO CUSTOMER' },
@@ -57,9 +65,11 @@
   var dayIds = {};
   var categoryIds = {};
   var blendingIds = {};
+  var appointmentIds = {};
   DAYS.forEach(function (day) { dayIds[day.id] = day; });
   CATEGORIES.forEach(function (category) { categoryIds[category.id] = category; });
   BLENDING_CATEGORIES.forEach(function (category) { blendingIds[category.id] = category; });
+  APPOINTMENT_CATEGORIES.forEach(function (category) { appointmentIds[category.id] = category; });
 
   function storage() {
     try {
@@ -193,6 +203,9 @@
       blendingNight: {},
       blendingSaturday: {},
       blendingWeekVersions: {},
+      appointmentNight: {},
+      appointmentSaturday: {},
+      appointmentWeekVersions: {},
       loadedYear: null,
       blocks: []
     };
@@ -320,6 +333,7 @@
   }
 
   function displayText(block) {
+    if (block.schedule === 'appointments') return block.freeText || '';
     var detail = block.schedule === 'blending' ? block.freeText : block.packingFormat;
     var structured = block.customer || block.product || block.liquidCode ||
       detail || block.volume != null;
@@ -346,7 +360,7 @@
       freeText: block.freeText || '',
       volume: block.volume,
       legacyText: block.legacyText,
-      schedule: block.schedule === 'blending' ? 'blending' : 'production',
+      schedule: scheduleKind(block.schedule),
       text: displayText(block),
       backgroundColour: block.backgroundColour,
       version: block.version || 0
@@ -355,8 +369,8 @@
 
   function normaliseBlock(item, seen, fallbackWeek) {
     if (!item || typeof item !== 'object') return null;
-    var schedule = item.schedule === 'blending' ? 'blending' : 'production';
-    var allowed = schedule === 'blending' ? blendingIds : categoryIds;
+    var schedule = scheduleKind(item.schedule);
+    var allowed = categoriesFor(schedule);
     if (!dayIds[item.day] || !allowed[item.category]) return null;
     var start = clockToOffset(item.startTime, false);
     var end = clockToOffset(item.endTime, true);
@@ -364,15 +378,15 @@
     var id = String(item.id || '');
     if (!/^[A-Za-z0-9_-]{8,80}$/.test(id) || seen[id]) id = newId();
     seen[id] = true;
-    var customer = cleanLine(item.customer, 500) || cleanLine(item.companyName, 500);
-    var product = cleanLine(item.product, 500) || cleanLine(item.productName, 500);
-    var liquidCode = cleanLine(item.liquidCode, 80);
-    var packingFormat = schedule === 'blending' ? '' : cleanLine(item.packingFormat, 200);
-    var freeText = schedule === 'blending' ? cleanLine(item.freeText, 2000) : '';
-    var volume = storedVolume(item.volume);
+    var customer = schedule === 'appointments' ? '' : (cleanLine(item.customer, 500) || cleanLine(item.companyName, 500));
+    var product = schedule === 'appointments' ? '' : (cleanLine(item.product, 500) || cleanLine(item.productName, 500));
+    var liquidCode = schedule === 'appointments' ? '' : cleanLine(item.liquidCode, 80);
+    var packingFormat = schedule === 'production' ? cleanLine(item.packingFormat, 200) : '';
+    var freeText = schedule === 'production' ? '' : cleanLine(item.freeText, 2000);
+    var volume = schedule === 'appointments' ? null : storedVolume(item.volume);
     var structured = customer || product || liquidCode || packingFormat || freeText || volume != null;
     var legacyText = '';
-    if (!structured) {
+    if (schedule !== 'appointments' && !structured) {
       if (typeof item.legacyText === 'string') legacyText = item.legacyText.slice(0, 2000);
       else if (typeof item.text === 'string') legacyText = item.text.slice(0, 2000);
     }
@@ -440,15 +454,30 @@
   }
 
   function scheduleKind(value) {
-    return value === 'blending' ? 'blending' : 'production';
+    if (value === 'blending' || value === 'appointments') return value;
+    return 'production';
+  }
+
+  function categoriesFor(schedule) {
+    if (schedule === 'blending') return blendingIds;
+    if (schedule === 'appointments') return appointmentIds;
+    return categoryIds;
   }
 
   function weekBag(schedule) {
-    if (scheduleKind(schedule) === 'blending') {
+    var kind = scheduleKind(schedule);
+    if (kind === 'blending') {
       return {
         night: state.blendingNight,
         saturday: state.blendingSaturday,
         versions: state.blendingWeekVersions
+      };
+    }
+    if (kind === 'appointments') {
+      return {
+        night: state.appointmentNight,
+        saturday: state.appointmentSaturday,
+        versions: state.appointmentWeekVersions
       };
     }
     return {
@@ -459,7 +488,9 @@
   }
 
   function weekSnapKey(schedule, week) {
-    return scheduleKind(schedule) === 'blending' ? 'blending|' + week : week;
+    var kind = scheduleKind(schedule);
+    if (kind === 'production') return week;
+    return kind + '|' + week;
   }
 
   function isNightManual(week, schedule) {
@@ -506,8 +537,8 @@
 
   function addBlock(input) {
     input = input || {};
-    var schedule = input.schedule === 'blending' ? 'blending' : 'production';
-    var allowed = schedule === 'blending' ? blendingIds : categoryIds;
+    var schedule = scheduleKind(input.schedule);
+    var allowed = categoriesFor(schedule);
     if (!dayIds[input.day] || !allowed[input.category]) return null;
     if (!validOffsets(input.startOffset, input.endOffset)) return null;
     var block = {
@@ -517,12 +548,12 @@
       category: input.category,
       startTime: offsetToClock(input.startOffset),
       endTime: offsetToClock(input.endOffset),
-      customer: cleanLine(input.customer, 500),
-      product: cleanLine(input.product, 500),
-      liquidCode: cleanLine(input.liquidCode, 80),
-      packingFormat: schedule === 'blending' ? '' : cleanLine(input.packingFormat, 200),
-      freeText: schedule === 'blending' ? cleanLine(input.freeText, 2000) : '',
-      volume: storedVolume(input.volume),
+      customer: schedule === 'appointments' ? '' : cleanLine(input.customer, 500),
+      product: schedule === 'appointments' ? '' : cleanLine(input.product, 500),
+      liquidCode: schedule === 'appointments' ? '' : cleanLine(input.liquidCode, 80),
+      packingFormat: schedule === 'production' ? cleanLine(input.packingFormat, 200) : '',
+      freeText: schedule === 'production' ? '' : cleanLine(input.freeText, 2000),
+      volume: schedule === 'appointments' ? null : storedVolume(input.volume),
       legacyText: '',
       backgroundColour: normaliseColour(input.backgroundColour),
       schedule: schedule,
@@ -541,13 +572,21 @@
     if (patch.customer !== undefined) block.customer = cleanLine(patch.customer, 500);
     if (patch.product !== undefined) block.product = cleanLine(patch.product, 500);
     if (patch.liquidCode !== undefined) block.liquidCode = cleanLine(patch.liquidCode, 80);
-    if (patch.packingFormat !== undefined && block.schedule !== 'blending') block.packingFormat = cleanLine(patch.packingFormat, 200);
-    if (patch.freeText !== undefined && block.schedule === 'blending') block.freeText = cleanLine(patch.freeText, 2000);
-    if (patch.volume !== undefined) block.volume = storedVolume(patch.volume);
-    if (patch.legacyText !== undefined) block.legacyText = String(patch.legacyText).slice(0, 2000);
+    if (patch.packingFormat !== undefined && block.schedule === 'production') block.packingFormat = cleanLine(patch.packingFormat, 200);
+    if (patch.freeText !== undefined && block.schedule !== 'production') block.freeText = cleanLine(patch.freeText, 2000);
+    if (patch.volume !== undefined && block.schedule !== 'appointments') block.volume = storedVolume(patch.volume);
+    if (block.schedule === 'appointments') {
+      block.customer = '';
+      block.product = '';
+      block.liquidCode = '';
+      block.packingFormat = '';
+      block.volume = null;
+      block.legacyText = '';
+    }
+    if (patch.legacyText !== undefined && block.schedule !== 'appointments') block.legacyText = String(patch.legacyText).slice(0, 2000);
     if (patch.backgroundColour !== undefined) block.backgroundColour = normaliseColour(patch.backgroundColour);
     if (patch.day !== undefined && dayIds[patch.day]) block.day = patch.day;
-    var allowedCategory = block.schedule === 'blending' ? blendingIds : categoryIds;
+    var allowedCategory = categoriesFor(block.schedule);
     if (patch.category !== undefined && allowedCategory[patch.category]) block.category = patch.category;
     if (patch.weekCommencing !== undefined) {
       var monday = canonicalWeek(patch.weekCommencing);
@@ -614,7 +653,7 @@
         volume: block.volume,
         legacyText: block.legacyText,
         backgroundColour: block.backgroundColour,
-        schedule: block.schedule === 'blending' ? 'blending' : 'production',
+        schedule: scheduleKind(block.schedule),
         version: block.version || 0
       };
     });
@@ -648,6 +687,7 @@
     }
     collectWeeks('production');
     collectWeeks('blending');
+    collectWeeks('appointments');
     return { blocks: blocks, dayNotes: dayNotes, weeks: weeks };
   }
 
@@ -726,6 +766,9 @@
     state.blendingNight = {};
     state.blendingSaturday = {};
     state.blendingWeekVersions = {};
+    state.appointmentNight = {};
+    state.appointmentSaturday = {};
+    state.appointmentWeekVersions = {};
     state.loadedYear = payload.year;
     var seen = {};
     (payload.bookings || []).forEach(function (booking) {
@@ -806,10 +849,14 @@
     state.blendingNight = {};
     state.blendingSaturday = {};
     state.blendingWeekVersions = {};
+    state.appointmentNight = {};
+    state.appointmentSaturday = {};
+    state.appointmentWeekVersions = {};
     Object.keys(snap.weeks || {}).forEach(function (key) {
       var item = snap.weeks[key] || {};
-      var schedule = item.schedule === 'blending' || String(key).indexOf('blending|') === 0 ? 'blending' : 'production';
-      var week = item.weekCommencing || (schedule === 'blending' ? String(key).slice(9) : key);
+      var schedule = scheduleKind(item.schedule);
+      if (item.schedule == null && String(key).indexOf('|') !== -1) schedule = scheduleKind(String(key).split('|')[0]);
+      var week = item.weekCommencing || (String(key).indexOf('|') === -1 ? key : String(key).split('|')[1]);
       var bag = weekBag(schedule);
       if (item.nightShift) bag.night[week] = true;
       if (item.saturday) bag.saturday[week] = true;
@@ -1229,6 +1276,7 @@
     DAYS: DAYS,
     CATEGORIES: CATEGORIES,
     BLENDING_CATEGORIES: BLENDING_CATEGORIES,
+    APPOINTMENT_CATEGORIES: APPOINTMENT_CATEGORIES,
     STATUSES: STATUSES.map(function (status) {
       return { colour: status.colour, label: status.label };
     }),

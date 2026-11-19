@@ -130,10 +130,13 @@
     Object.keys(after).forEach(function (week) { seen[week] = true; });
     Object.keys(seen).forEach(function (key) {
       var known = before[key] || after[key];
-      var schedule = known && known.schedule === 'blending' ? 'blending' : 'production';
-      if ((!known || !known.schedule) && String(key).indexOf('blending|') === 0) schedule = 'blending';
+      var schedule = known && (known.schedule === 'blending' || known.schedule === 'appointments') ? known.schedule : 'production';
+      if (!known || !known.schedule) {
+        if (String(key).indexOf('appointments|') === 0) schedule = 'appointments';
+        else if (String(key).indexOf('blending|') === 0) schedule = 'blending';
+      }
       var week = known && known.weekCommencing;
-      if (!week) week = String(key).indexOf('blending|') === 0 ? String(key).slice(9) : key;
+      if (!week) week = String(key).indexOf('|') === -1 ? key : String(key).slice(String(key).indexOf('|') + 1);
       var prev = before[key] || { weekCommencing: week, schedule: schedule, nightShift: false, saturday: false, version: 0 };
       var next = after[key] || { weekCommencing: week, schedule: schedule, nightShift: false, saturday: false, version: prev.version || 0 };
       var version = Number(prev.version) || 0;
@@ -166,12 +169,12 @@
       customer: block.customer || '',
       product: block.product || '',
       liquidCode: block.liquidCode || '',
-      packingFormat: block.schedule === 'blending' ? '' : (block.packingFormat || ''),
-      freeText: block.schedule === 'blending' ? (block.freeText || '') : '',
-      volume: block.volume == null ? null : Number(block.volume),
-      legacyText: block.legacyText || '',
+      packingFormat: block.schedule === 'production' || !block.schedule ? (block.packingFormat || '') : '',
+      freeText: block.schedule === 'production' || !block.schedule ? '' : (block.freeText || ''),
+      volume: block.schedule === 'appointments' || block.volume == null ? null : Number(block.volume),
+      legacyText: block.schedule === 'appointments' ? '' : (block.legacyText || ''),
       backgroundColour: block.backgroundColour,
-      schedule: block.schedule === 'blending' ? 'blending' : 'production'
+      schedule: block.schedule === 'blending' || block.schedule === 'appointments' ? block.schedule : 'production'
     };
   }
 

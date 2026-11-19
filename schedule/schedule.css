@@ -1139,16 +1139,33 @@
   display: none;
 }
 
-.sch-free textarea {
+.sch-free textarea,
+.sch-details textarea {
   width: 100%;
   min-height: 88px;
   resize: vertical;
   font: inherit;
 }
 
-.schedule-app .sch-modal-card.is-blending .sch-free {
+.sch-details {
+  display: none;
+}
+
+.sch-details textarea {
+  min-height: 120px;
+}
+
+.schedule-app .sch-modal-card.is-blending .sch-free,
+.schedule-app .sch-modal-card.is-appointments .sch-details {
   display: flex;
   flex-direction: column;
+}
+
+.schedule-app .sch-modal-card.is-appointments .sch-customer,
+.schedule-app .sch-modal-card.is-appointments .sch-pair,
+.schedule-app .sch-modal-card.is-appointments .sch-free,
+.schedule-app .sch-modal-card.is-appointments #editorStatus {
+  display: none;
 }
 
 .schedule-app .sch-modal-card.is-blending .sch-format,

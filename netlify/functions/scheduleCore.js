@@ -4,6 +4,12 @@ const schedule = require('../../schedule/schedule-data');
 const DAYS = { monday: true, tuesday: true, wednesday: true, thursday: true, friday: true, saturday: true };
 const CATEGORIES = { bottles: true, keg: true, owk: true, bibs: true, bulk: true };
 const BLENDING = { base_in: true, filtering: true, blending: true, bulk_out: true };
+const APPOINTMENTS = { scs: true, management: true, qc_blending: true, warehouse_logistics: true, engineering: true };
+
+function scheduleName(value) {
+  if (value === 'blending' || value === 'appointments') return value;
+  return 'production';
+}
 const COLOURS = {};
 schedule.COLOURS.forEach(function (colour) { COLOURS[colour] = true; });
 
@@ -63,7 +69,7 @@ function mapBooking(row) {
     volume: row.volume == null || row.volume === '' ? null : Number(row.volume),
     legacyText: row.legacy_text || '',
     backgroundColour: row.background_colour,
-    schedule: row.schedule_kind === 'blending' ? 'blending' : 'production',
+    schedule: scheduleName(row.schedule_kind),
     freeText: row.free_text || '',
     version: Number(row.version) || 0,
     updatedBy: row.updated_by || ''
@@ -84,7 +90,7 @@ function mapNote(row) {
 function mapWeek(row) {
   return {
     weekCommencing: row.week_commencing,
-    schedule: row.schedule_kind === 'blending' ? 'blending' : 'production',
+    schedule: scheduleName(row.schedule_kind),
     nightShift: !!row.night_shift,
     saturday: !!row.saturday_running,
     version: Number(row.version) || 0,
@@ -98,20 +104,22 @@ function checkedBooking(input) {
   if (!/^[A-Za-z0-9_-]{8,80}$/.test(id)) return { error: 'The booking id is not valid.' };
   const monday = requireWeek(booking.weekCommencing);
   if (!monday) return { error: 'The production week is not valid.' };
-  const kind = booking.schedule === 'blending' ? 'blending' : 'production';
-  const allowed = kind === 'blending' ? BLENDING : CATEGORIES;
+  const kind = scheduleName(booking.schedule);
+  const allowed = kind === 'blending' ? BLENDING : (kind === 'appointments' ? APPOINTMENTS : CATEGORIES);
   if (!DAYS[booking.day] || !allowed[booking.category]) return { error: 'The day or category is not valid.' };
   if (!offsetsOk(booking.startTime, booking.endTime)) return { error: 'The start and finish times are not valid.' };
   const colour = String(booking.backgroundColour || '').toLowerCase();
   if (!COLOURS[colour]) return { error: 'The status colour is not valid.' };
   let volume = null;
-  if (booking.volume != null && booking.volume !== '') {
+  if (kind !== 'appointments' && booking.volume != null && booking.volume !== '') {
     volume = Number(booking.volume);
     if (!isFinite(volume)) return { error: 'The volume is not valid.' };
   }
   if (kind === 'blending' && (volume == null || volume < 100 || volume > 1000000)) {
     return { error: 'The volume is not valid.' };
   }
+  const details = kind === 'production' ? '' : clean(booking.freeText, 2000);
+  if (kind === 'appointments' && !details) return { error: 'The appointment details are missing.' };
   return {
     booking: {
       id: id,
@@ -120,15 +128,15 @@ function checkedBooking(input) {
       category: booking.category,
       startTime: booking.startTime,
       endTime: booking.endTime,
-      customer: clean(booking.customer, 500),
-      product: clean(booking.product, 500),
-      liquidCode: clean(booking.liquidCode, 80),
-      packingFormat: kind === 'blending' ? '' : clean(booking.packingFormat, 200),
+      customer: kind === 'appointments' ? '' : clean(booking.customer, 500),
+      product: kind === 'appointments' ? '' : clean(booking.product, 500),
+      liquidCode: kind === 'appointments' ? '' : clean(booking.liquidCode, 80),
+      packingFormat: kind === 'production' ? clean(booking.packingFormat, 200) : '',
       volume: volume,
-      legacyText: clean(booking.legacyText, 2000),
+      legacyText: kind === 'appointments' ? '' : clean(booking.legacyText, 2000),
       backgroundColour: colour,
       schedule: kind,
-      freeText: kind === 'blending' ? clean(booking.freeText, 2000) : ''
+      freeText: details
     }
   };
 }
@@ -447,7 +455,7 @@ async function applyWeek(op, username) {
   const expected = Number(op.expectedVersion);
   const night = !!week.nightShift;
   const saturday = !!week.saturday;
-  const kind = week.schedule === 'blending' ? 'blending' : 'production';
+  const kind = scheduleName(week.schedule);
   if (!expected) {
     const inserted = await run(
       `WITH inserted AS (

@@ -165,6 +165,43 @@ assert.ok(core.checkedBooking(Object.assign({}, blendingBooking.booking, { categ
 assert.ok(core.checkedBooking(Object.assign({}, blendingBooking.booking, { volume: 50 })).error);
 assert.ok(core.checkedBooking(block({ category: 'base_in' })).error);
 
+const appointment = core.checkedBooking({
+  id: 'appt-0001',
+  weekCommencing: '2026-11-09',
+  day: 'wednesday',
+  category: 'warehouse_logistics',
+  schedule: 'appointments',
+  startTime: '18:00',
+  endTime: '21:00',
+  customer: 'Should not be stored',
+  volume: 500,
+  freeText: 'Collect samples\nGate 3',
+  backgroundColour: '#ff0000'
+});
+assert.strictEqual(appointment.booking.schedule, 'appointments');
+assert.strictEqual(appointment.booking.customer, '');
+assert.strictEqual(appointment.booking.volume, null);
+assert.strictEqual(appointment.booking.freeText, 'Collect samples\nGate 3');
+assert.ok(core.checkedBooking(Object.assign({}, appointment.booking, { category: 'bottles' })).error);
+assert.ok(core.checkedBooking(Object.assign({}, appointment.booking, { freeText: '   ' })).error);
+assert.ok(core.checkedBooking(block({ category: 'scs' })).error);
+
+const appointmentNight = sync.planChanges(empty, {
+  blocks: [],
+  dayNotes: {},
+  weeks: {
+    'appointments|2026-11-09': {
+      weekCommencing: '2026-11-09',
+      schedule: 'appointments',
+      nightShift: true,
+      saturday: false,
+      version: 0
+    }
+  }
+}, 'week');
+assert.strictEqual(appointmentNight[0].week.schedule, 'appointments');
+assert.strictEqual(appointmentNight[0].week.weekCommencing, '2026-11-09');
+
 const scheduleData = require('../schedule/schedule-data');
 const blendBlock = scheduleData.addBlock({
   day: 'monday',
@@ -194,6 +231,32 @@ assert.strictEqual(scheduleData.isNightManual('2026-11-09', 'production'), false
 scheduleData.setSaturdayRunning('2026-11-09', true);
 assert.strictEqual(scheduleData.isSaturdayRunning('2026-11-09', 'production'), true);
 assert.strictEqual(scheduleData.isSaturdayRunning('2026-11-09', 'blending'), false);
+
+const appointmentBlock = scheduleData.addBlock({
+  day: 'tuesday',
+  category: 'engineering',
+  schedule: 'appointments',
+  startOffset: 60,
+  endOffset: 180,
+  customer: 'Not stored',
+  freeText: 'Boiler service\nBring permit',
+  volume: 250,
+  backgroundColour: '#00ffff',
+  weekCommencing: '2026-11-09'
+});
+assert.ok(appointmentBlock);
+assert.strictEqual(appointmentBlock.schedule, 'appointments');
+assert.strictEqual(appointmentBlock.customer, '');
+assert.strictEqual(appointmentBlock.volume, null);
+assert.strictEqual(appointmentBlock.text, 'Boiler service\nBring permit');
+assert.strictEqual(scheduleData.addBlock({
+  day: 'tuesday', category: 'engineering', startOffset: 0, endOffset: 60,
+  weekCommencing: '2026-11-09'
+}), null);
+scheduleData.setNightManual('2026-11-09', true, 'appointments');
+assert.strictEqual(scheduleData.isNightManual('2026-11-09', 'appointments'), true);
+assert.strictEqual(scheduleData.isNightManual('2026-11-09', 'production'), false);
+assert.strictEqual(scheduleData.isNightManual('2026-11-09', 'blending'), true);
 
 assert.strictEqual(core.sheetShouldWrite(2, 4), true);
 assert.strictEqual(core.sheetShouldWrite(4, 4), true);

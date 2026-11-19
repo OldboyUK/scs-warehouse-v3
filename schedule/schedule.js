@@ -30,6 +30,7 @@
   var editorLiquid = document.getElementById('editorLiquid');
   var editorFormat = document.getElementById('editorFormat');
   var editorFree = document.getElementById('editorFree');
+  var editorDetails = document.getElementById('editorDetails');
   var editorCard = document.querySelector('#blockEditor .sch-modal-card');
   var editorVolume = document.getElementById('editorVolume');
   var editorVolumeError = document.getElementById('editorVolumeError');
@@ -50,6 +51,7 @@
   var scheduleTitle = document.getElementById('scheduleTitle');
   var tabProduction = document.getElementById('tabProduction');
   var tabBlending = document.getElementById('tabBlending');
+  var tabAppointments = document.getElementById('tabAppointments');
   var yearSelect = document.getElementById('yearSelect');
   var weekJump = document.getElementById('weekJump');
   var currentWeek = document.getElementById('currentWeek');
@@ -69,7 +71,9 @@
   }
 
   function activeCategories() {
-    return view === 'blending' ? data.BLENDING_CATEGORIES : data.CATEGORIES;
+    if (view === 'blending') return data.BLENDING_CATEGORIES;
+    if (view === 'appointments') return data.APPOINTMENT_CATEGORIES;
+    return data.CATEGORIES;
   }
 
   function laneCount() {
@@ -136,7 +140,7 @@
     node.style.background = block.backgroundColour;
     node.style.color = data.textColour(block.backgroundColour);
     node.querySelector('.prod-text').textContent = block.text || '';
-    var white = products.isWhiteLabel(block.liquidCode);
+    var white = block.schedule !== 'appointments' && products.isWhiteLabel(block.liquidCode);
     node.classList.toggle('has-flag', white);
     var flag = node.querySelector('.prod-flag');
     if (white) {
@@ -361,7 +365,7 @@
   }
 
   function categoryLabel(id) {
-    var lists = [data.CATEGORIES, data.BLENDING_CATEGORIES];
+    var lists = [data.CATEGORIES, data.BLENDING_CATEGORIES, data.APPOINTMENT_CATEGORIES];
     for (var list = 0; list < lists.length; list++) {
       for (var i = 0; i < lists[list].length; i++) {
         if (lists[list][i].id === id) return lists[list][i].label;
@@ -407,7 +411,7 @@
       swatch.setAttribute('aria-pressed', selected ? 'true' : 'false');
       if (selected) chosen = colour;
     });
-    if (view === 'blending') {
+    if (view !== 'production') {
       editorStatus.textContent = '';
       editorStatus.hidden = true;
     } else {
@@ -517,6 +521,7 @@
   }
 
   function formReady() {
+    if (view === 'appointments') return String(editorDetails.value || '').trim().length > 0;
     return products.ready() &&
       !!canonicalCustomer(editorCustomer.value) &&
       currentMatch &&
@@ -730,6 +735,20 @@
   }
 
   function productPatch(match, volume) {
+    if (view === 'appointments') {
+      return {
+        customer: '',
+        product: '',
+        liquidCode: '',
+        packingFormat: '',
+        freeText: editorDetails.value,
+        volume: null,
+        legacyText: '',
+        backgroundColour: selectedColour(),
+        startOffset: Number(editorStart.value),
+        endOffset: Number(editorEnd.value)
+      };
+    }
     return {
       customer: match.customer,
       product: match.product,
@@ -750,10 +769,10 @@
       refreshSubmit();
       return;
     }
-    var volume = readVolume();
-    var customerName = canonicalCustomer(editorCustomer.value);
-    var match = customerName ? products.lookup(customerName, editorProduct.value) : null;
-    if (!match || match.ambiguous) {
+    var volume = view === 'appointments' ? null : readVolume();
+    var customerName = view === 'appointments' ? '' : canonicalCustomer(editorCustomer.value);
+    var match = view === 'appointments' ? { customer: '', product: '', liquidCode: '' } : (customerName ? products.lookup(customerName, editorProduct.value) : null);
+    if (view !== 'appointments' && (!match || match.ambiguous)) {
       if (editorMode === 'edit') restoreSnapshot();
       applyLiquid();
       refreshSubmit();
@@ -768,17 +787,17 @@
         startOffset: Number(editorStart.value),
         endOffset: Number(editorEnd.value),
         backgroundColour: selectedColour(),
-        customer: match.customer,
-        product: match.product,
-        liquidCode: match.liquidCode,
-        packingFormat: view === 'blending' ? '' : editorFormat.value,
-        freeText: view === 'blending' ? editorFree.value : '',
-        volume: volume,
+        customer: view === 'appointments' ? '' : match.customer,
+        product: view === 'appointments' ? '' : match.product,
+        liquidCode: view === 'appointments' ? '' : match.liquidCode,
+        packingFormat: view === 'production' ? editorFormat.value : '',
+        freeText: view === 'appointments' ? editorDetails.value : (view === 'blending' ? editorFree.value : ''),
+        volume: view === 'appointments' ? null : volume,
         schedule: view,
         weekCommencing: draft.weekCommencing
       });
       if (!created) {
-        showFormError(view === 'blending' ? 'The blending booking could not be created.' : 'The production block could not be created.');
+        showFormError(view === 'appointments' ? 'The appointment could not be created.' : (view === 'blending' ? 'The blending booking could not be created.' : 'The production block could not be created.'));
         return;
       }
       var lane = laneMap[laneKey(created.weekCommencing, created.day, created.category)];
@@ -802,19 +821,23 @@
     editorMode = mode;
     var adding = mode === 'add';
     var blending = view === 'blending';
+    var appointments = view === 'appointments';
     editorCard.classList.toggle('is-blending', blending);
+    editorCard.classList.toggle('is-appointments', appointments);
     editorSwatches.querySelectorAll('.sch-swatch').forEach(function (swatch) {
-      var label = blending ? 'Colour' : data.statusLabel(swatch.dataset.colour);
+      var label = view === 'production' ? data.statusLabel(swatch.dataset.colour) : 'Colour';
       swatch.title = label;
       swatch.setAttribute('aria-label', label);
     });
     editorActions.classList.toggle('is-adding', adding);
     editorDelete.tabIndex = adding ? -1 : 0;
     editorDismiss.textContent = adding ? 'Cancel' : 'Back';
-    editorConfirm.textContent = adding ? (blending ? 'Create Blending Booking' : 'Create Production Block') : 'Save changes';
-    editorTitle.textContent = blending
-      ? (adding ? 'Create blending booking' : 'Edit blending booking')
-      : (adding ? 'Create production block' : 'Edit production block');
+    editorConfirm.textContent = adding ? (appointments ? 'Create Appointment' : (blending ? 'Create Blending Booking' : 'Create Production Block')) : 'Save changes';
+    editorTitle.textContent = appointments
+      ? (adding ? 'Create appointment' : 'Edit appointment')
+      : (blending
+        ? (adding ? 'Create blending booking' : 'Edit blending booking')
+        : (adding ? 'Create production block' : 'Edit production block'));
   }
 
   function openEditor(id, mode) {
@@ -835,7 +858,8 @@
     filling = true;
     editorLane.textContent = weekHeading(block.weekCommencing) + ' · ' + dayLabel(block.day) + ' · ' + categoryLabel(block.category);
     fillForm(block.customer, block.product, block.packingFormat);
-    editorFree.value = block.freeText || '';
+    editorFree.value = view === 'blending' ? (block.freeText || '') : '';
+    editorDetails.value = view === 'appointments' ? (block.freeText || '') : '';
     editorVolume.value = block.volume == null ? '' : String(block.volume);
     fillStartOptions(block.startOffset);
     fillEndOptions(block.startOffset, block.endOffset);
@@ -845,7 +869,8 @@
     refreshVolumeMessage();
     refreshSubmit();
     modal.hidden = false;
-    if (products.ready()) focusCustomerField();
+    if (view === 'appointments') editorDetails.focus();
+    else if (products.ready()) focusCustomerField();
   }
 
   function openCreate(day, category, hour, week) {
@@ -867,6 +892,7 @@
     filling = true;
     editorLane.textContent = weekHeading(draft.weekCommencing) + ' · ' + dayLabel(day) + ' · ' + categoryLabel(category);
     editorFree.value = '';
+    editorDetails.value = '';
     fillForm('', '', '');
     editorVolume.value = '';
     fillStartOptions(draft.startOffset);
@@ -874,11 +900,12 @@
     refreshDuration(draft);
     markSwatch(draft.backgroundColour);
     filling = false;
-    showFormError(products.ready() ? '' : (products.status().message || 'Product lists are still loading.'));
+    showFormError(view === 'appointments' || products.ready() ? '' : (products.status().message || 'Product lists are still loading.'));
     refreshVolumeMessage();
     refreshSubmit();
     modal.hidden = false;
-    if (products.ready()) focusCustomerField();
+    if (view === 'appointments') editorDetails.focus();
+    else if (products.ready()) focusCustomerField();
   }
 
   function applyTimes(start, end) {
@@ -995,7 +1022,7 @@
     if (drag.kind === 'move') {
       var length = end - start;
       var lane = laneUnderPoint(clientX, clientY);
-      if (lane && lane.dataset.category !== drag.category) lane = null;
+      if (lane && view !== 'appointments' && lane.dataset.category !== drag.category) lane = null;
       clearDropTarget();
       var otherWeek = lane && lane.dataset.week !== drag.week;
       if (otherWeek) {
@@ -1267,9 +1294,11 @@
     var note = document.createElement('p');
     note.className = 'sch-night-note';
     note.hidden = true;
-    note.textContent = view === 'blending'
-      ? 'Night shift required – booking scheduled beyond 20:00'
-      : 'Night shift required – production scheduled beyond 20:00';
+    note.textContent = view === 'appointments'
+      ? 'Night shift required – appointment scheduled beyond 20:00'
+      : (view === 'blending'
+        ? 'Night shift required – booking scheduled beyond 20:00'
+        : 'Night shift required – production scheduled beyond 20:00');
     wrap.appendChild(label);
     wrap.appendChild(note);
     return wrap;
@@ -1466,15 +1495,16 @@
   }
 
   function switchSchedule(next) {
-    if (next !== 'production' && next !== 'blending') return;
+    if (next !== 'production' && next !== 'blending' && next !== 'appointments') return;
     if (next === view) return;
     if (!modal.hidden) dismissEditor();
     view = next;
     document.body.classList.toggle('is-blending', view === 'blending');
     tabProduction.setAttribute('aria-selected', view === 'production' ? 'true' : 'false');
     tabBlending.setAttribute('aria-selected', view === 'blending' ? 'true' : 'false');
-    scheduleTitle.textContent = view === 'blending' ? 'Blending Schedule' : 'Production Schedule';
-    scroll.setAttribute('aria-label', view === 'blending' ? 'Blending schedule' : 'Production schedule');
+    tabAppointments.setAttribute('aria-selected', view === 'appointments' ? 'true' : 'false');
+    scheduleTitle.textContent = view === 'appointments' ? 'Appointments' : (view === 'blending' ? 'Blending Schedule' : 'Production Schedule');
+    scroll.setAttribute('aria-label', view === 'appointments' ? 'Appointments' : (view === 'blending' ? 'Blending schedule' : 'Production schedule'));
     renderLegend();
     var iso = data.getState().weekCommencing;
     renderYear(data.loadedYear() || Number(yearSelect.value));
@@ -1484,6 +1514,7 @@
   function bindMeta() {
     tabProduction.addEventListener('click', function () { switchSchedule('production'); });
     tabBlending.addEventListener('click', function () { switchSchedule('blending'); });
+    tabAppointments.addEventListener('click', function () { switchSchedule('appointments'); });
     yearSelect.addEventListener('change', function () {
       if (navigating) return;
       var year = Number(yearSelect.value);
@@ -1632,6 +1663,14 @@
       refreshSubmit();
     });
 
+    editorDetails.addEventListener('input', function () {
+      if (filling) return;
+      refreshSubmit();
+    });
+    editorFree.addEventListener('input', function () {
+      if (filling || view !== 'blending') return;
+      refreshSubmit();
+    });
     editorVolume.addEventListener('input', function () {
       if (filling) return;
       refreshVolumeMessage();
@@ -1748,14 +1787,14 @@
   }
 
   function renderLegend() {
-    var blending = view === 'blending';
+    var plainKey = view === 'blending' || view === 'appointments';
     statusLegend.innerHTML = '';
-    statusLegend.setAttribute('aria-label', blending ? 'Blending colours' : 'Production status');
+    statusLegend.setAttribute('aria-label', view === 'appointments' ? 'Appointment colours' : (view === 'blending' ? 'Blending colours' : 'Production status'));
     data.STATUSES.forEach(function (status) {
       var item = document.createElement('div');
       item.className = 'sch-legend-item';
       item.style.background = status.colour;
-      item.textContent = blending ? 'Placeholder' : status.label;
+      item.textContent = plainKey ? 'Placeholder' : status.label;
       statusLegend.appendChild(item);
     });
   }
