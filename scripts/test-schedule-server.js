@@ -269,7 +269,14 @@ const cip = core.checkedBooking(block({
   packingFormat: 'Bottle',
   volume: 500
 }));
-assert.strictEqual(cip.booking.blockType, 'cip');
+assert.strictEqual(cip.booking.laneSpan, 1);
+assert.strictEqual(core.checkedBooking(block({
+  id: 'cip-000003', blockType: 'cip', category: 'keg', laneSpan: 3, volume: null
+})).booking.laneSpan, 3);
+assert.strictEqual(core.checkedBooking(block({
+  id: 'cip-000004', blockType: 'cip', category: 'bulk', laneSpan: 4, volume: null
+})).booking.laneSpan, 1);
+assert.strictEqual(core.checkedBooking(block({ laneSpan: 4 })).booking.laneSpan, 1);
 assert.strictEqual(cip.booking.customer, '');
 assert.strictEqual(cip.booking.product, '');
 assert.strictEqual(cip.booking.volume, null);
@@ -290,6 +297,12 @@ assert.strictEqual(movedCip.day, 'friday');
 assert.strictEqual(movedCip.category, 'keg');
 assert.strictEqual(movedCip.blockType, 'cip');
 assert.strictEqual(movedCip.text, 'CIP');
+const wideCip = scheduleData.updateBlock(cipBlock.id, { laneSpan: 3 });
+assert.strictEqual(wideCip.laneSpan, 3);
+assert.strictEqual(wideCip.category, 'keg');
+const clampedCip = scheduleData.updateBlock(cipBlock.id, { category: 'bibs', laneSpan: 3 });
+assert.strictEqual(clampedCip.category, 'bibs');
+assert.strictEqual(clampedCip.laneSpan, 2);
 
 assert.strictEqual(core.sheetShouldWrite(2, 4), true);
 assert.strictEqual(core.sheetShouldWrite(4, 4), true);

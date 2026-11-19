@@ -998,6 +998,16 @@
 
 .prod-handle-n { top: 0; }
 .prod-handle-s { bottom: 0; }
+.prod-handle-w,
+.prod-handle-e {
+  top: 10px;
+  bottom: 10px;
+  width: 10px;
+  height: auto;
+  cursor: ew-resize;
+}
+.prod-handle-w { left: 0; }
+.prod-handle-e { right: 0; }
 
 .prod-handle::after {
   content: "";
@@ -1013,6 +1023,33 @@
 
 .prod-handle-n::after { top: 2px; }
 .prod-handle-s::after { bottom: 2px; }
+.prod-handle-w::after,
+.prod-handle-e::after {
+  left: auto;
+  width: 3px;
+  height: 18px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.prod-handle-w::after { left: 2px; }
+.prod-handle-e::after { right: 2px; }
+
+.sch-cip-span {
+  position: relative;
+  z-index: 3;
+  pointer-events: none;
+  min-width: 0;
+}
+
+.sch-cip-span .prod-block {
+  pointer-events: auto;
+}
+
+.schedule-app.sch-spanning,
+.schedule-app.sch-spanning * {
+  cursor: ew-resize !important;
+  user-select: none !important;
+}
 
 .schedule-app.sch-dragging,
 .schedule-app.sch-dragging * {

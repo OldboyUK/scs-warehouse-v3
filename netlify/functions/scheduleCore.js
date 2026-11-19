@@ -18,7 +18,7 @@ const BOOKING_RETURN = `
   to_char(week_commencing, 'YYYY-MM-DD') AS week_commencing,
   day, category, start_time, end_time, customer, product, liquid_code,
   packing_format, volume, legacy_text, background_colour, schedule_kind, free_text,
-  block_type, version, updated_by
+  block_type, lane_span, version, updated_by
 `;
 
 let databaseClient = null;
@@ -72,6 +72,7 @@ function mapBooking(row) {
     schedule: scheduleName(row.schedule_kind),
     freeText: row.free_text || '',
     blockType: row.block_type === 'cip' ? 'cip' : 'booking',
+    laneSpan: schedule.cleanLaneSpan(row.category, row.lane_span, row.block_type === 'cip' ? 'cip' : 'booking'),
     version: Number(row.version) || 0,
     updatedBy: row.updated_by || ''
   };
@@ -141,7 +142,8 @@ function checkedBooking(input) {
       backgroundColour: colour,
       schedule: kind,
       freeText: cip ? '' : details,
-      blockType: blockType
+      blockType: blockType,
+      laneSpan: schedule.cleanLaneSpan(booking.category, booking.laneSpan, blockType)
     }
   };
 }
@@ -256,7 +258,7 @@ async function applyBooking(op, username) {
     booking.id, booking.weekCommencing, booking.day, booking.category, booking.startTime,
     booking.endTime, booking.customer, booking.product, booking.liquidCode, booking.packingFormat,
     booking.volume, booking.legacyText, booking.backgroundColour, username,
-    booking.schedule, booking.freeText, booking.blockType
+    booking.schedule, booking.freeText, booking.blockType, booking.laneSpan
   ];
   if (!expected) {
     const inserted = await run(
@@ -264,9 +266,9 @@ async function applyBooking(op, username) {
          INSERT INTO schedule_bookings (
            id, week_commencing, day, category, start_time, end_time, customer, product,
            liquid_code, packing_format, volume, legacy_text, background_colour, version, updated_by,
-           schedule_kind, free_text, block_type
+           schedule_kind, free_text, block_type, lane_span
          ) VALUES (
-           $1, $2::date, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 1, $14, $15, $16, $17
+           $1, $2::date, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 1, $14, $15, $16, $17, $18
          )
          ON CONFLICT (id) DO NOTHING
          RETURNING ${BOOKING_RETURN}
@@ -294,14 +296,14 @@ async function applyBooking(op, username) {
   }
   const updated = await run(
     `WITH old AS (
-       SELECT week_commencing FROM schedule_bookings WHERE id = $1 AND version = $18 AND schedule_kind = $15
+       SELECT week_commencing FROM schedule_bookings WHERE id = $1 AND version = $19 AND schedule_kind = $15
      ), updated AS (
        UPDATE schedule_bookings SET
          week_commencing = $2::date, day = $3, category = $4, start_time = $5, end_time = $6,
          customer = $7, product = $8, liquid_code = $9, packing_format = $10, volume = $11,
          legacy_text = $12, background_colour = $13, free_text = $16, block_type = $17,
-         version = version + 1, updated_at = now(), updated_by = $14
-       WHERE id = $1 AND version = $18 AND schedule_kind = $15
+         lane_span = $18, version = version + 1, updated_at = now(), updated_by = $14
+       WHERE id = $1 AND version = $19 AND schedule_kind = $15
        RETURNING ${BOOKING_RETURN}
      ), bumped AS (
        UPDATE schedule_revision SET revision = revision + 1

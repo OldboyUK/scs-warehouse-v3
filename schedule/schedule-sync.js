@@ -6,7 +6,7 @@
   var BLOCK_FIELDS = [
     'weekCommencing', 'day', 'category', 'startTime', 'endTime',
     'customer', 'product', 'liquidCode', 'packingFormat', 'freeText', 'volume',
-    'legacyText', 'backgroundColour', 'schedule', 'blockType'
+    'legacyText', 'backgroundColour', 'schedule', 'blockType', 'laneSpan'
   ];
 
   function same(a, b) {
@@ -176,7 +176,8 @@
       legacyText: cip || block.schedule === 'appointments' ? '' : (block.legacyText || ''),
       backgroundColour: block.backgroundColour,
       schedule: block.schedule === 'blending' || block.schedule === 'appointments' ? block.schedule : 'production',
-      blockType: cip ? 'cip' : 'booking'
+      blockType: cip ? 'cip' : 'booking',
+      laneSpan: cip ? Math.max(1, Math.round(Number(block.laneSpan) || 1)) : 1
     };
   }
 

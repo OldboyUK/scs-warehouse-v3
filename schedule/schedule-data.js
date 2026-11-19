@@ -338,6 +338,19 @@
     return value === 'cip' ? 'cip' : 'booking';
   }
 
+  function cleanLaneSpan(category, span, blockType) {
+    if (blockType !== 'cip') return 1;
+    var index = -1;
+    for (var i = 0; i < CATEGORIES.length; i++) {
+      if (CATEGORIES[i].id === category) index = i;
+    }
+    if (index < 0) return 1;
+    var count = Math.round(Number(span));
+    if (!isFinite(count) || count < 1) count = 1;
+    if (index + count > CATEGORIES.length) count = CATEGORIES.length - index;
+    return count;
+  }
+
   function displayText(block) {
     if (block.blockType === 'cip') return 'CIP';
     if (block.schedule === 'appointments') return block.freeText || '';
@@ -369,6 +382,7 @@
       legacyText: block.legacyText,
       schedule: scheduleKind(block.schedule),
       blockType: blockKind(block.blockType),
+      laneSpan: cleanLaneSpan(block.category, block.laneSpan, block.blockType),
       text: displayText(block),
       backgroundColour: block.backgroundColour,
       version: block.version || 0
@@ -416,6 +430,7 @@
       legacyText: cip ? '' : legacyText,
       schedule: schedule,
       blockType: blockType,
+      laneSpan: cleanLaneSpan(item.category, item.laneSpan, blockType),
       backgroundColour: normaliseColour(item.backgroundColour),
       version: Number(item.version) || 0
     };
@@ -571,6 +586,7 @@
       backgroundColour: normaliseColour(input.backgroundColour),
       schedule: schedule,
       blockType: blockType,
+      laneSpan: cleanLaneSpan(input.category, cip ? input.laneSpan : 1, blockType),
       version: 0
     };
     state.blocks.push(block);
@@ -603,6 +619,13 @@
     if (patch.day !== undefined && dayIds[patch.day]) block.day = patch.day;
     var allowedCategory = categoriesFor(block.schedule);
     if (patch.category !== undefined && allowedCategory[patch.category]) block.category = patch.category;
+    if (patch.laneSpan !== undefined || patch.category !== undefined) {
+      block.laneSpan = cleanLaneSpan(
+        block.category,
+        patch.laneSpan !== undefined ? patch.laneSpan : block.laneSpan,
+        block.blockType
+      );
+    }
     if (patch.weekCommencing !== undefined) {
       var monday = canonicalWeek(patch.weekCommencing);
       if (monday) block.weekCommencing = monday;
@@ -670,6 +693,7 @@
         backgroundColour: block.backgroundColour,
         schedule: scheduleKind(block.schedule),
         blockType: blockKind(block.blockType),
+        laneSpan: cleanLaneSpan(block.category, block.laneSpan, block.blockType),
         version: block.version || 0
       };
     });
@@ -1004,7 +1028,8 @@
       left.packingFormat === right.packingFormat && left.freeText === right.freeText &&
       left.schedule === right.schedule && left.volume === right.volume &&
       left.legacyText === right.legacyText && left.backgroundColour === right.backgroundColour &&
-      blockKind(left.blockType) === blockKind(right.blockType);
+      blockKind(left.blockType) === blockKind(right.blockType) &&
+      cleanLaneSpan(left.category, left.laneSpan, left.blockType) === cleanLaneSpan(right.category, right.laneSpan, right.blockType);
   }
 
   function acknowledge(result) {
@@ -1291,6 +1316,7 @@
     DAY_HOURS: DAY_HOURS,
     NIGHT_AFTER: NIGHT_AFTER,
     needsNight: needsNight,
+    cleanLaneSpan: cleanLaneSpan,
     DEFAULT_COLOUR: DEFAULT_COLOUR,
     DAYS: DAYS,
     CATEGORIES: CATEGORIES,
