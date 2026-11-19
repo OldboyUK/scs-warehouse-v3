@@ -12,7 +12,7 @@
 (function (root) {
   var STORAGE_KEY = 'scs_schedule_v1';
   var DAY_LENGTH = 24 * 60;
-  var DAY_START = 6 * 60;
+  var DAY_START = 5 * 60;
   var DEFAULT_COLOUR = '#ff0000';
 
   var DAYS = [
@@ -212,9 +212,10 @@
     };
   }
 
-  // 20:00 on the production day. A block that finishes at this time still
-  // fits the daytime view. Anything later needs the overnight hours.
-  var NIGHT_AFTER = 14 * 60;
+  // 20:00 on the working day. The day opens at 05:00, and overtime still
+  // begins after 20:00. It now closes at 05:00 the next morning.
+  var NIGHT_AFTER = 15 * 60;
+  var DAY_HOURS = NIGHT_AFTER / 60;
 
   function needsNight(endOffset) {
     return endOffset > NIGHT_AFTER;
@@ -1272,6 +1273,8 @@
   var api = {
     STORAGE_KEY: STORAGE_KEY,
     DAY_LENGTH: DAY_LENGTH,
+    DAY_HOURS: DAY_HOURS,
+    NIGHT_AFTER: NIGHT_AFTER,
     needsNight: needsNight,
     DEFAULT_COLOUR: DEFAULT_COLOUR,
     DAYS: DAYS,

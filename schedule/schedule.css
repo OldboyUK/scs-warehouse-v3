@@ -665,7 +665,7 @@
 .sch-grid {
   display: grid;
   grid-template-columns: var(--sch-time) repeat(30, minmax(var(--sch-lane), 1fr));
-  --sch-span: 14;
+  --sch-span: 15;
   grid-template-rows: var(--sch-day-h) var(--sch-cat-h) calc(var(--sch-hour) * var(--sch-span)) auto auto;
   width: 100%;
   min-width: 100%;
@@ -869,7 +869,7 @@
   position: absolute;
   left: 0;
   right: 0;
-  top: calc(var(--sch-hour) * 18);
+  top: calc(var(--sch-hour) * 19);
   border-top: 1px solid rgba(255, 255, 255, 0.28);
   pointer-events: none;
   z-index: 1;
@@ -965,7 +965,7 @@
 
 .prod-flag {
   position: absolute;
-  top: 12px;
+  top: 9px;
   left: 50%;
   z-index: 1;
   align-self: center;

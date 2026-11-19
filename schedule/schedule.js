@@ -103,7 +103,7 @@
 
   function visibleHours(lane) {
     var weekGrid = lane && lane.closest('.sch-grid');
-    return weekGrid && weekGrid.classList.contains('is-night') ? 24 : 14;
+    return weekGrid && weekGrid.classList.contains('is-night') ? 24 : data.DAY_HOURS;
   }
 
   function hourAt(lane, clientY) {
@@ -269,8 +269,8 @@
     time.style.gridColumn = '1';
     time.style.gridRow = '3';
     for (var hour = 0; hour < 24; hour++) {
-      var tick = el(hour === 0 ? 'sch-tick is-start' : 'sch-tick', data.minutesToLabel(hour * 60));
-      if (hour >= 14) tick.classList.add('is-overnight');
+      var tick = el('sch-tick', hour === 0 ? '' : data.minutesToLabel(hour * 60));
+      if (hour >= data.DAY_HOURS) tick.classList.add('is-overnight');
       tick.style.top = 'calc(var(--sch-hour) * ' + hour + ')';
       time.appendChild(tick);
     }
@@ -1102,8 +1102,8 @@
           start = end - length;
         }
         var nightAlreadyOpen = drag.nightAtStart[drag.week] || data.isNightManual(drag.week, view);
-        if (!nightAlreadyOpen && end > 14 * 60) {
-          end = 14 * 60;
+        if (!nightAlreadyOpen && end > data.NIGHT_AFTER) {
+          end = data.NIGHT_AFTER;
           start = Math.max(0, end - length);
         }
       }
