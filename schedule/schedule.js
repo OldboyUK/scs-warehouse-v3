@@ -140,6 +140,19 @@
     node.style.background = block.backgroundColour;
     node.style.color = data.textColour(block.backgroundColour);
     node.querySelector('.prod-text').textContent = block.text || '';
+    var notes = block.schedule === 'blending' ? String(block.freeText || '').trim() : '';
+    var note = node.querySelector('.prod-note');
+    if (notes) {
+      if (!note) {
+        note = document.createElement('p');
+        note.className = 'prod-note';
+        node.appendChild(note);
+      }
+      note.textContent = notes;
+      node.appendChild(note);
+    } else if (note) {
+      note.remove();
+    }
     var white = block.schedule !== 'appointments' && products.isWhiteLabel(block.liquidCode);
     node.classList.toggle('has-flag', white);
     var flag = node.querySelector('.prod-flag');
@@ -157,6 +170,10 @@
     var label = spoken + ', ' +
       data.minutesToLabel(block.startOffset) + ' to ' + endOptionLabel(block.endOffset);
     if (white) label += ', white label';
+    if (notes) {
+      node.appendChild(note);
+      label += ', notes ' + notes.replace(/\s*\n\s*/g, ', ');
+    }
     node.title = label;
     node.setAttribute('aria-label', label);
   }
@@ -568,6 +585,12 @@
       if (products.ready()) showFormError('');
       return;
     }
+    if (view === 'production' && editorProduct.value === 'PLACEHOLDER') {
+      currentMatch = { customer: customerName, product: 'PLACEHOLDER', liquidCode: '' };
+      editorLiquid.value = '';
+      showFormError('');
+      return;
+    }
     var result = products.lookup(customerName, editorProduct.value);
     if (!result) {
       showFormError('The selected customer and product could not be found among active products in PRODUCT DATABASE.');
@@ -685,7 +708,7 @@
     filling = true;
     fillSelect(
       editorProduct,
-      next ? products.productsFor(next) : [],
+      productChoices(next),
       next ? 'Select a product' : 'Select a customer first',
       ''
     );
@@ -711,6 +734,13 @@
     customerQuiet = false;
   }
 
+  function productChoices(customerName) {
+    if (!customerName) return [];
+    var list = products.productsFor(customerName);
+    if (view === 'production' && list.indexOf('PLACEHOLDER') === -1) list.push('PLACEHOLDER');
+    return list;
+  }
+
   function fillForm(customer, product, format) {
     var raw = String(customer || '');
     var canonical = canonicalCustomer(raw);
@@ -720,7 +750,7 @@
     closeCustomerList();
     fillSelect(
       editorProduct,
-      canonical ? products.productsFor(canonical) : [],
+      productChoices(canonical),
       canonical ? 'Select a product' : 'Select a customer first',
       product
     );
@@ -732,6 +762,13 @@
   function selectedColour() {
     var swatch = editorSwatches.querySelector('.sch-swatch.is-selected');
     return swatch ? swatch.dataset.colour : data.DEFAULT_COLOUR;
+  }
+
+  function selectedMatch(customerName) {
+    if (view === 'production' && editorProduct.value === 'PLACEHOLDER') {
+      return { customer: customerName, product: 'PLACEHOLDER', liquidCode: '' };
+    }
+    return customerName ? products.lookup(customerName, editorProduct.value) : null;
   }
 
   function productPatch(match, volume) {
@@ -771,7 +808,7 @@
     }
     var volume = view === 'appointments' ? null : readVolume();
     var customerName = view === 'appointments' ? '' : canonicalCustomer(editorCustomer.value);
-    var match = view === 'appointments' ? { customer: '', product: '', liquidCode: '' } : (customerName ? products.lookup(customerName, editorProduct.value) : null);
+    var match = view === 'appointments' ? { customer: '', product: '', liquidCode: '' } : selectedMatch(customerName);
     if (view !== 'appointments' && (!match || match.ambiguous)) {
       if (editorMode === 'edit') restoreSnapshot();
       applyLiquid();
@@ -1364,7 +1401,7 @@
       var suffix = document.createElement('span');
       suffix.className = 'sch-board-suffix';
       suffix.textContent = info.suffix;
-      var weekGrid = el('sch-grid' + (view === 'blending' ? ' is-blending' : ''));
+      var weekGrid = el('sch-grid');
       label.appendChild(title);
       label.appendChild(suffix);
       label.appendChild(bindNightToggle(board, info.weekCommencing));

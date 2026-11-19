@@ -164,6 +164,7 @@ assert.strictEqual(blendingBooking.booking.packingFormat, '');
 assert.ok(core.checkedBooking(Object.assign({}, blendingBooking.booking, { category: 'bottles' })).error);
 assert.ok(core.checkedBooking(Object.assign({}, blendingBooking.booking, { volume: 50 })).error);
 assert.ok(core.checkedBooking(block({ category: 'base_in' })).error);
+assert.strictEqual(core.checkedBooking(Object.assign({}, blendingBooking.booking, { category: 'filtering_2' })).booking.category, 'filtering_2');
 
 const appointment = core.checkedBooking({
   id: 'appt-0001',
@@ -220,7 +221,8 @@ const blendBlock = scheduleData.addBlock({
 assert.ok(blendBlock);
 assert.strictEqual(blendBlock.schedule, 'blending');
 assert.strictEqual(blendBlock.freeText, 'Hold for filter');
-assert.ok(blendBlock.text.indexOf('Hold for filter') !== -1);
+assert.ok(blendBlock.text.indexOf('Hold for filter') === -1);
+assert.ok(blendBlock.text.indexOf('Atkinson Wines Ltd') !== -1);
 assert.strictEqual(scheduleData.addBlock({
   day: 'monday', category: 'base_in', startOffset: 0, endOffset: 60,
   weekCommencing: '2026-11-09', volume: 100

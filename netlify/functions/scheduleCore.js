@@ -3,7 +3,7 @@ const schedule = require('../../schedule/schedule-data');
 
 const DAYS = { monday: true, tuesday: true, wednesday: true, thursday: true, friday: true, saturday: true };
 const CATEGORIES = { bottles: true, keg: true, owk: true, bibs: true, bulk: true };
-const BLENDING = { base_in: true, filtering: true, blending: true, bulk_out: true };
+const BLENDING = { base_in: true, filtering: true, filtering_2: true, blending: true, bulk_out: true };
 const APPOINTMENTS = { scs: true, management: true, qc_blending: true, warehouse_logistics: true, engineering: true };
 
 function scheduleName(value) {

@@ -34,7 +34,8 @@
 
   var BLENDING_CATEGORIES = [
     { id: 'base_in', label: 'BASE IN' },
-    { id: 'filtering', label: 'FILTERING' },
+    { id: 'filtering', label: 'FILTERING 1' },
+    { id: 'filtering_2', label: 'FILTERING 2' },
     { id: 'blending', label: 'BLENDING' },
     { id: 'bulk_out', label: 'BULK OUT' }
   ];
@@ -334,7 +335,7 @@
 
   function displayText(block) {
     if (block.schedule === 'appointments') return block.freeText || '';
-    var detail = block.schedule === 'blending' ? block.freeText : block.packingFormat;
+    var detail = block.schedule === 'blending' ? '' : block.packingFormat;
     var structured = block.customer || block.product || block.liquidCode ||
       detail || block.volume != null;
     if (!structured) return block.legacyText || '';
