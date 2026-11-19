@@ -131,6 +131,28 @@
     return offset === data.DAY_LENGTH ? label + ' (next day)' : label;
   }
 
+  function fillBlockText(text, block) {
+    if (!text) return;
+    if (block.product !== 'PLACEHOLDER') {
+      text.textContent = block.text || '';
+      return;
+    }
+    text.textContent = '';
+    String(block.text || '').split('\n').forEach(function (line) {
+      if (!String(line).trim()) return;
+      if (line === 'PLACEHOLDER') {
+        var pill = document.createElement('span');
+        pill.className = 'prod-placeholder';
+        pill.textContent = 'PLACEHOLDER';
+        text.appendChild(pill);
+        return;
+      }
+      var row = document.createElement('span');
+      row.textContent = line;
+      text.appendChild(row);
+    });
+  }
+
   function paint(node, block) {
     if (!node || !block) return;
     node.dataset.start = String(block.startOffset);
@@ -139,7 +161,7 @@
     node.style.height = 'calc(var(--sch-hour) * ' + ((block.endOffset - block.startOffset) / 60) + ')';
     node.style.background = block.backgroundColour;
     node.style.color = data.textColour(block.backgroundColour);
-    node.querySelector('.prod-text').textContent = block.text || '';
+    fillBlockText(node.querySelector('.prod-text'), block);
     var notes = block.schedule === 'blending' ? String(block.freeText || '').trim() : '';
     var note = node.querySelector('.prod-note');
     if (notes) {
