@@ -23,6 +23,7 @@
   var grid = document.getElementById('scheduleGrid');
   var runSuffix = document.getElementById('runSuffix');
   var modal = document.getElementById('blockEditor');
+  var cipChoice = document.getElementById('cipChoice');
   var editorTitle = document.getElementById('editorTitle');
   var editorLane = document.getElementById('editorLane');
   var editorError = document.getElementById('editorError');
@@ -907,7 +908,6 @@
     }
     if (editorBlockType === 'cip' && editorMode === 'edit') {
       var cipUpdated = data.updateBlock(editingId, {
-        backgroundColour: selectedColour(),
         startOffset: Number(editorStart.value),
         endOffset: Number(editorEnd.value)
       });
@@ -1797,6 +1797,7 @@
       swatch.setAttribute('aria-label', status.label);
       swatch.setAttribute('aria-pressed', 'false');
       swatch.addEventListener('click', function () {
+        if (editorBlockType === 'cip') return;
         if (editorMode === 'add' && draft) {
           draft.backgroundColour = colour;
           markSwatch(colour);
@@ -1968,6 +1969,10 @@
       closeScheduleMenu();
       return;
     }
+    if (cipChoice && !cipChoice.hidden) {
+      closeCipChoice();
+      return;
+    }
     if (drag) {
       endPointer({ pointerId: drag.pointerId }, false);
       return;
@@ -2038,26 +2043,39 @@
 
   var scheduleMenu = document.getElementById('scheduleMenu');
   var scheduleMenuCip = document.getElementById('scheduleMenuCip');
+  var scheduleMenuLine = document.getElementById('scheduleMenuLine');
+  var scheduleMenuAll = document.getElementById('scheduleMenuAll');
+  var cipChoiceLane = document.getElementById('cipChoiceLane');
+  var cipChoiceQuestion = document.getElementById('cipChoiceQuestion');
+  var cipChoiceCancel = document.getElementById('cipChoiceCancel');
   var menuTarget = null;
+  var menuPoint = { x: 0, y: 0 };
+
+  function categoryLabel(id) {
+    var categories = data.CATEGORIES;
+    for (var i = 0; i < categories.length; i++) {
+      if (categories[i].id === id) return categories[i].label;
+    }
+    return id;
+  }
 
   function closeScheduleMenu() {
     scheduleMenu.hidden = true;
+    if (!cipChoice || cipChoice.hidden) menuTarget = null;
+  }
+
+  function closeCipChoice() {
+    cipChoice.hidden = true;
     menuTarget = null;
   }
 
-  function openScheduleMenu(x, y, lane) {
-    menuTarget = {
-      week: lane.dataset.week,
-      day: lane.dataset.day,
-      category: lane.dataset.category,
-      hour: hourAt(lane, y)
-    };
+  function placeScheduleMenu() {
     scheduleMenu.hidden = false;
     scheduleMenu.style.left = '0px';
     scheduleMenu.style.top = '0px';
     var rect = scheduleMenu.getBoundingClientRect();
-    var left = x;
-    var top = y;
+    var left = menuPoint.x;
+    var top = menuPoint.y;
     if (left + rect.width > window.innerWidth - 8) left = window.innerWidth - rect.width - 8;
     if (top + rect.height > window.innerHeight - 8) top = window.innerHeight - rect.height - 8;
     if (left < 8) left = 8;
@@ -2066,16 +2084,46 @@
     scheduleMenu.style.top = top + 'px';
   }
 
-  function addCipBlock() {
+  function openScheduleMenu(x, y, lane) {
+    if (!cipChoice.hidden) return;
+    menuPoint.x = x;
+    menuPoint.y = y;
+    menuTarget = {
+      week: lane.dataset.week,
+      day: lane.dataset.day,
+      category: lane.dataset.category,
+      hour: hourAt(lane, y)
+    };
+    placeScheduleMenu();
+  }
+
+  function showCipChoice() {
+    if (!menuTarget || view !== 'production') return;
+    var line = categoryLabel(menuTarget.category).toUpperCase();
+    cipChoiceLane.textContent = weekHeading(menuTarget.week) + ' · ' + dayLabel(menuTarget.day) + ' · ' + line;
+    cipChoiceQuestion.textContent = 'Would you like to add the CIP block to the ' + line + ' only, or extend the block across all production lines?';
+    scheduleMenu.hidden = true;
+    cipChoice.hidden = false;
+    scheduleMenuLine.focus();
+  }
+
+  function addCipBlock(spanAll) {
     var target = menuTarget;
-    closeScheduleMenu();
+    closeCipChoice();
     if (!target || view !== 'production') return;
+    var category = target.category;
+    var laneSpan = 1;
+    if (spanAll) {
+      category = data.CATEGORIES[0].id;
+      laneSpan = data.CATEGORIES.length;
+    }
     var created = data.addBlock({
       day: target.day,
-      category: target.category,
+      category: category,
+      laneSpan: laneSpan,
       startOffset: target.hour * 60,
       endOffset: target.hour * 60 + 60,
-      backgroundColour: data.DEFAULT_COLOUR,
+      backgroundColour: data.CIP_COLOUR,
       schedule: 'production',
       blockType: 'cip',
       weekCommencing: target.week
@@ -2096,7 +2144,13 @@
     openScheduleMenu(event.clientX, event.clientY, lane);
   });
 
-  scheduleMenuCip.addEventListener('click', addCipBlock);
+  scheduleMenuCip.addEventListener('click', showCipChoice);
+  scheduleMenuLine.addEventListener('click', function () { addCipBlock(false); });
+  scheduleMenuAll.addEventListener('click', function () { addCipBlock(true); });
+  cipChoiceCancel.addEventListener('click', closeCipChoice);
+  cipChoice.addEventListener('pointerdown', function (event) {
+    if (event.target === cipChoice) closeCipChoice();
+  });
   document.addEventListener('pointerdown', function (event) {
     if (scheduleMenu.hidden || scheduleMenu.contains(event.target)) return;
     closeScheduleMenu();

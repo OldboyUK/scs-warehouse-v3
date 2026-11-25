@@ -277,6 +277,7 @@ assert.strictEqual(core.checkedBooking(block({
   id: 'cip-000004', blockType: 'cip', category: 'bulk', laneSpan: 4, volume: null
 })).booking.laneSpan, 1);
 assert.strictEqual(core.checkedBooking(block({ laneSpan: 4 })).booking.laneSpan, 1);
+assert.strictEqual(cip.booking.backgroundColour, '#a4c2f4');
 assert.strictEqual(cip.booking.customer, '');
 assert.strictEqual(cip.booking.product, '');
 assert.strictEqual(cip.booking.volume, null);
@@ -289,7 +290,8 @@ const cipBlock = scheduleData.addBlock({
 });
 assert.ok(cipBlock);
 assert.strictEqual(cipBlock.blockType, 'cip');
-assert.strictEqual(cipBlock.text, 'CIP');
+assert.strictEqual(cipBlock.backgroundColour, '#a4c2f4');
+assert.strictEqual(scheduleData.updateBlock(cipBlock.id, { backgroundColour: '#ff0000' }).backgroundColour, '#a4c2f4');
 assert.strictEqual(cipBlock.customer, '');
 assert.strictEqual(cipBlock.schedule, 'production');
 const movedCip = scheduleData.updateBlock(cipBlock.id, { day: 'friday', category: 'keg', startOffset: 180, endOffset: 240 });

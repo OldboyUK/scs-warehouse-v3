@@ -14,6 +14,7 @@
   var DAY_LENGTH = 24 * 60;
   var DAY_START = 5 * 60;
   var DEFAULT_COLOUR = '#ff0000';
+  var CIP_COLOUR = '#a4c2f4';
 
   var DAYS = [
     { id: 'monday', label: 'Monday' },
@@ -384,7 +385,7 @@
       blockType: blockKind(block.blockType),
       laneSpan: cleanLaneSpan(block.category, block.laneSpan, block.blockType),
       text: displayText(block),
-      backgroundColour: block.backgroundColour,
+      backgroundColour: blockKind(block.blockType) === 'cip' ? CIP_COLOUR : block.backgroundColour,
       version: block.version || 0
     };
   }
@@ -431,7 +432,7 @@
       schedule: schedule,
       blockType: blockType,
       laneSpan: cleanLaneSpan(item.category, item.laneSpan, blockType),
-      backgroundColour: normaliseColour(item.backgroundColour),
+      backgroundColour: cip ? CIP_COLOUR : normaliseColour(item.backgroundColour),
       version: Number(item.version) || 0
     };
   }
@@ -583,7 +584,7 @@
       freeText: schedule === 'production' || cip ? '' : cleanLine(input.freeText, 2000),
       volume: schedule === 'appointments' || cip ? null : storedVolume(input.volume),
       legacyText: '',
-      backgroundColour: normaliseColour(input.backgroundColour),
+      backgroundColour: cip ? CIP_COLOUR : normaliseColour(input.backgroundColour),
       schedule: schedule,
       blockType: blockType,
       laneSpan: cleanLaneSpan(input.category, cip ? input.laneSpan : 1, blockType),
@@ -616,6 +617,7 @@
     }
     if (patch.legacyText !== undefined && block.schedule !== 'appointments') block.legacyText = String(patch.legacyText).slice(0, 2000);
     if (patch.backgroundColour !== undefined) block.backgroundColour = normaliseColour(patch.backgroundColour);
+    if (block.blockType === 'cip') block.backgroundColour = CIP_COLOUR;
     if (patch.day !== undefined && dayIds[patch.day]) block.day = patch.day;
     var allowedCategory = categoriesFor(block.schedule);
     if (patch.category !== undefined && allowedCategory[patch.category]) block.category = patch.category;
@@ -690,7 +692,7 @@
         freeText: block.freeText || '',
         volume: block.volume,
         legacyText: block.legacyText,
-        backgroundColour: block.backgroundColour,
+        backgroundColour: blockKind(block.blockType) === 'cip' ? CIP_COLOUR : block.backgroundColour,
         schedule: scheduleKind(block.schedule),
         blockType: blockKind(block.blockType),
         laneSpan: cleanLaneSpan(block.category, block.laneSpan, block.blockType),
@@ -1318,6 +1320,7 @@
     needsNight: needsNight,
     cleanLaneSpan: cleanLaneSpan,
     DEFAULT_COLOUR: DEFAULT_COLOUR,
+    CIP_COLOUR: CIP_COLOUR,
     DAYS: DAYS,
     CATEGORIES: CATEGORIES,
     BLENDING_CATEGORIES: BLENDING_CATEGORIES,

@@ -174,7 +174,7 @@
       freeText: cip || block.schedule === 'production' || !block.schedule ? '' : (block.freeText || ''),
       volume: cip || block.schedule === 'appointments' || block.volume == null ? null : Number(block.volume),
       legacyText: cip || block.schedule === 'appointments' ? '' : (block.legacyText || ''),
-      backgroundColour: block.backgroundColour,
+      backgroundColour: cip ? '#a4c2f4' : block.backgroundColour,
       schedule: block.schedule === 'blending' || block.schedule === 'appointments' ? block.schedule : 'production',
       blockType: cip ? 'cip' : 'booking',
       laneSpan: cip ? Math.max(1, Math.round(Number(block.laneSpan) || 1)) : 1

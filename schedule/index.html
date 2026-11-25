@@ -138,6 +138,19 @@
     <button type="button" id="scheduleMenuCip" role="menuitem">Add CIP</button>
   </div>
 
+  <div class="sch-modal" id="cipChoice" hidden>
+    <div class="sch-modal-card" role="dialog" aria-modal="true" aria-labelledby="cipChoiceTitle">
+      <h2 id="cipChoiceTitle">Add CIP</h2>
+      <p class="sch-editor-lane" id="cipChoiceLane"></p>
+      <p id="cipChoiceQuestion" class="sch-cip-choice-question"></p>
+      <div class="sch-editor-actions">
+        <button type="button" class="btn btn-secondary" id="cipChoiceCancel">Cancel</button>
+        <button type="button" class="btn btn-secondary" id="scheduleMenuLine">Selected Line Only</button>
+        <button type="button" class="btn btn-success" id="scheduleMenuAll">All production lines</button>
+      </div>
+    </div>
+  </div>
+
   <script src="schedule-sync.js"></script>
   <script src="schedule-data.js"></script>
   <script src="schedule-products.js"></script>

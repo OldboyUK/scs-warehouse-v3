@@ -1000,14 +1000,15 @@
 .prod-handle-s { bottom: 0; }
 .prod-handle-w,
 .prod-handle-e {
-  top: 10px;
-  bottom: 10px;
-  width: 10px;
+  top: 8px;
+  bottom: 8px;
+  width: 14px;
   height: auto;
   cursor: ew-resize;
+  z-index: 4;
 }
-.prod-handle-w { left: 0; }
-.prod-handle-e { right: 0; }
+.prod-handle-w { left: 0; right: auto; }
+.prod-handle-e { left: auto; right: 0; }
 
 .prod-handle::after {
   content: "";
@@ -1098,9 +1099,19 @@
   outline: none;
 }
 
+.sch-cip-choice-question {
+  margin: 16px 0 0;
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
 .schedule-app .sch-modal-card.is-cip .sch-customer,
 .schedule-app .sch-modal-card.is-cip .sch-pair,
-.schedule-app .sch-modal-card.is-cip #editorStatus {
+.schedule-app .sch-modal-card.is-cip #editorStatus,
+.schedule-app .sch-modal-card.is-cip #editorColourLabel,
+.schedule-app .sch-modal-card.is-cip #editorSwatches {
   display: none;
 }
 

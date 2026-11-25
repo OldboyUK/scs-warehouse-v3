@@ -111,7 +111,9 @@ function checkedBooking(input) {
   if (!DAYS[booking.day] || !allowed[booking.category]) return { error: 'The day or category is not valid.' };
   if (!offsetsOk(booking.startTime, booking.endTime)) return { error: 'The start and finish times are not valid.' };
   const colour = String(booking.backgroundColour || '').toLowerCase();
-  if (!COLOURS[colour]) return { error: 'The status colour is not valid.' };
+  const blockType = booking.blockType === 'cip' ? 'cip' : 'booking';
+  if (blockType === 'cip' && kind !== 'production') return { error: 'CIP blocks belong on the production schedule.' };
+  if (blockType !== 'cip' && !COLOURS[colour]) return { error: 'The status colour is not valid.' };
   let volume = null;
   if (kind !== 'appointments' && booking.volume != null && booking.volume !== '') {
     volume = Number(booking.volume);
@@ -122,8 +124,6 @@ function checkedBooking(input) {
   }
   const details = kind === 'production' ? '' : clean(booking.freeText, 2000);
   if (kind === 'appointments' && !details) return { error: 'The appointment details are missing.' };
-  const blockType = booking.blockType === 'cip' ? 'cip' : 'booking';
-  if (blockType === 'cip' && kind !== 'production') return { error: 'CIP blocks belong on the production schedule.' };
   const cip = blockType === 'cip';
   return {
     booking: {
@@ -139,7 +139,7 @@ function checkedBooking(input) {
       packingFormat: kind === 'production' && !cip ? clean(booking.packingFormat, 200) : '',
       volume: kind === 'appointments' || cip ? null : volume,
       legacyText: kind === 'appointments' || cip ? '' : clean(booking.legacyText, 2000),
-      backgroundColour: colour,
+      backgroundColour: blockType === 'cip' ? schedule.CIP_COLOUR : colour,
       schedule: kind,
       freeText: cip ? '' : details,
       blockType: blockType,
