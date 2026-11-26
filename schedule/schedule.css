@@ -269,7 +269,8 @@
   color: var(--text);
 }
 
-.schedule-app .sch-nav button.theme-toggle {
+.schedule-app .sch-nav button.theme-toggle,
+.schedule-app .sch-nav button.speech-toggle {
   width: 34px;
   height: 34px;
   min-height: 34px;
@@ -278,6 +279,7 @@
   border-radius: 8px;
 }
 
+.schedule-app .sch-nav button.speech-toggle + button.theme-toggle,
 .schedule-app .sch-nav button.theme-toggle + .sch-menu {
   margin-left: 0;
 }

@@ -263,12 +263,14 @@ a { color: inherit; }
 .icon-btn:active { transform: translateY(0); }
 
 .icon-btn:focus-visible,
-button.theme-toggle:focus-visible {
+button.theme-toggle:focus-visible,
+button.speech-toggle:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
-button.theme-toggle {
+button.theme-toggle,
+button.speech-toggle {
   width: 44px;
   height: 44px;
   min-height: 44px;
@@ -281,14 +283,29 @@ button.theme-toggle {
   font-weight: 600;
 }
 
-button.theme-toggle svg {
+button.theme-toggle svg,
+button.speech-toggle svg {
   width: 20px;
   height: 20px;
+}
+
+button.speech-toggle.is-on {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+  color: var(--link);
+}
+
+button.speech-toggle.is-on:hover {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+  color: var(--link);
 }
 
 .theme-toggle-corner {
   position: fixed;
   z-index: 1100;
+  display: flex;
+  gap: 8px;
   top: max(12px, env(safe-area-inset-top));
   right: max(12px, env(safe-area-inset-right));
 }
@@ -1487,4 +1504,32 @@ html[data-theme="light"] select:-webkit-autofill {
   -webkit-text-fill-color: var(--text);
   caret-color: var(--text);
   box-shadow: 0 0 0 1000px var(--input-bg) inset;
+}
+
+.speech-reading {
+  background-color: var(--primary-soft);
+  box-shadow: inset 0 -0.12em 0 var(--primary);
+  border-radius: 4px;
+}
+
+.speech-notice {
+  position: fixed;
+  z-index: 3000;
+  left: 50%;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  max-width: min(420px, calc(100% - 32px));
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.speech-notice[hidden] {
+  display: none;
 }
