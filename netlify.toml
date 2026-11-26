@@ -151,6 +151,11 @@
   status = 301
 
 [[redirects]]
+  from = "/admin-tasks/complete-actions"
+  to = "/admin-tasks/complete-actions.html"
+  status = 301
+
+[[redirects]]
   from = "/health-safety"
   to = "/health-safety/"
   status = 301

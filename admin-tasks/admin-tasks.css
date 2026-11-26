@@ -117,3 +117,114 @@ body.at-page .btn:disabled {
     width: 100%;
   }
 }
+
+/* Complete Actions. Status colours are fixed so they stay readable in Day and Night Mode. */
+
+.ca-ink { color: #1a2233; }
+
+.ca-combo { position: relative; margin-bottom: 16px; }
+
+.ca-combo-button,
+.ca-option,
+.ca-status {
+  color: #1a2233;
+  text-align: left;
+}
+
+.ca-combo-button {
+  width: 100%;
+  min-height: 52px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #dfe3e8;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ca-combo-panel {
+  position: absolute;
+  z-index: 20;
+  left: 0;
+  right: 0;
+  margin-top: 6px;
+  padding: 8px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+}
+
+.ca-combo-panel input {
+  margin-bottom: 8px;
+}
+
+.ca-combo-list {
+  max-height: 50vh;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ca-option {
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.ca-option-label { font-weight: 700; word-break: break-word; }
+.ca-option-status { flex-shrink: 0; font-size: 0.85rem; font-weight: 700; }
+
+.ca-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.ca-status {
+  min-height: 48px;
+  padding: 10px 14px;
+  border: 2px solid transparent;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ca-status.is-selected {
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 1px #1a2233;
+}
+
+.ca-badge {
+  display: inline-block;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  font-weight: 800;
+  color: #1a2233;
+}
+
+.ca-history {
+  margin: 0 0 16px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.ca-empty { color: var(--muted); }

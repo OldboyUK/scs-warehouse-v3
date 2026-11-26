@@ -478,7 +478,6 @@ resetWorld();
 tasks.seed(2, 5, { formula: '=INFO' });
 tasks.seed(2, 7, { value: 'future' });
 actions.seed(2, 5, { formula: '=INFO' });
-actions.seed(2, 10, { value: 'keep-j' });
 actions.seed(2, 11, { value: 'keep-k' });
 actions.seed(2, 12, { value: 'keep-l' });
 actions.seed(2, 13, { value: 'keep-m' });
@@ -515,7 +514,7 @@ assertEqual(actions.cell(2, 6).value, 'Collect the invoices', 'action descriptio
 assertEqual(actions.cell(2, 7).value, 'Jody R', 'owner written to column G');
 assertEqual(actions.cell(2, 8).value, '19/10/2026', 'due date written as dd/MM/yyyy');
 assertEqual(actions.cell(2, 9).value, 2, 'priority stored as a number');
-assertEqual(actions.cell(2, 10).value, 'keep-j', 'action column J untouched');
+assertEqual(actions.cell(2, 10).value, 'Open', 'a new action starts at Open in column J');
 assertEqual(actions.cell(2, 11).value, 'keep-k', 'action column K untouched');
 assertEqual(actions.cell(2, 12).value, 'keep-l', 'action column L untouched');
 assertEqual(actions.cell(2, 13).value, 'keep-m', 'action column M untouched');
@@ -523,7 +522,7 @@ assertEqual(tasks.cell(1, 1).value, 'Task ID', 'header row untouched');
 const taskChanges = changedKeys(beforeTask, tasks.snapshot());
 assertEqual(taskChanges.join('|'), ['2,2', '2,3', '2,4', '2,6'].join('|'), 'only task destination cells changed');
 const actionChanges = changedKeys(beforeAction, actions.snapshot());
-assertEqual(actionChanges.join('|'), ['2,2', '2,3', '2,4', '2,6', '2,7', '2,8', '2,9'].join('|'), 'only action destination cells changed');
+assertEqual(actionChanges.join('|'), ['2,10', '2,2', '2,3', '2,4', '2,6', '2,7', '2,8', '2,9'].join('|'), 'only action destination cells changed');
 
 resetWorld();
 const same = payload({
@@ -545,6 +544,9 @@ assertEqual(actions.cell(4, 3).value, 'TA001', 'third action uses the same task 
 assertEqual(actions.cell(2, 4).value, 'AC1', 'first action code');
 assertEqual(actions.cell(3, 4).value, 'AC2', 'second action code');
 assertEqual(actions.cell(4, 4).value, 'AC3', 'third action code');
+assertEqual(actions.cell(2, 10).value, 'Open', 'the first action starts Open');
+assertEqual(actions.cell(3, 10).value, 'Open', 'the second action starts Open');
+assertEqual(actions.cell(4, 10).value, 'Open', 'the third action starts Open');
 assertEqual(actions.cell(2, 7).value, 'Jody R', 'first owner stays with the first action');
 assertEqual(actions.cell(3, 7).value, 'Aaron S', 'second owner stays with the second action');
 assertEqual(actions.cell(4, 7).value, 'Smith, Jo', 'a comma in an owner is preserved');
@@ -563,6 +565,7 @@ assertEqual(second.taskId, 'TA002', 'the next task in the same area increments')
 assertEqual(second.actionIds.join(','), 'AC1', 'a new task starts its actions at AC1 again');
 assertEqual(actions.cell(5, 3).value, 'TA002', 'the new action uses the new task ID');
 assertEqual(actions.cell(5, 4).value, 'AC1', 'the new action does not continue the previous action numbers');
+assertEqual(actions.cell(5, 10).value, 'Open', 'the next task action also starts Open');
 assertEqual(actions.shown(5, 1), 'AD1001-TA002-AC1', 'the new action ID is displayed by column A');
 const other = post(payload({ taskAreaValue: 'AD1002 | Managerial', title: 'Other area' }));
 assertEqual(other.taskAreaId, 'AD1002', 'the other task area ID is taken from its helper');
@@ -724,6 +727,7 @@ assertEqual(actions.cell(2, 2).value, 'AD1001', 'resumed action uses the reserve
 assertEqual(actions.cell(2, 3).value, 'TA005', 'resumed action uses the reserved task ID');
 assertEqual(actions.cell(2, 4).value, 'AC1', 'resumed action uses the reserved action code');
 assertEqual(actions.shown(2, 1), 'AD1001-TA005-AC1', 'resumed action ID is displayed by column A');
+assertEqual(actions.cell(2, 10).value, 'Open', 'a resumed new action starts Open');
 
 resetWorld();
 let secondResult = null;
@@ -817,6 +821,7 @@ assert(menu.indexOf('href="/warehouse/"') !== -1 && menu.indexOf('href="/hr/"') 
 assert(menu.indexOf('href="/quality/"') !== -1 && menu.indexOf('href="/maintenance/"') !== -1, 'Quality and Maintenance links remain');
 assert(menu.indexOf('href="/health-safety/"') !== -1 && menu.indexOf('href="/schedule/"') !== -1, 'Health and Safety and Schedule links remain');
 assert(home.indexOf('>Create Task<') !== -1 && home.indexOf('href="create-task.html"') !== -1, 'Admin Tasks opens Create Task');
+assert(home.indexOf('>Complete Actions<') !== -1 && home.indexOf('href="complete-actions.html"') !== -1, 'Admin Tasks opens Complete Actions beside Create Task');
 assert(page.indexOf('task-draft.js') !== -1 && page.indexOf('create-task.js') !== -1, 'Create Task loads the draft and page scripts');
 [
   'Add Administrative Task',

@@ -263,10 +263,72 @@ function loadReferenceData(fetchImpl) {
   });
 }
 
+var ACTION_STATUSES = ['Open', 'In Progress', 'Blocked', 'Cancelled', 'Completed'];
+var MAX_EVIDENCE = 8000;
+
+function parseCompleteActionId(value) {
+  var match = String(value || '').trim().match(/^([A-Za-z0-9]{6})-(TA\d+)-(AC\d+)$/);
+  if (!match) return null;
+  return {
+    completeActionId: match[1] + '-' + match[2] + '-' + match[3],
+    taskAreaId: match[1],
+    taskId: match[2],
+    actionId: match[3]
+  };
+}
+
+function evidenceEntry(date, evidence) {
+  return String(date) + ' - Work carried out: ' + String(evidence);
+}
+
+function appendEvidence(existing, entry) {
+  var prior = String(existing == null ? '' : existing).replace(/\s+$/, '');
+  if (!prior) return entry;
+  return prior + '\n' + entry;
+}
+
+function validateActionUpdate(payload) {
+  var data = payload || {};
+  var submissionId = String(data.submissionId || '').trim();
+  if (!/^[A-Za-z0-9-]{8,80}$/.test(submissionId)) {
+    return { ok: false, message: 'The submission could not be identified. Reload the page and try again.' };
+  }
+  var identity = parseCompleteActionId(data.completeActionId);
+  if (!identity) return { ok: false, message: 'Select an action from the list.' };
+  var taskAreaId = String(data.taskAreaId || '').trim();
+  var taskId = String(data.taskId || '').trim();
+  var actionId = String(data.actionId || '').trim();
+  if ((taskAreaId && taskAreaId !== identity.taskAreaId) ||
+      (taskId && taskId !== identity.taskId) ||
+      (actionId && actionId !== identity.actionId)) {
+    return { ok: false, message: 'Select an action from the list.' };
+  }
+  var evidence = String(data.evidence == null ? '' : data.evidence).trim();
+  if (!evidence) return { ok: false, message: 'Enter the evidence of work carried out.' };
+  if (evidence.length > MAX_EVIDENCE) return { ok: false, message: 'The evidence of work carried out is too long.' };
+  var status = String(data.status || '').trim();
+  if (ACTION_STATUSES.indexOf(status) === -1) {
+    return { ok: false, message: 'Select the current status of this action.' };
+  }
+  return {
+    ok: true,
+    value: {
+      submissionId: submissionId,
+      completeActionId: identity.completeActionId,
+      taskAreaId: identity.taskAreaId,
+      taskId: identity.taskId,
+      actionId: identity.actionId,
+      evidence: evidence,
+      status: status
+    }
+  };
+}
+
 module.exports = {
   TASK_AREAS_CSV_URL: TASK_AREAS_CSV_URL,
   OWNERS_CSV_URL: OWNERS_CSV_URL,
   MAX_ACTIONS: MAX_ACTIONS,
+  ACTION_STATUSES: ACTION_STATUSES,
   parseCsv: parseCsv,
   taskAreaIdFromValue: taskAreaIdFromValue,
   taskAreasFromCsv: taskAreasFromCsv,
@@ -274,5 +336,9 @@ module.exports = {
   parseScore: parseScore,
   parseDueDate: parseDueDate,
   validateSubmission: validateSubmission,
-  loadReferenceData: loadReferenceData
+  loadReferenceData: loadReferenceData,
+  parseCompleteActionId: parseCompleteActionId,
+  evidenceEntry: evidenceEntry,
+  appendEvidence: appendEvidence,
+  validateActionUpdate: validateActionUpdate
 };

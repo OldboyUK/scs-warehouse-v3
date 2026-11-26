@@ -59,6 +59,7 @@ SCS Admin Tasks (AdminTasks.js)
 - Execute as: Me. Who has access: Anyone
 - Netlify env: ADMIN_TASKS_SCRIPT_URL (required before Create Task can save)
 - Redeploy a new version after any change to AdminTasks.js
+- Complete Actions uses the same deployment to read Actions column E and update columns J, K and L on the existing row
 - The published staff CSV is read on the server. Only the name in column C is used. PIN hashes are not written to the task sheets and are not returned to the browser.
 
 Do not commit /exec URLs to this repository — Netlify secrets scanning will block the build.

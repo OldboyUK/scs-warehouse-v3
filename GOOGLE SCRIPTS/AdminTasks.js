@@ -17,8 +17,9 @@
  * Column A and column E are formula-owned on both sheets and are never written.
  * Task gid 1159021811: B title, C task area ID, D task ID, F description.
  * Task column G is never written.
- * Actions gid 1408515271: B task area ID, C task ID, D action ID, F description, G owner, H due date, I priority.
- * Actions columns J–M are never written.
+ * Actions gid 1408515271: B task area ID, C task ID, D action ID, F description, G owner, H due date, I priority, J stage.
+ * A new action is written as Open in column J.
+ * Complete Actions updates an existing Actions row in columns J, K and L only.
  *
  * The next row is the first column A cell whose displayed text is empty.
  * A formula that displays "" is available. A column A cell that displays an ID is not.
@@ -34,7 +35,8 @@ var TASK_AREAS_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTabUI
 var OWNERS_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQGQPFKtlsrGvGNCDKR1OuNP6Dh0687pb8EnpRhJmbD0WxMaHqiX6ia_VUoRudMNylVjkLI4YJ0gsj-/pub?gid=559712901&single=true&output=csv';
 
 var TASK_WRITE_COLUMNS = [2, 3, 4, 6];
-var ACTION_WRITE_COLUMNS = [2, 3, 4, 6, 7, 8, 9];
+var ACTION_WRITE_COLUMNS = [2, 3, 4, 6, 7, 8, 9, 10];
+var ACTION_STAGE_OPEN = 'Open';
 var MAX_TEXT = 8000;
 var MAX_ACTIONS = 100;
 var SUBMISSION_INDEX_KEY = 'AT_TASK_SUBMISSION_INDEX';
@@ -49,6 +51,8 @@ function doPost(e) {
 
     var action = String(p.action || '').trim().toLowerCase();
     if (action === 'admin_task_submit') return handleAdminTaskSubmit_(p);
+    if (action === 'admin_actions_list') return handleAdminActionsList_();
+    if (action === 'admin_action_update') return handleAdminActionUpdate_(p);
     return json({ result: 'error', retryable: false, message: 'Unknown action: ' + action });
   } catch (err) {
     return json({ result: 'error', retryable: true, message: publicMessage_(err) });
@@ -321,7 +325,8 @@ function actionCells_(taskAreaId, taskId, actionId, action) {
     { col: 6, value: action.description, type: 'text' },
     { col: 7, value: action.owner, type: 'text' },
     { col: 8, value: action.dueDate, type: 'text' },
-    { col: 9, value: action.priority, type: 'number' }
+    { col: 9, value: action.priority, type: 'number' },
+    { col: 10, value: ACTION_STAGE_OPEN, type: 'text' }
   ];
 }
 
@@ -925,6 +930,409 @@ function reservedTaskCodes_() {
     }
   }
   return ids;
+}
+
+var ACTION_STATUSES = ['Open', 'In Progress', 'Blocked', 'Cancelled', 'Completed'];
+var ACTION_UPDATE_COLUMNS = [10, 11, 12];
+var UPDATE_INDEX_KEY = 'AT_ACTION_UPDATE_INDEX';
+var MAX_EVIDENCE = 8000;
+var MAX_NOTE_CELL = 50000;
+
+function handleAdminActionsList_() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) {
+    return json({
+      result: 'error',
+      retryable: true,
+      message: 'Actions are being updated. Please wait a moment and try again.'
+    });
+  }
+  try {
+    var ss = SpreadsheetApp.openById(SSID_ADMIN);
+    var actionsSheet = requireSheet_(ss, SHEET_ACTIONS, GID_ACTIONS);
+    return json({ result: 'ok', actions: listActions_(actionsSheet) });
+  } catch (err) {
+    return json({
+      result: 'error',
+      retryable: true,
+      message: 'Actions could not be loaded. ' + publicMessage_(err)
+    });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function handleAdminActionUpdate_(p) {
+  var validated = validateActionUpdate_(p);
+  if (!validated.ok) {
+    return json({ result: 'error', retryable: true, message: validated.message });
+  }
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    return json({
+      result: 'error',
+      retryable: true,
+      message: 'Another action update is being saved. Please wait a moment and try again.'
+    });
+  }
+  try {
+    return saveActionUpdate_(validated.value);
+  } catch (err) {
+    return json({
+      result: 'error',
+      retryable: true,
+      message: 'The action update was not saved. ' + publicMessage_(err)
+    });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function saveActionUpdate_(value) {
+  var fingerprint = updateFingerprint_(value);
+  var existing = loadUpdate_(value.submissionId);
+  if (existing && existing.status === 'success') {
+    if (existing.fingerprint !== fingerprint) {
+      return json({
+        result: 'error',
+        retryable: false,
+        message: 'This update was already saved for ' + existing.completeActionId + '. It was not changed and the evidence was not added again.'
+      });
+    }
+    return json(existing.result);
+  }
+  if (existing && existing.status === 'partial') {
+    return json(existing.result || {
+      result: 'error',
+      partial: true,
+      retryable: false,
+      message: 'This update was not fully saved. Check ' + value.completeActionId + ' before trying again.'
+    });
+  }
+
+  var ss = SpreadsheetApp.openById(SSID_ADMIN);
+  var actionsSheet = requireSheet_(ss, SHEET_ACTIONS, GID_ACTIONS);
+  assertNoArrayFormula_(actionsSheet, ACTION_UPDATE_COLUMNS, 'Actions');
+  var row = findUpdateRow_(actionsSheet, value);
+  if (!row) {
+    return json({
+      result: 'error',
+      retryable: true,
+      message: 'That action could not be found. Refresh the list and select it again. Nothing was changed.'
+    });
+  }
+  if (!rowMatchesUpdate_(actionsSheet, row, value)) {
+    return json({
+      result: 'error',
+      retryable: false,
+      message: 'That action no longer matches the selected record. Nothing was changed.'
+    });
+  }
+
+  var currentEvidence = cellText_(actionsSheet, row, 12);
+  var submittedOn = todayUk_();
+  var entry = evidenceEntry_(submittedOn, value.evidence);
+  var combined = appendEvidence_(currentEvidence, entry);
+  if (combined.length > MAX_NOTE_CELL) {
+    return json({
+      result: 'error',
+      retryable: false,
+      message: 'The evidence history for this action is full. Nothing was changed.'
+    });
+  }
+
+  var previous = [];
+  try {
+    previous = replaceUpdateCells_(actionsSheet, row, [
+      { col: 10, value: value.status },
+      { col: 11, value: submittedOn },
+      { col: 12, value: combined }
+    ]);
+    SpreadsheetApp.flush();
+    verifyUpdate_(actionsSheet, row, value.status, submittedOn, combined);
+    var success = {
+      result: 'success',
+      completeActionId: value.completeActionId,
+      taskAreaId: value.taskAreaId,
+      taskId: value.taskId,
+      actionId: value.actionId,
+      status: value.status,
+      submittedOn: submittedOn,
+      evidence: combined
+    };
+    saveUpdate_(value.submissionId, {
+      status: 'success',
+      fingerprint: fingerprint,
+      completeActionId: value.completeActionId,
+      result: success
+    });
+    return json(success);
+  } catch (err) {
+    var failed = restoreUpdateCells_(actionsSheet, previous);
+    if (failed.length) {
+      var partialResult = {
+        result: 'error',
+        partial: true,
+        retryable: false,
+        completeActionId: value.completeActionId,
+        message: 'The action update was not fully saved. Check ' + value.completeActionId + ' on the Actions sheet before trying again. ' + publicMessage_(err)
+      };
+      saveUpdate_(value.submissionId, {
+        status: 'partial',
+        fingerprint: fingerprint,
+        completeActionId: value.completeActionId,
+        result: partialResult
+      });
+      return json(partialResult);
+    }
+    return json({
+      result: 'error',
+      retryable: true,
+      message: 'The action update was not saved. ' + publicMessage_(err)
+    });
+  }
+}
+
+function listActions_(sheet) {
+  var maxRows = sheet.getMaxRows();
+  if (maxRows < 2) return [];
+  var num = maxRows - 1;
+  var colA = sheet.getRange(2, 1, num, 1).getDisplayValues();
+  var colB = sheet.getRange(2, 2, num, 1).getDisplayValues();
+  var colC = sheet.getRange(2, 3, num, 1).getDisplayValues();
+  var colD = sheet.getRange(2, 4, num, 1).getDisplayValues();
+  var colE = sheet.getRange(2, 5, num, 1).getDisplayValues();
+  var colG = sheet.getRange(2, 7, num, 1).getDisplayValues();
+  var colH = sheet.getRange(2, 8, num, 1).getDisplayValues();
+  var colJ = sheet.getRange(2, 10, num, 1).getDisplayValues();
+  var colL = sheet.getRange(2, 12, num, 1).getDisplayValues();
+  var actions = [];
+  var seen = {};
+  for (var i = 0; i < num; i++) {
+    var label = String(colE[i][0] == null ? '' : colE[i][0]).trim();
+    if (!label) continue;
+    var identity = actionIdentity_(colA[i][0], colB[i][0], colC[i][0], colD[i][0]);
+    if (!identity || seen[identity.completeActionId]) continue;
+    seen[identity.completeActionId] = true;
+    var evidence = String(colL[i][0] == null ? '' : colL[i][0]);
+    if (evidence.length > 20000) evidence = evidence.substring(0, 20000);
+    var rawStatus = String(colJ[i][0] == null ? '' : colJ[i][0]).trim();
+    actions.push({
+      completeActionId: identity.completeActionId,
+      taskAreaId: identity.taskAreaId,
+      taskId: identity.taskId,
+      actionId: identity.actionId,
+      label: label,
+      owner: String(colG[i][0] == null ? '' : colG[i][0]).trim(),
+      dueDate: String(colH[i][0] == null ? '' : colH[i][0]).trim(),
+      status: ACTION_STATUSES.indexOf(rawStatus) === -1 ? '' : rawStatus,
+      statusLabel: rawStatus || 'No status',
+      evidence: evidence
+    });
+  }
+  return actions;
+}
+
+function actionIdentity_(complete, area, task, action) {
+  var shown = String(complete == null ? '' : complete).trim();
+  var taskAreaId = String(area == null ? '' : area).trim();
+  var taskId = String(task == null ? '' : task).trim();
+  var actionId = String(action == null ? '' : action).trim();
+  var parsed = parseCompleteActionId_(shown);
+  if (parsed) {
+    if (!taskAreaId) taskAreaId = parsed.taskAreaId;
+    if (!taskId) taskId = parsed.taskId;
+    if (!actionId) actionId = parsed.actionId;
+    if (taskAreaId !== parsed.taskAreaId || taskId !== parsed.taskId || actionId !== parsed.actionId) return null;
+    return parsed;
+  }
+  if (!/^[A-Za-z0-9]{6}$/.test(taskAreaId) || !/^TA\d+$/.test(taskId) || !/^AC\d+$/.test(actionId)) return null;
+  return {
+    completeActionId: completeActionId_(taskAreaId, taskId, actionId),
+    taskAreaId: taskAreaId,
+    taskId: taskId,
+    actionId: actionId
+  };
+}
+
+function parseCompleteActionId_(value) {
+  var match = String(value || '').trim().match(/^([A-Za-z0-9]{6})-(TA\d+)-(AC\d+)$/);
+  if (!match) return null;
+  return {
+    completeActionId: match[1] + '-' + match[2] + '-' + match[3],
+    taskAreaId: match[1],
+    taskId: match[2],
+    actionId: match[3]
+  };
+}
+
+function findUpdateRow_(sheet, value) {
+  var byDisplay = findIdRow_(sheet, value.completeActionId);
+  var byParts = findActionRow_(sheet, value.taskAreaId, value.taskId, value.actionId);
+  if (byDisplay && byParts && byDisplay !== byParts) return 0;
+  return byDisplay || byParts || 0;
+}
+
+function rowMatchesUpdate_(sheet, row, value) {
+  var shown = cellDisplay_(sheet, row, 1);
+  var area = cellDisplay_(sheet, row, 2);
+  var task = cellDisplay_(sheet, row, 3);
+  var action = cellDisplay_(sheet, row, 4);
+  if (shown && shown !== value.completeActionId) return false;
+  if (area && area !== value.taskAreaId) return false;
+  if (task && task !== value.taskId) return false;
+  if (action && action !== value.actionId) return false;
+  return true;
+}
+
+function cellDisplay_(sheet, row, col) {
+  var values = sheet.getRange(row, col).getDisplayValues();
+  return String(values[0][0] == null ? '' : values[0][0]).trim();
+}
+
+function cellText_(sheet, row, col) {
+  var values = sheet.getRange(row, col).getDisplayValues();
+  return String(values[0][0] == null ? '' : values[0][0]);
+}
+
+function validateActionUpdate_(payload) {
+  var data = payload || {};
+  var submissionId = String(data.submissionId || '').trim();
+  if (!/^[A-Za-z0-9-]{8,80}$/.test(submissionId)) {
+    return { ok: false, message: 'The submission could not be identified. Reload the page and try again.' };
+  }
+  var identity = parseCompleteActionId_(data.completeActionId);
+  if (!identity) return { ok: false, message: 'Select an action from the list.' };
+  var taskAreaId = String(data.taskAreaId || '').trim();
+  var taskId = String(data.taskId || '').trim();
+  var actionId = String(data.actionId || '').trim();
+  if ((taskAreaId && taskAreaId !== identity.taskAreaId) ||
+      (taskId && taskId !== identity.taskId) ||
+      (actionId && actionId !== identity.actionId)) {
+    return { ok: false, message: 'Select an action from the list.' };
+  }
+  var evidence = String(data.evidence == null ? '' : data.evidence).trim();
+  if (!evidence) return { ok: false, message: 'Enter the evidence of work carried out.' };
+  if (evidence.length > MAX_EVIDENCE) return { ok: false, message: 'The evidence of work carried out is too long.' };
+  var status = String(data.status || '').trim();
+  if (ACTION_STATUSES.indexOf(status) === -1) {
+    return { ok: false, message: 'Select the current status of this action.' };
+  }
+  return {
+    ok: true,
+    value: {
+      submissionId: submissionId,
+      completeActionId: identity.completeActionId,
+      taskAreaId: identity.taskAreaId,
+      taskId: identity.taskId,
+      actionId: identity.actionId,
+      evidence: evidence,
+      status: status
+    }
+  };
+}
+
+function evidenceEntry_(date, evidence) {
+  return String(date) + ' - Work carried out: ' + String(evidence);
+}
+
+function appendEvidence_(existing, entry) {
+  var prior = String(existing == null ? '' : existing).replace(/\s+$/, '');
+  if (!prior) return entry;
+  return prior + '\n' + entry;
+}
+
+function todayUk_() {
+  return Utilities.formatDate(new Date(), 'Europe/London', 'dd/MM/yyyy');
+}
+
+function updateFingerprint_(value) {
+  return [
+    value.submissionId,
+    value.completeActionId,
+    value.status,
+    value.evidence
+  ].join('\n');
+}
+
+function replaceUpdateCells_(sheet, row, cells) {
+  if (row < 2) throw new Error('Refusing to write on the header row.');
+  var previous = [];
+  for (var i = 0; i < cells.length; i++) {
+    var cell = cells[i];
+    if (ACTION_UPDATE_COLUMNS.indexOf(cell.col) === -1) {
+      throw new Error('Refusing to write column ' + columnLetter_(cell.col) + ' on ' + sheet.getName() + '.');
+    }
+    var range = sheet.getRange(row, cell.col);
+    var formula = range.getFormula();
+    if (formula != null && String(formula).trim() !== '') {
+      throw new Error('Column ' + columnLetter_(cell.col) + ' on Actions contains a formula. The update was not saved.');
+    }
+    previous.push({
+      row: row,
+      col: cell.col,
+      value: range.getValue(),
+      format: range.getNumberFormat()
+    });
+    range.setNumberFormat('@');
+    range.setRichTextValue(SpreadsheetApp.newRichTextValue().setText(String(cell.value)).build());
+  }
+  return previous;
+}
+
+function restoreUpdateCells_(sheet, previous) {
+  var failed = [];
+  for (var i = previous.length - 1; i >= 0; i--) {
+    var entry = previous[i];
+    try {
+      var range = sheet.getRange(entry.row, entry.col);
+      var empty = entry.value == null || String(entry.value) === '';
+      if (empty) {
+        range.clearContent();
+      } else {
+        range.setNumberFormat('@');
+        range.setRichTextValue(SpreadsheetApp.newRichTextValue().setText(String(entry.value)).build());
+      }
+      if (entry.format != null && entry.format !== '') range.setNumberFormat(entry.format);
+      var now = range.getValue();
+      if (empty) {
+        if (now != null && String(now) !== '') failed.push(entry);
+      } else if (String(now) !== String(entry.value)) {
+        failed.push(entry);
+      }
+    } catch (err) {
+      failed.push(entry);
+    }
+  }
+  return failed;
+}
+
+function verifyUpdate_(sheet, row, status, submittedOn, evidence) {
+  if (cellDisplay_(sheet, row, 10) !== status) throw new Error('The status could not be confirmed.');
+  if (cellDisplay_(sheet, row, 11) !== submittedOn) throw new Error('The submission date could not be confirmed.');
+  if (cellText_(sheet, row, 12) !== evidence) throw new Error('The evidence could not be confirmed.');
+}
+
+function loadUpdate_(submissionId) {
+  var raw = props_().getProperty('AT_UPD_' + submissionId);
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch (err) { return null; }
+}
+
+function saveUpdate_(submissionId, record) {
+  record.at = Date.now();
+  var props = props_();
+  props.setProperty('AT_UPD_' + submissionId, JSON.stringify(record));
+  var index = [];
+  try { index = JSON.parse(props.getProperty(UPDATE_INDEX_KEY) || '[]'); } catch (err) { index = []; }
+  if (!Array.isArray(index)) index = [];
+  index = index.filter(function (item) { return item !== submissionId; });
+  index.push(submissionId);
+  while (index.length > 100) {
+    props.deleteProperty('AT_UPD_' + index.shift());
+  }
+  props.setProperty(UPDATE_INDEX_KEY, JSON.stringify(index));
 }
 
 function readPostParams_(e) {
