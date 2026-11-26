@@ -1506,6 +1506,11 @@ html[data-theme="light"] select:-webkit-autofill {
   box-shadow: 0 0 0 1000px var(--input-bg) inset;
 }
 
+html[data-speech="on"] a[href],
+html[data-speech="on"] button {
+  -webkit-touch-callout: none;
+}
+
 .speech-reading {
   background-color: var(--primary-soft);
   box-shadow: inset 0 -0.12em 0 var(--primary);
