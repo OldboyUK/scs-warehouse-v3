@@ -7,6 +7,7 @@ body.hr-theme {
   --primary-hover: #C4B5FD;
   --primary-soft: rgba(167, 139, 250, 0.15);
   --primary-dark: #7C3AED;
+  --link: var(--primary);
 }
 
 /* Icon backgrounds — subtle gradient using dark accent */
@@ -16,7 +17,7 @@ body.hr-theme .dash-icon {
     rgba(124, 58, 237, 0.22),
     var(--primary-soft)
   );
-  color: var(--primary);
+  color: var(--link);
 }
 
 /* ===== HR layout & form components (structure only — colours via design tokens) ===== */
@@ -47,7 +48,7 @@ body.hr-theme .dash-icon {
 }
 
 .hr-welcome span {
-  color: var(--primary);
+  color: var(--link);
 }
 
 .hr-intro {
@@ -168,6 +169,21 @@ button.dash-card {
 .hr-status-badge--pending {
   background: rgba(217, 119, 6, 0.18);
   color: #FBBF24;
+}
+
+html[data-theme="light"] body.hr-theme {
+  --link: #5B21B6;
+  --primary-soft: rgba(91, 33, 182, 0.14);
+}
+
+html[data-theme="light"] .hr-status-badge--approved {
+  background: rgba(4, 120, 87, 0.12);
+  color: #047857;
+}
+
+html[data-theme="light"] .hr-status-badge--pending {
+  background: rgba(180, 83, 9, 0.14);
+  color: #B45309;
 }
 
 .hr-overtime-summary {

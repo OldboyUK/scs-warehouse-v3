@@ -216,22 +216,6 @@ function palletCountLabel(count) {
   return `${count} PALLETS`;
 }
 
-function getCategoryColor(category) {
-  switch ((category || '').trim().toLowerCase()) {
-    case 'finished product':
-      return '#FFB000';
-
-    case 'packaging':
-      return '#63D8FF';
-
-    case 'ingredients':
-      return '#6EE7B7';
-
-    default:
-      return '#9AA4C1';
-  }
-}
-
 function isActiveTrue(status) {
   return String(status || '').trim().toUpperCase() === 'TRUE';
 }
@@ -401,8 +385,12 @@ function renderPallet(pallet, q) {
   if (category) {
     const categoryEl = document.createElement('span');
     categoryEl.className = 'inquiry-category';
+    var categoryKey = String(category || '').trim().toLowerCase();
+    if (categoryKey !== 'finished product' && categoryKey !== 'packaging' && categoryKey !== 'ingredients') {
+      categoryKey = 'other';
+    }
+    categoryEl.dataset.category = categoryKey;
     categoryEl.textContent = category;
-    categoryEl.style.color = getCategoryColor(category);
     header.appendChild(categoryEl);
   }
 

@@ -36,7 +36,7 @@
   height: 36px;
   border-radius: 10px;
   background: rgba(16, 185, 129, 0.12);
-  color: #34D399;
+  color: var(--stat-icon);
   flex-shrink: 0;
 }
 
@@ -72,7 +72,7 @@
   height: 34px;
   border-radius: 50%;
   flex-shrink: 0;
-  background: conic-gradient(#16A34A var(--progress), rgba(55, 65, 81, 0.8) 0);
+  background: conic-gradient(#16A34A var(--progress), var(--progress-track) 0);
   position: relative;
 }
 
@@ -104,13 +104,13 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--muted);
-  background: rgba(17, 24, 39, 0.65);
+  background: var(--thead);
   border-bottom: 1px solid var(--border);
 }
 
 .page-collections .table-wrap tbody td {
   padding: 18px;
-  border-bottom: 1px solid rgba(55, 65, 81, 0.65);
+  border-bottom: 1px solid var(--line);
   vertical-align: middle;
 }
 
@@ -212,7 +212,7 @@
   gap: 10px;
   border-color: rgba(22, 163, 74, 0.35);
   background: rgba(22, 163, 74, 0.12);
-  color: #BBF7D0;
+  color: var(--notice-success);
 }
 
 .page-collections .collections-notice-icon {
@@ -235,7 +235,7 @@
 .page-collections .collections-notice.text-error {
   border-color: rgba(239, 68, 68, 0.35);
   background: rgba(239, 68, 68, 0.1);
-  color: #FCA5A5;
+  color: var(--notice-error);
 }
 
 /* ===== Scanner section ===== */
@@ -265,7 +265,7 @@
   min-height: 52px;
   font-size: 1rem;
   border: 1px solid var(--border);
-  background: var(--bg);
+  background: var(--input-bg);
 }
 
 .page-collections .collections-scanner-card #palletInput:focus {
@@ -523,52 +523,52 @@
     position: relative;
     margin: 0 0 14px;
     padding: 18px 48px 18px 18px;
-    background: linear-gradient(145deg, rgba(31, 41, 55, 0.98) 0%, rgba(17, 24, 39, 1) 100%);
-    border: 1px solid rgba(55, 65, 81, 0.85);
+    background: linear-gradient(145deg, var(--grad-start) 0%, var(--grad-end) 100%);
+    border: 1px solid var(--card-edge);
     border-left-width: 4px;
     border-left-style: solid;
     border-radius: 18px;
-    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
+    box-shadow: var(--elevated);
     transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
     cursor: default;
   }
 
   .page-collections .table-wrap tbody tr:nth-child(even) {
-    background: linear-gradient(145deg, rgba(31, 41, 55, 0.98) 0%, rgba(17, 24, 39, 1) 100%);
+    background: linear-gradient(145deg, var(--grad-start) 0%, var(--grad-end) 100%);
   }
 
   .page-collections .table-wrap tbody tr.row-dispatched {
     border-left-color: #16A34A;
-    background: linear-gradient(145deg, rgba(22, 163, 74, 0.12) 0%, rgba(17, 24, 39, 1) 100%);
+    background: linear-gradient(145deg, rgba(22, 163, 74, 0.12) 0%, var(--grad-end) 100%);
   }
 
   .page-collections .table-wrap tbody tr.row-pending {
     border-left-color: #D97706;
-    background: linear-gradient(145deg, rgba(217, 119, 6, 0.12) 0%, rgba(17, 24, 39, 1) 100%);
+    background: linear-gradient(145deg, rgba(217, 119, 6, 0.12) 0%, var(--grad-end) 100%);
   }
 
   .page-collections .table-wrap tbody tr.row-picked,
   .page-collections .table-wrap tbody tr.row-in-progress {
     border-left-color: #2563EB;
-    background: linear-gradient(145deg, rgba(37, 99, 235, 0.12) 0%, rgba(17, 24, 39, 1) 100%);
+    background: linear-gradient(145deg, rgba(37, 99, 235, 0.12) 0%, var(--grad-end) 100%);
   }
 
   .page-collections .table-wrap tbody tr.row-error {
     border-left-color: #DC2626;
-    background: linear-gradient(145deg, rgba(220, 38, 38, 0.12) 0%, rgba(17, 24, 39, 1) 100%);
+    background: linear-gradient(145deg, rgba(220, 38, 38, 0.12) 0%, var(--grad-end) 100%);
   }
 
   .page-collections .table-wrap tbody tr:hover {
-    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.34);
+    box-shadow: var(--elevated-hover);
     transform: translateY(-1px);
   }
 
   .page-collections .table-wrap tbody tr.row-dispatched:hover {
-    background: linear-gradient(145deg, rgba(22, 163, 74, 0.16) 0%, rgba(17, 24, 39, 1) 100%);
+    background: linear-gradient(145deg, rgba(22, 163, 74, 0.16) 0%, var(--grad-end) 100%);
   }
 
   .page-collections .table-wrap tbody tr.row-pending:hover {
-    background: linear-gradient(145deg, rgba(217, 119, 6, 0.16) 0%, rgba(17, 24, 39, 1) 100%);
+    background: linear-gradient(145deg, rgba(217, 119, 6, 0.16) 0%, var(--grad-end) 100%);
   }
 
   .page-collections .table-wrap tbody tr:active {
@@ -587,6 +587,10 @@
     opacity: 0.45;
     background: no-repeat center / contain url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23F9FAFB' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9 18 6-6-6-6'/%3E%3C/svg%3E");
     pointer-events: none;
+  }
+
+  html[data-theme="light"] .page-collections .table-wrap tbody tr::after {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231B2430' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9 18 6-6-6-6'/%3E%3C/svg%3E");
   }
 
   .page-collections .table-wrap tbody td {
@@ -771,7 +775,7 @@
 }
 
 .page-collections .pallet-stock-item--pickable .pallet-stock-tag {
-  color: #86EFAC;
+  color: var(--pick-tag);
 }
 
 .page-collections .collections-notice.text-error,

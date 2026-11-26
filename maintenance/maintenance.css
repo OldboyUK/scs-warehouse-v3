@@ -36,7 +36,7 @@ body.fault-page .btn:disabled {
 
 .fault-req {
   margin-left: 6px;
-  color: var(--primary);
+  color: var(--link);
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -51,7 +51,7 @@ body.fault-page .btn:disabled {
 
 .fault-error {
   margin: 6px 0 0;
-  color: var(--danger);
+  color: var(--danger-ink);
   font-size: 0.85rem;
   font-weight: 600;
 }
@@ -276,7 +276,7 @@ select.parts-status-bad {
 .status-table th,
 .status-table td {
   padding: 8px 10px;
-  border-bottom: 1px solid #374151;
+  border-bottom: 1px solid var(--border);
   text-align: left;
   vertical-align: middle;
 }
@@ -333,7 +333,7 @@ select.parts-status-bad {
 .status-section {
   margin-top: 14px;
   padding: 14px 16px;
-  border: 1px solid #374151;
+  border: 1px solid var(--border);
   border-radius: 12px;
 }
 
