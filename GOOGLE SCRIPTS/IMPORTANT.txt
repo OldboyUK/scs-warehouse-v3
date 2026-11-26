@@ -51,6 +51,16 @@ After deploy, test in browser:
   YOUR_AUTH_SCRIPT_URL?action=auth_get_users&token=J4PAN88
 You should see JSON with users — not "Script function not found: doPost".
 
+SCS Admin Tasks (AdminTasks.js)
+- Spreadsheet: 1Ylcv5M-Kb0QsTU5sWkxtloVb7C4EndkZu1rRPT8ILeY
+- Worksheets written: Task (gid 1159021811) and Actions (gid 1408515271)
+- Create a NEW Apps Script project (do not add it to Warehouse, Auth, HR, Health and Safety, Quality, or Maintenance)
+- Copy AdminTasks.js into the project and deploy as a web app
+- Execute as: Me. Who has access: Anyone
+- Netlify env: ADMIN_TASKS_SCRIPT_URL (required before Create Task can save)
+- Redeploy a new version after any change to AdminTasks.js
+- The published staff CSV is read on the server. Only the name in column C is used. PIN hashes are not written to the task sheets and are not returned to the browser.
+
 Do not commit /exec URLs to this repository — Netlify secrets scanning will block the build.
 
 Warehouse deployment ID (for reference in Apps Script):

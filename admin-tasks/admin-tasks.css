@@ -1,0 +1,119 @@
+/* Admin Tasks form layout. Colours come from the shared design tokens. */
+
+body.at-page textarea {
+  min-height: 120px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+body.at-page button:disabled,
+body.at-page .btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.at-page-title {
+  margin: 0 0 8px;
+  font-size: 1.35rem;
+  line-height: 1.3;
+  color: var(--text);
+}
+
+.at-intro {
+  margin: 0 0 16px;
+  color: var(--muted);
+}
+
+.at-hint {
+  margin: -4px 0 14px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.at-banner {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--danger);
+  color: var(--text);
+  background: rgba(239, 68, 68, 0.12);
+  white-space: pre-line;
+}
+
+.at-prompt {
+  margin: 20px 0 8px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.at-choice-group {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.at-choice-btn {
+  min-height: 52px;
+}
+
+.at-action-card {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+}
+
+.at-action-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.at-action-head h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.at-review-block {
+  margin-bottom: 20px;
+}
+
+.at-review-block h2 {
+  margin: 0 0 10px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+
+.at-recovery {
+  max-width: 640px;
+}
+
+.at-recovery p {
+  margin: 0 0 16px;
+  color: var(--text);
+  font-size: 1.05rem;
+  line-height: 1.45;
+}
+
+.at-nav .btn {
+  min-height: 48px;
+}
+
+@media (max-width: 640px) {
+  .at-choice-group,
+  .at-nav {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+
+  .at-nav .btn,
+  .at-choice-btn {
+    width: 100%;
+  }
+}
