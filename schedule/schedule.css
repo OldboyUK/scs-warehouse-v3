@@ -943,6 +943,74 @@
   pointer-events: none;
 }
 
+.prod-block.is-conflict {
+  border-color: #ff2d2d;
+  box-shadow: 0 0 0 2px #ff2d2d, 0 0 12px rgba(255, 36, 36, 0.8);
+}
+
+.prod-block.is-conflict:hover {
+  box-shadow: 0 0 0 2px #ff2d2d, 0 0 14px rgba(255, 36, 36, 0.9);
+}
+
+.sch-conflict {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  box-sizing: border-box;
+  padding: 2px;
+  border: 2px solid #ff2a2a;
+  border-radius: 2px;
+  pointer-events: none;
+  background-color: rgba(220, 16, 16, 0.42);
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(255, 70, 70, 0.18) 0,
+    rgba(255, 70, 70, 0.18) 5px,
+    rgba(120, 0, 0, 0.55) 5px,
+    rgba(120, 0, 0, 0.55) 10px
+  );
+  box-shadow: 0 0 10px rgba(255, 24, 24, 0.55), inset 0 0 0 1px rgba(255, 180, 180, 0.35);
+}
+
+.sch-conflict-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  border-radius: 4px;
+  background: #e10600;
+  box-shadow: 0 0 0 2px #fff, 0 1px 3px rgba(0, 0, 0, 0.55);
+}
+
+.sch-conflict-mark svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+
+.sch-conflict-label {
+  max-width: 100%;
+  color: #fff;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  line-height: 1.15;
+  text-align: center;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+}
+
+.sch-conflict.is-compact .sch-conflict-label {
+  display: none;
+}
+
 .prod-text {
   width: 100%;
   flex: 1 1 auto;

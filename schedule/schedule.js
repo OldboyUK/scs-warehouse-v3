@@ -254,6 +254,98 @@
       if ((block.schedule || 'production') !== view) return;
       attachBlock(block);
     });
+    paintConflicts();
+  }
+
+  function conflictMark() {
+    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('aria-hidden', 'true');
+    var triangle = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    triangle.setAttribute('fill', '#ffffff');
+    triangle.setAttribute('d', 'M12 2.6 1.6 21.2h20.8L12 2.6z');
+    var bang = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    bang.setAttribute('fill', '#c40000');
+    bang.setAttribute('d', 'M11 9.2h2v6.2h-2zm0 7.4h2v2h-2z');
+    svg.appendChild(triangle);
+    svg.appendChild(bang);
+    return svg;
+  }
+
+  function mergeConflictZones(zones) {
+    if (!zones.length) return [];
+    zones.sort(function (a, b) { return a.start - b.start || a.end - b.end; });
+    var merged = [{ start: zones[0].start, end: zones[0].end }];
+    for (var i = 1; i < zones.length; i++) {
+      var last = merged[merged.length - 1];
+      if (zones[i].start <= last.end) {
+        if (zones[i].end > last.end) last.end = zones[i].end;
+      } else {
+        merged.push({ start: zones[i].start, end: zones[i].end });
+      }
+    }
+    return merged;
+  }
+
+  function paintConflicts() {
+    grid.querySelectorAll('.sch-conflict').forEach(function (node) { node.remove(); });
+    grid.querySelectorAll('.prod-block.is-conflict').forEach(function (node) {
+      node.classList.remove('is-conflict');
+    });
+    if (view !== 'production') return;
+    var lanes = {};
+    data.getState().blocks.forEach(function (block) {
+      if ((block.schedule || 'production') !== 'production') return;
+      var startIndex = categoryIndex(block.category);
+      if (startIndex < 0) return;
+      var span = block.blockType === 'cip' ? (block.laneSpan || 1) : 1;
+      for (var i = 0; i < span; i++) {
+        var category = data.CATEGORIES[startIndex + i];
+        if (!category) break;
+        var key = laneKey(block.weekCommencing, block.day, category.id);
+        if (!lanes[key]) lanes[key] = [];
+        lanes[key].push({ id: block.id, start: block.startOffset, end: block.endOffset });
+      }
+    });
+    Object.keys(lanes).forEach(function (key) {
+      var items = lanes[key];
+      if (items.length < 2) return;
+      var zones = [];
+      var involved = {};
+      for (var a = 0; a < items.length; a++) {
+        for (var b = a + 1; b < items.length; b++) {
+          var start = Math.max(items[a].start, items[b].start);
+          var end = Math.min(items[a].end, items[b].end);
+          if (end <= start) continue;
+          zones.push({ start: start, end: end });
+          involved[items[a].id] = true;
+          involved[items[b].id] = true;
+        }
+      }
+      Object.keys(involved).forEach(function (id) {
+        var node = blockElement(id);
+        if (node) node.classList.add('is-conflict');
+      });
+      var lane = laneMap[key];
+      if (!lane) return;
+      mergeConflictZones(zones).forEach(function (zone) {
+        var overlay = document.createElement('div');
+        overlay.className = 'sch-conflict';
+        if (zone.end - zone.start < 120) overlay.classList.add('is-compact');
+        overlay.style.top = 'calc(var(--sch-hour) * ' + (zone.start / 60) + ')';
+        overlay.style.height = 'calc(var(--sch-hour) * ' + ((zone.end - zone.start) / 60) + ')';
+        overlay.setAttribute('aria-hidden', 'true');
+        var mark = document.createElement('span');
+        mark.className = 'sch-conflict-mark';
+        mark.appendChild(conflictMark());
+        var label = document.createElement('span');
+        label.className = 'sch-conflict-label';
+        label.textContent = 'CONFLICT – OVERLAP';
+        overlay.appendChild(mark);
+        overlay.appendChild(label);
+        lane.appendChild(overlay);
+      });
+    });
   }
 
   function categoryIndex(id) {
@@ -571,6 +663,7 @@
       if (lane && node.parentElement !== lane) lane.appendChild(node);
     }
     paint(node, block);
+    paintConflicts();
     return node;
   }
 
@@ -1950,6 +2043,7 @@
         if (span && span.classList.contains('sch-cip-span')) span.remove();
         else node.remove();
       }
+      paintConflicts();
       if (week) {
         releaseNight(week);
         paintSaturday(boardFor(week));
