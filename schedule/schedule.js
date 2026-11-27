@@ -1421,12 +1421,30 @@
     endPointer(event, false);
   }
 
+  function hitSchedule(x, y) {
+    var stack = document.elementsFromPoint(x, y);
+    var handle = null;
+    var block = null;
+    var lane = null;
+    for (var i = 0; i < stack.length; i++) {
+      var el = stack[i];
+      if (!el.closest) continue;
+      if (el.closest('.sch-day-note, .sch-modal, .sch-context')) return null;
+      if (!handle) handle = el.closest('.prod-handle');
+      if (!block) block = el.closest('.prod-block');
+      if (!lane) lane = el.closest('.sch-lane');
+    }
+    if (handle && !block) block = handle.closest('.prod-block');
+    return { handle: handle, block: block, lane: lane };
+  }
+
   function onPointerDown(event) {
     if (event.button !== 0 || drag || navigating) return;
     if (event.target.closest('.sch-day-note')) return;
-    var handle = event.target.closest('.prod-handle');
-    var blockNode = event.target.closest('.prod-block');
-    var lane = event.target.closest('.sch-lane');
+    var hit = hitSchedule(event.clientX, event.clientY) || {};
+    var handle = hit.handle || (event.target.closest && event.target.closest('.prod-handle'));
+    var blockNode = hit.block || (event.target.closest && event.target.closest('.prod-block'));
+    var lane = hit.lane || (event.target.closest && event.target.closest('.sch-lane'));
     var spanHost = blockNode && blockNode.closest('.sch-cip-span');
     if (!lane && spanHost) {
       lane = laneMap[laneKey(spanHost.dataset.week, spanHost.dataset.day, spanHost.dataset.category)];

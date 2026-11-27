@@ -952,6 +952,11 @@
   box-shadow: 0 0 0 2px #ff2d2d, 0 0 14px rgba(255, 36, 36, 0.9);
 }
 
+.sch-conflict,
+.sch-conflict * {
+  pointer-events: none !important;
+}
+
 .sch-conflict {
   position: absolute;
   left: 2px;
