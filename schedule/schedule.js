@@ -261,6 +261,7 @@
     var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('viewBox', '0 0 24 24');
     svg.setAttribute('aria-hidden', 'true');
+    svg.style.pointerEvents = 'none';
     var triangle = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     triangle.setAttribute('fill', '#ffffff');
     triangle.setAttribute('d', 'M12 2.6 1.6 21.2h20.8L12 2.6z');
@@ -288,6 +289,7 @@
   }
 
   function paintConflicts() {
+    try {
     grid.querySelectorAll('.sch-conflict').forEach(function (node) { node.remove(); });
     grid.querySelectorAll('.prod-block.is-conflict').forEach(function (node) {
       node.classList.remove('is-conflict');
@@ -332,11 +334,13 @@
         var overlay = document.createElement('div');
         overlay.className = 'sch-conflict';
         if (zone.end - zone.start < 120) overlay.classList.add('is-compact');
+        overlay.style.pointerEvents = 'none';
         overlay.style.top = 'calc(var(--sch-hour) * ' + (zone.start / 60) + ')';
         overlay.style.height = 'calc(var(--sch-hour) * ' + ((zone.end - zone.start) / 60) + ')';
         overlay.setAttribute('aria-hidden', 'true');
         var mark = document.createElement('span');
         mark.className = 'sch-conflict-mark';
+        mark.style.pointerEvents = 'none';
         mark.appendChild(conflictMark());
         var label = document.createElement('span');
         label.className = 'sch-conflict-label';
@@ -346,6 +350,7 @@
         lane.appendChild(overlay);
       });
     });
+    } catch (err) { /* a warning must not lock the schedule */ }
   }
 
   function categoryIndex(id) {
@@ -663,7 +668,7 @@
       if (lane && node.parentElement !== lane) lane.appendChild(node);
     }
     paint(node, block);
-    paintConflicts();
+    if (!drag) paintConflicts();
     return node;
   }
 
@@ -1181,6 +1186,7 @@
     try {
       if (scroll.hasPointerCapture(info.pointerId)) scroll.releasePointerCapture(info.pointerId);
     } catch (err) { /* capture may already be gone */ }
+    try {
 
     var node = info.id ? blockElement(info.id) : null;
     if (node) node.classList.remove('is-active');
@@ -1227,6 +1233,9 @@
     paintSaturday(boardFor(info.week));
     if (block.weekCommencing !== info.week) paintSaturday(boardFor(block.weekCommencing));
     if (!changed) openEditor(info.id, 'edit');
+    } finally {
+      paintConflicts();
+    }
   }
 
   function markCipLanes(week, day, category, span) {
@@ -1388,7 +1397,9 @@
 
   function endPointer(event, commit) {
     if (!drag || (event.pointerId != null && event.pointerId !== drag.pointerId)) return;
-    if (commit && event.clientX != null) trackMove(event.clientX, event.clientY);
+    try {
+      if (commit && event.clientX != null) trackMove(event.clientX, event.clientY);
+    } catch (err) { /* keep the pointer usable if a paint fails mid-drag */ }
     window.removeEventListener('pointermove', onPointerMove);
     window.removeEventListener('pointerup', onPointerUp);
     window.removeEventListener('pointercancel', onPointerCancel);
@@ -1731,15 +1742,17 @@
     fillWeekJump(year, iso);
     data.setMeta({ weekCommencing: iso });
     runSuffix.value = data.runSuffixFor(iso);
-    if (data.peekYear(year) || !data.loadedYear()) {
-      renderYear(year);
-      markActive(iso);
-      window.requestAnimationFrame(function () { scrollToWeek(iso, false); });
-    }
+    try {
+      if (data.peekYear(year) || !data.loadedYear()) {
+        renderYear(year);
+        markActive(iso);
+        window.requestAnimationFrame(function () { scrollToWeek(iso, false); });
+      }
+    } catch (err) { /* draw what we can, then load the year */ }
     var token = ++yearToken;
     data.loadYear(year).then(function () {
       if (token !== yearToken) return;
-      renderYear(year);
+      try { renderYear(year); } catch (err) { /* keep the grid usable */ }
       data.setMeta({ weekCommencing: iso });
       runSuffix.value = data.runSuffixFor(iso);
       markActive(iso);
@@ -1749,7 +1762,7 @@
       });
     }).catch(function () {
       if (token !== yearToken) return;
-      renderYear(year);
+      try { renderYear(year); } catch (err) { /* keep the grid usable */ }
       markActive(iso);
       navigating = false;
     });
