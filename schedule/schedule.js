@@ -15,6 +15,7 @@
   var filling = false;
   var drag = null;
   var skipClick = false;
+  var gestureHandled = false;
   var navigating = false;
   var yearToken = 0;
   var scrollLock = false;
@@ -1243,6 +1244,7 @@
     if (!drag) return;
     var info = drag;
     drag = null;
+    gestureHandled = true;
     document.body.classList.remove('sch-dragging', 'sch-moving', 'sch-spanning');
     try {
       if (document.documentElement.hasPointerCapture && document.documentElement.hasPointerCapture(info.pointerId)) {
@@ -1490,6 +1492,7 @@
   function onPointerDown(event) {
     if (event.button !== 0) return;
     if (drag) endPointer({ pointerId: drag.pointerId, pointerType: 'mouse', clientX: drag.x, clientY: drag.y }, !!drag.moved);
+    gestureHandled = false;
     navigating = false;
     if (event.target.closest && event.target.closest('.sch-day-note, .sch-modal, .sch-context')) return;
     var handle = event.target.closest && event.target.closest('.prod-handle');
@@ -2338,7 +2341,7 @@
   document.addEventListener('pointerdown', onPointerDown, true);
   document.addEventListener('click', function (event) {
     if (event.button !== 0) return;
-    if (skipClick) {
+    if (skipClick || gestureHandled) {
       skipClick = false;
       return;
     }
