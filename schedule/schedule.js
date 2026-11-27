@@ -1087,7 +1087,6 @@
   }
 
   function openEditor(id, mode) {
-    if (navigating) return;
     var block = data.getBlock(id);
     if (!block) return;
     if (editingId && editingId !== id) {
@@ -1127,7 +1126,6 @@
   }
 
   function openCreate(day, category, hour, week) {
-    if (navigating) return;
     if (editorMode === 'edit') dismissEditor();
     else if (editorMode === 'add') closeEditor();
     editorCategory = category;
@@ -1418,18 +1416,19 @@
   }
 
   function onPointerCancel(event) {
-    endPointer(event, false);
+    if (drag && !drag.moved) endPointer(event, true);
+    else endPointer(event, false);
   }
 
   function hitSchedule(x, y) {
-    var stack = document.elementsFromPoint(x, y);
+    var stack = [];
+    try { stack = document.elementsFromPoint(x, y); } catch (err) { return null; }
     var handle = null;
     var block = null;
     var lane = null;
     for (var i = 0; i < stack.length; i++) {
       var el = stack[i];
       if (!el.closest) continue;
-      if (el.closest('.sch-day-note, .sch-modal, .sch-context')) return null;
       if (!handle) handle = el.closest('.prod-handle');
       if (!block) block = el.closest('.prod-block');
       if (!lane) lane = el.closest('.sch-lane');
@@ -1439,8 +1438,10 @@
   }
 
   function onPointerDown(event) {
-    if (event.button !== 0 || drag || navigating) return;
-    if (event.target.closest('.sch-day-note')) return;
+    if (event.button !== 0) return;
+    if (drag) endPointer({ pointerId: drag.pointerId, clientX: drag.x, clientY: drag.y }, false);
+    navigating = false;
+    if (event.target.closest && event.target.closest('.sch-day-note, .sch-modal, .sch-context')) return;
     var hit = hitSchedule(event.clientX, event.clientY) || {};
     var handle = hit.handle || (event.target.closest && event.target.closest('.prod-handle'));
     var blockNode = hit.block || (event.target.closest && event.target.closest('.prod-block'));
@@ -1495,7 +1496,6 @@
       };
     }
 
-    try { scroll.setPointerCapture(event.pointerId); } catch (err) { /* ignore */ }
     window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerup', onPointerUp);
     window.addEventListener('pointercancel', onPointerCancel);
@@ -1774,7 +1774,6 @@
       data.setMeta({ weekCommencing: iso });
       runSuffix.value = data.runSuffixFor(iso);
       markActive(iso);
-      navigating = false;
       window.requestAnimationFrame(function () {
         window.requestAnimationFrame(function () { scrollToWeek(iso, !!smooth); });
       });
@@ -1782,7 +1781,10 @@
       if (token !== yearToken) return;
       try { renderYear(year); } catch (err) { /* keep the grid usable */ }
       markActive(iso);
-      navigating = false;
+    }).then(function () {
+      if (token === yearToken) navigating = false;
+    }, function () {
+      if (token === yearToken) navigating = false;
     });
   }
 
@@ -2284,6 +2286,9 @@
   window.addEventListener('resize', closeScheduleMenu);
 
   scroll.addEventListener('pointerdown', onPointerDown);
+  document.addEventListener('pointerup', onPointerUp, true);
+  document.addEventListener('pointercancel', onPointerCancel, true);
+  document.addEventListener('mouseup', onMouseUp, true);
   renderLegend();
   bindMeta();
   bindEditor();
