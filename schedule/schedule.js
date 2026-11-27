@@ -14,6 +14,7 @@
   var currentMatch = null;
   var filling = false;
   var drag = null;
+  var skipClick = false;
   var navigating = false;
   var yearToken = 0;
   var scrollLock = false;
@@ -254,6 +255,165 @@
       if ((block.schedule || 'production') !== view) return;
       attachBlock(block);
     });
+    paintConflicts();
+  }
+
+  function conflictMark() {
+    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('aria-hidden', 'true');
+    var triangle = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    triangle.setAttribute('fill', '#ffffff');
+    triangle.setAttribute('d', 'M12 2.6 1.6 21.2h20.8L12 2.6z');
+    var bang = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    bang.setAttribute('fill', '#c40000');
+    bang.setAttribute('d', 'M11 9.2h2v6.2h-2zm0 7.4h2v2h-2z');
+    svg.appendChild(triangle);
+    svg.appendChild(bang);
+    return svg;
+  }
+
+  function mergeConflictZones(zones) {
+    if (!zones.length) return [];
+    zones.sort(function (a, b) { return a.start - b.start || a.end - b.end; });
+    var merged = [{ start: zones[0].start, end: zones[0].end }];
+    for (var i = 1; i < zones.length; i++) {
+      var last = merged[merged.length - 1];
+      if (zones[i].start <= last.end) {
+        if (zones[i].end > last.end) last.end = zones[i].end;
+      } else {
+        merged.push({ start: zones[i].start, end: zones[i].end });
+      }
+    }
+    return merged;
+  }
+
+  function mountConflict(overlay, lane, items, zone) {
+    var span = null;
+    var spanCount = 1;
+    var spanStart = 0;
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      if (item.kind !== 'cip' || item.end <= zone.start || item.start >= zone.end) continue;
+      var node = blockElement(item.id);
+      var host = node && node.closest('.sch-cip-span');
+      if (!host) continue;
+      span = host;
+      spanCount = item.span || 1;
+      spanStart = item.column;
+    }
+    if (!span) {
+      lane.appendChild(overlay);
+      return;
+    }
+    var laneColumn = parseInt(lane.style.gridColumn, 10);
+    var index = laneColumn - spanStart;
+    if (!(index >= 0) || index >= spanCount) {
+      lane.appendChild(overlay);
+      return;
+    }
+    overlay.style.left = 'calc(' + (index * 100 / spanCount) + '% + 2px)';
+    overlay.style.width = 'calc(' + (100 / spanCount) + '% - 4px)';
+    overlay.style.right = 'auto';
+    span.appendChild(overlay);
+  }
+
+  var conflictFrame = 0;
+
+  function paintConflicts() {
+    if (conflictFrame) return;
+    conflictFrame = window.requestAnimationFrame(function () {
+      conflictFrame = 0;
+      paintConflictNow();
+    });
+  }
+
+  function paintConflictNow() {
+    try {
+      grid.querySelectorAll('.sch-conflict').forEach(function (node) { node.remove(); });
+      grid.querySelectorAll('.prod-block.is-conflict').forEach(function (node) {
+        node.classList.remove('is-conflict');
+      });
+      if (view !== 'production') return;
+      var lanes = {};
+      data.getState().blocks.forEach(function (block) {
+        if ((block.schedule || 'production') !== 'production') return;
+        var start = Number(block.startOffset);
+        var end = Number(block.endOffset);
+        if (!(end > start)) return;
+        var startIndex = categoryIndex(block.category);
+        if (startIndex < 0) return;
+        var span = block.blockType === 'cip' ? (block.laneSpan || 1) : 1;
+        for (var i = 0; i < span; i++) {
+          var category = data.CATEGORIES[startIndex + i];
+          if (!category) break;
+          var key = laneKey(block.weekCommencing, block.day, category.id);
+          var lane = laneMap[key];
+          if (!lane) continue;
+          if (!lanes[key]) lanes[key] = [];
+          lanes[key].push({
+            id: block.id,
+            start: start,
+            end: end,
+            kind: block.blockType === 'cip' ? 'cip' : 'booking',
+            span: span,
+            column: parseInt(lane.style.gridColumn, 10) - i
+          });
+        }
+      });
+      Object.keys(lanes).forEach(function (key) {
+        var items = lanes[key];
+        if (items.length < 2) return;
+        var zones = [];
+        var involved = {};
+        for (var a = 0; a < items.length; a++) {
+          for (var b = a + 1; b < items.length; b++) {
+            var overlapStart = Math.max(items[a].start, items[b].start);
+            var overlapEnd = Math.min(items[a].end, items[b].end);
+            if (overlapEnd <= overlapStart) continue;
+            zones.push({ start: overlapStart, end: overlapEnd });
+            involved[items[a].id] = true;
+            involved[items[b].id] = true;
+          }
+        }
+        if (!zones.length) return;
+        Object.keys(involved).forEach(function (id) {
+          var node = blockElement(id);
+          if (node) node.classList.add('is-conflict');
+        });
+        var lane = laneMap[key];
+        if (!lane) return;
+        var limit = visibleHours(lane) * 60;
+        mergeConflictZones(zones).forEach(function (zone) {
+          if (zone.start >= limit) return;
+          var start = zone.start;
+          var end = zone.end > limit ? limit : zone.end;
+          if (end <= start) return;
+          var overlay = document.createElement('div');
+          overlay.className = 'sch-conflict';
+          var minutes = end - start;
+          if (minutes < 90) overlay.classList.add('is-compact');
+          if (minutes < 45) overlay.classList.add('is-tight');
+          overlay.style.top = 'calc(var(--sch-hour) * ' + (start / 60) + ')';
+          overlay.style.height = 'calc(var(--sch-hour) * ' + ((end - start) / 60) + ')';
+          overlay.setAttribute('aria-hidden', 'true');
+          var mark = document.createElement('span');
+          mark.className = 'sch-conflict-mark';
+          mark.appendChild(conflictMark());
+          var label = document.createElement('span');
+          label.className = 'sch-conflict-label';
+          label.textContent = 'CONFLICT –\nOVERLAP';
+          overlay.appendChild(mark);
+          overlay.appendChild(label);
+          mountConflict(overlay, lane, items, zone);
+        });
+      });
+    } catch (err) {
+      grid.querySelectorAll('.sch-conflict').forEach(function (node) { node.remove(); });
+      grid.querySelectorAll('.prod-block.is-conflict').forEach(function (node) {
+        node.classList.remove('is-conflict');
+      });
+    }
   }
 
   function categoryIndex(id) {
@@ -571,6 +731,7 @@
       if (lane && node.parentElement !== lane) lane.appendChild(node);
     }
     paint(node, block);
+    paintConflicts();
     return node;
   }
 
@@ -989,7 +1150,6 @@
   }
 
   function openEditor(id, mode) {
-    if (navigating) return;
     var block = data.getBlock(id);
     if (!block) return;
     if (editingId && editingId !== id) {
@@ -1029,7 +1189,6 @@
   }
 
   function openCreate(day, category, hour, week) {
-    if (navigating) return;
     if (editorMode === 'edit') dismissEditor();
     else if (editorMode === 'add') closeEditor();
     editorCategory = category;
@@ -1086,7 +1245,9 @@
     drag = null;
     document.body.classList.remove('sch-dragging', 'sch-moving', 'sch-spanning');
     try {
-      if (scroll.hasPointerCapture(info.pointerId)) scroll.releasePointerCapture(info.pointerId);
+      if (document.documentElement.hasPointerCapture && document.documentElement.hasPointerCapture(info.pointerId)) {
+        document.documentElement.releasePointerCapture(info.pointerId);
+      }
     } catch (err) { /* capture may already be gone */ }
 
     var node = info.id ? blockElement(info.id) : null;
@@ -1190,6 +1351,7 @@
     var dy = clientY - drag.y;
     if (!drag.moved && Math.hypot(dx, dy) < MOVE_SLOP) return;
     drag.moved = true;
+    skipClick = true;
     if (drag.kind === 'create') return;
 
     nudgeScroll(clientX, clientY);
@@ -1289,12 +1451,14 @@
   }
 
   function onMouseMove(event) {
-    if (!drag) return;
+    if (!drag || event.buttons === 0) return;
     trackMove(event.clientX, event.clientY);
   }
 
   function endPointer(event, commit) {
-    if (!drag || (event.pointerId != null && event.pointerId !== drag.pointerId)) return;
+    if (!drag) return;
+    var foreign = event && event.pointerId != null && event.pointerId !== drag.pointerId;
+    if (foreign && (!event.pointerType || event.pointerType !== 'mouse')) return;
     if (commit && event.clientX != null) trackMove(event.clientX, event.clientY);
     window.removeEventListener('pointermove', onPointerMove);
     window.removeEventListener('pointerup', onPointerUp);
@@ -1314,23 +1478,32 @@
   }
 
   function onPointerCancel(event) {
-    endPointer(event, false);
+    if (!drag) return;
+    if (!event.pointerType || event.pointerType === 'mouse') {
+      if (drag.moved) endPointer({ pointerId: drag.pointerId, pointerType: 'mouse', clientX: drag.x, clientY: drag.y }, true);
+      return;
+    }
+    if (!drag.moved) endPointer(event, true);
+    else endPointer(event, false);
   }
 
   function onPointerDown(event) {
-    if (event.button !== 0 || drag || navigating) return;
-    if (event.target.closest('.sch-day-note')) return;
-    var handle = event.target.closest('.prod-handle');
-    var blockNode = event.target.closest('.prod-block');
-    var lane = event.target.closest('.sch-lane');
+    if (event.button !== 0) return;
+    if (drag) endPointer({ pointerId: drag.pointerId, pointerType: 'mouse', clientX: drag.x, clientY: drag.y }, !!drag.moved);
+    navigating = false;
+    if (event.target.closest && event.target.closest('.sch-day-note, .sch-modal, .sch-context')) return;
+    var handle = event.target.closest && event.target.closest('.prod-handle');
+    var blockNode = event.target.closest && event.target.closest('.prod-block');
+    var lane = event.target.closest && event.target.closest('.sch-lane');
     var spanHost = blockNode && blockNode.closest('.sch-cip-span');
     if (!lane && spanHost) {
       lane = laneMap[laneKey(spanHost.dataset.week, spanHost.dataset.day, spanHost.dataset.category)];
     }
     if (!lane || !scroll.contains(lane)) return;
 
+    if (event.pointerType === 'mouse') event.preventDefault();
+
     if (blockNode) {
-      event.preventDefault();
       var moving = data.getBlock(blockNode.dataset.id);
       var cip = moving && moving.blockType === 'cip';
       drag = {
@@ -1373,7 +1546,6 @@
       };
     }
 
-    try { scroll.setPointerCapture(event.pointerId); } catch (err) { /* ignore */ }
     window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerup', onPointerUp);
     window.addEventListener('pointercancel', onPointerCancel);
@@ -1459,6 +1631,7 @@
     var row = board.querySelector('.sch-night');
     if (row) row.classList.toggle('is-locked', !!locked);
     if (note) note.hidden = !locked;
+    paintConflicts();
   }
 
   function applyNight(board) {
@@ -1639,26 +1812,30 @@
     data.setMeta({ weekCommencing: iso });
     runSuffix.value = data.runSuffixFor(iso);
     if (data.peekYear(year) || !data.loadedYear()) {
-      renderYear(year);
-      markActive(iso);
-      window.requestAnimationFrame(function () { scrollToWeek(iso, false); });
+      try {
+        renderYear(year);
+        markActive(iso);
+        window.requestAnimationFrame(function () { scrollToWeek(iso, false); });
+      } catch (err) { /* draw what we can, then load the year */ }
     }
     var token = ++yearToken;
     data.loadYear(year).then(function () {
       if (token !== yearToken) return;
-      renderYear(year);
+      try { renderYear(year); } catch (err) { /* keep the grid usable */ }
       data.setMeta({ weekCommencing: iso });
       runSuffix.value = data.runSuffixFor(iso);
       markActive(iso);
-      navigating = false;
       window.requestAnimationFrame(function () {
         window.requestAnimationFrame(function () { scrollToWeek(iso, !!smooth); });
       });
     }).catch(function () {
       if (token !== yearToken) return;
-      renderYear(year);
+      try { renderYear(year); } catch (err) { /* keep the grid usable */ }
       markActive(iso);
-      navigating = false;
+    }).then(function () {
+      if (token === yearToken) navigating = false;
+    }, function () {
+      if (token === yearToken) navigating = false;
     });
   }
 
@@ -2158,7 +2335,32 @@
   scroll.addEventListener('scroll', closeScheduleMenu);
   window.addEventListener('resize', closeScheduleMenu);
 
-  scroll.addEventListener('pointerdown', onPointerDown);
+  document.addEventListener('pointerdown', onPointerDown, true);
+  document.addEventListener('click', function (event) {
+    if (event.button !== 0) return;
+    if (skipClick) {
+      skipClick = false;
+      return;
+    }
+    if (drag) {
+      if (!drag.moved) endPointer({ pointerId: drag.pointerId, pointerType: 'mouse', clientX: event.clientX, clientY: event.clientY }, true);
+      return;
+    }
+    if (event.target.closest && event.target.closest('.sch-day-note, .sch-modal, .sch-context, .prod-handle')) return;
+    navigating = false;
+    var blockNode = event.target.closest && event.target.closest('.prod-block');
+    var lane = event.target.closest && event.target.closest('.sch-lane');
+    var spanHost = blockNode && blockNode.closest('.sch-cip-span');
+    if (!lane && spanHost) {
+      lane = laneMap[laneKey(spanHost.dataset.week, spanHost.dataset.day, spanHost.dataset.category)];
+    }
+    if (!lane || !scroll.contains(lane)) return;
+    if (blockNode) openEditor(blockNode.dataset.id, 'edit');
+    else openCreate(lane.dataset.day, lane.dataset.category, hourAt(lane, event.clientY), lane.dataset.week);
+  });
+  document.addEventListener('pointerup', onPointerUp, true);
+  document.addEventListener('pointercancel', onPointerCancel, true);
+  document.addEventListener('mouseup', onMouseUp, true);
   renderLegend();
   bindMeta();
   bindEditor();
