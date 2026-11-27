@@ -254,103 +254,6 @@
       if ((block.schedule || 'production') !== view) return;
       attachBlock(block);
     });
-    paintConflicts();
-  }
-
-  function conflictMark() {
-    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('viewBox', '0 0 24 24');
-    svg.setAttribute('aria-hidden', 'true');
-    svg.style.pointerEvents = 'none';
-    var triangle = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    triangle.setAttribute('fill', '#ffffff');
-    triangle.setAttribute('d', 'M12 2.6 1.6 21.2h20.8L12 2.6z');
-    var bang = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    bang.setAttribute('fill', '#c40000');
-    bang.setAttribute('d', 'M11 9.2h2v6.2h-2zm0 7.4h2v2h-2z');
-    svg.appendChild(triangle);
-    svg.appendChild(bang);
-    return svg;
-  }
-
-  function mergeConflictZones(zones) {
-    if (!zones.length) return [];
-    zones.sort(function (a, b) { return a.start - b.start || a.end - b.end; });
-    var merged = [{ start: zones[0].start, end: zones[0].end }];
-    for (var i = 1; i < zones.length; i++) {
-      var last = merged[merged.length - 1];
-      if (zones[i].start <= last.end) {
-        if (zones[i].end > last.end) last.end = zones[i].end;
-      } else {
-        merged.push({ start: zones[i].start, end: zones[i].end });
-      }
-    }
-    return merged;
-  }
-
-  function paintConflicts() {
-    try {
-    grid.querySelectorAll('.sch-conflict').forEach(function (node) { node.remove(); });
-    grid.querySelectorAll('.prod-block.is-conflict').forEach(function (node) {
-      node.classList.remove('is-conflict');
-    });
-    if (view !== 'production') return;
-    var lanes = {};
-    data.getState().blocks.forEach(function (block) {
-      if ((block.schedule || 'production') !== 'production') return;
-      var startIndex = categoryIndex(block.category);
-      if (startIndex < 0) return;
-      var span = block.blockType === 'cip' ? (block.laneSpan || 1) : 1;
-      for (var i = 0; i < span; i++) {
-        var category = data.CATEGORIES[startIndex + i];
-        if (!category) break;
-        var key = laneKey(block.weekCommencing, block.day, category.id);
-        if (!lanes[key]) lanes[key] = [];
-        lanes[key].push({ id: block.id, start: block.startOffset, end: block.endOffset });
-      }
-    });
-    Object.keys(lanes).forEach(function (key) {
-      var items = lanes[key];
-      if (items.length < 2) return;
-      var zones = [];
-      var involved = {};
-      for (var a = 0; a < items.length; a++) {
-        for (var b = a + 1; b < items.length; b++) {
-          var start = Math.max(items[a].start, items[b].start);
-          var end = Math.min(items[a].end, items[b].end);
-          if (end <= start) continue;
-          zones.push({ start: start, end: end });
-          involved[items[a].id] = true;
-          involved[items[b].id] = true;
-        }
-      }
-      Object.keys(involved).forEach(function (id) {
-        var node = blockElement(id);
-        if (node) node.classList.add('is-conflict');
-      });
-      var lane = laneMap[key];
-      if (!lane) return;
-      mergeConflictZones(zones).forEach(function (zone) {
-        var overlay = document.createElement('div');
-        overlay.className = 'sch-conflict';
-        if (zone.end - zone.start < 120) overlay.classList.add('is-compact');
-        overlay.style.pointerEvents = 'none';
-        overlay.style.top = 'calc(var(--sch-hour) * ' + (zone.start / 60) + ')';
-        overlay.style.height = 'calc(var(--sch-hour) * ' + ((zone.end - zone.start) / 60) + ')';
-        overlay.setAttribute('aria-hidden', 'true');
-        var mark = document.createElement('span');
-        mark.className = 'sch-conflict-mark';
-        mark.style.pointerEvents = 'none';
-        mark.appendChild(conflictMark());
-        var label = document.createElement('span');
-        label.className = 'sch-conflict-label';
-        label.textContent = 'CONFLICT – OVERLAP';
-        overlay.appendChild(mark);
-        overlay.appendChild(label);
-        lane.appendChild(overlay);
-      });
-    });
-    } catch (err) { /* a warning must not lock the schedule */ }
   }
 
   function categoryIndex(id) {
@@ -668,7 +571,6 @@
       if (lane && node.parentElement !== lane) lane.appendChild(node);
     }
     paint(node, block);
-    if (!drag) paintConflicts();
     return node;
   }
 
@@ -1087,6 +989,7 @@
   }
 
   function openEditor(id, mode) {
+    if (navigating) return;
     var block = data.getBlock(id);
     if (!block) return;
     if (editingId && editingId !== id) {
@@ -1126,6 +1029,7 @@
   }
 
   function openCreate(day, category, hour, week) {
+    if (navigating) return;
     if (editorMode === 'edit') dismissEditor();
     else if (editorMode === 'add') closeEditor();
     editorCategory = category;
@@ -1184,7 +1088,6 @@
     try {
       if (scroll.hasPointerCapture(info.pointerId)) scroll.releasePointerCapture(info.pointerId);
     } catch (err) { /* capture may already be gone */ }
-    try {
 
     var node = info.id ? blockElement(info.id) : null;
     if (node) node.classList.remove('is-active');
@@ -1231,9 +1134,6 @@
     paintSaturday(boardFor(info.week));
     if (block.weekCommencing !== info.week) paintSaturday(boardFor(block.weekCommencing));
     if (!changed) openEditor(info.id, 'edit');
-    } finally {
-      paintConflicts();
-    }
   }
 
   function markCipLanes(week, day, category, span) {
@@ -1395,9 +1295,7 @@
 
   function endPointer(event, commit) {
     if (!drag || (event.pointerId != null && event.pointerId !== drag.pointerId)) return;
-    try {
-      if (commit && event.clientX != null) trackMove(event.clientX, event.clientY);
-    } catch (err) { /* keep the pointer usable if a paint fails mid-drag */ }
+    if (commit && event.clientX != null) trackMove(event.clientX, event.clientY);
     window.removeEventListener('pointermove', onPointerMove);
     window.removeEventListener('pointerup', onPointerUp);
     window.removeEventListener('pointercancel', onPointerCancel);
@@ -1416,36 +1314,15 @@
   }
 
   function onPointerCancel(event) {
-    if (drag && !drag.moved) endPointer(event, true);
-    else endPointer(event, false);
-  }
-
-  function hitSchedule(x, y) {
-    var stack = [];
-    try { stack = document.elementsFromPoint(x, y); } catch (err) { return null; }
-    var handle = null;
-    var block = null;
-    var lane = null;
-    for (var i = 0; i < stack.length; i++) {
-      var el = stack[i];
-      if (!el.closest) continue;
-      if (!handle) handle = el.closest('.prod-handle');
-      if (!block) block = el.closest('.prod-block');
-      if (!lane) lane = el.closest('.sch-lane');
-    }
-    if (handle && !block) block = handle.closest('.prod-block');
-    return { handle: handle, block: block, lane: lane };
+    endPointer(event, false);
   }
 
   function onPointerDown(event) {
-    if (event.button !== 0) return;
-    if (drag) endPointer({ pointerId: drag.pointerId, clientX: drag.x, clientY: drag.y }, false);
-    navigating = false;
-    if (event.target.closest && event.target.closest('.sch-day-note, .sch-modal, .sch-context')) return;
-    var hit = hitSchedule(event.clientX, event.clientY) || {};
-    var handle = hit.handle || (event.target.closest && event.target.closest('.prod-handle'));
-    var blockNode = hit.block || (event.target.closest && event.target.closest('.prod-block'));
-    var lane = hit.lane || (event.target.closest && event.target.closest('.sch-lane'));
+    if (event.button !== 0 || drag || navigating) return;
+    if (event.target.closest('.sch-day-note')) return;
+    var handle = event.target.closest('.prod-handle');
+    var blockNode = event.target.closest('.prod-block');
+    var lane = event.target.closest('.sch-lane');
     var spanHost = blockNode && blockNode.closest('.sch-cip-span');
     if (!lane && spanHost) {
       lane = laneMap[laneKey(spanHost.dataset.week, spanHost.dataset.day, spanHost.dataset.category)];
@@ -1496,6 +1373,7 @@
       };
     }
 
+    try { scroll.setPointerCapture(event.pointerId); } catch (err) { /* ignore */ }
     window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerup', onPointerUp);
     window.addEventListener('pointercancel', onPointerCancel);
@@ -1760,31 +1638,27 @@
     fillWeekJump(year, iso);
     data.setMeta({ weekCommencing: iso });
     runSuffix.value = data.runSuffixFor(iso);
-    try {
-      if (data.peekYear(year) || !data.loadedYear()) {
-        renderYear(year);
-        markActive(iso);
-        window.requestAnimationFrame(function () { scrollToWeek(iso, false); });
-      }
-    } catch (err) { /* draw what we can, then load the year */ }
+    if (data.peekYear(year) || !data.loadedYear()) {
+      renderYear(year);
+      markActive(iso);
+      window.requestAnimationFrame(function () { scrollToWeek(iso, false); });
+    }
     var token = ++yearToken;
     data.loadYear(year).then(function () {
       if (token !== yearToken) return;
-      try { renderYear(year); } catch (err) { /* keep the grid usable */ }
+      renderYear(year);
       data.setMeta({ weekCommencing: iso });
       runSuffix.value = data.runSuffixFor(iso);
       markActive(iso);
+      navigating = false;
       window.requestAnimationFrame(function () {
         window.requestAnimationFrame(function () { scrollToWeek(iso, !!smooth); });
       });
     }).catch(function () {
       if (token !== yearToken) return;
-      try { renderYear(year); } catch (err) { /* keep the grid usable */ }
+      renderYear(year);
       markActive(iso);
-    }).then(function () {
-      if (token === yearToken) navigating = false;
-    }, function () {
-      if (token === yearToken) navigating = false;
+      navigating = false;
     });
   }
 
@@ -2076,7 +1950,6 @@
         if (span && span.classList.contains('sch-cip-span')) span.remove();
         else node.remove();
       }
-      paintConflicts();
       if (week) {
         releaseNight(week);
         paintSaturday(boardFor(week));
@@ -2286,9 +2159,6 @@
   window.addEventListener('resize', closeScheduleMenu);
 
   scroll.addEventListener('pointerdown', onPointerDown);
-  document.addEventListener('pointerup', onPointerUp, true);
-  document.addEventListener('pointercancel', onPointerCancel, true);
-  document.addEventListener('mouseup', onMouseUp, true);
   renderLegend();
   bindMeta();
   bindEditor();
